@@ -3,10 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "dev:server": "pnpm --filter server dev",
     "dev:web": "pnpm --filter web dev",
-    "build:web": "pnpm --filter web build",
-    "build:server": "pnpm --filter server build",
-    "migrate:pocketbase": "pnpm --filter server exec tsx scripts/migrate-to-pocketbase.ts"
+    "build:web": "pnpm --filter web build"
   }
 }

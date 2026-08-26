@@ -5,8 +5,6 @@ dist-ssr
 .DS_Store
 
 .env
-server/.env
-server/dev.db
-server/dev.db-journal
 pocketbase/.env
 print_jobs_backup.json
+pb_data.tar.gz

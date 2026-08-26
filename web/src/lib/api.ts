@@ -122,14 +122,17 @@ export const api = {
   // guaranteed-fresh read right now (e.g. "I just added this in Rentman").
   refresh: () => request<{ ok: boolean }>("/api/refresh", { method: "POST" }),
 
-  getSettings: () => request<Settings>("/api/settings"),
+  // Named app-settings/activity, not settings/logs — those paths are
+  // PocketBase's own built-in superuser endpoints (see
+  // pocketbase/pb_hooks/routes_app_settings.pb.js and routes_activity.pb.js).
+  getSettings: () => request<Settings>("/api/app-settings"),
   updateSettings: (settings: Partial<{ printerHost: string; businessName: string; businessShortName: string }>) =>
-    request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
+    request<Settings>("/api/app-settings", { method: "PUT", body: JSON.stringify(settings) }),
 
   getStats: () => request<Stats>("/api/stats"),
-  getLogs: () => request<LogEntry[]>("/api/logs"),
+  getLogs: () => request<LogEntry[]>("/api/activity"),
   logEvent: (type: string, details?: Record<string, unknown>) =>
-    request<LogEntry>("/api/logs", { method: "POST", body: JSON.stringify({ type, details }) }),
+    request<LogEntry>("/api/activity", { method: "POST", body: JSON.stringify({ type, details }) }),
 
   listUsers: () => request<UserRecord[]>("/api/users"),
   createUser: (data: { name: string; email: string; password: string; isAdmin?: boolean }) =>

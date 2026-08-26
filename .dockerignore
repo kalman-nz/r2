@@ -4,7 +4,6 @@ dist
 **/dist
 .git
 .DS_Store
-server/.env
-server/dev.db
-server/dev.db-journal
+pocketbase/.env
 print/venv
+pb_data.tar.gz

@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import PocketBase, { type RecordModel } from "pocketbase";
 
-// Talks directly to the PocketBase container (not proxied through our own
-// server) — this is PocketBase's standard, supported usage pattern. Needs a
-// LAN-reachable address in production, same as PRINTER_HOST does for the
-// label printer.
-export const pb = new PocketBase(import.meta.env.VITE_POCKETBASE_URL ?? "http://localhost:8080");
+// Same-origin — PocketBase now serves this SPA itself (as well as the
+// /api/* routes below), so there's no separate host/port to configure.
+export const pb = new PocketBase("");
 
 // Reads pb.authStore.record reactively — a plain read only reflects
 // whatever was cached at the last login/authRefresh, so anything (isAdmin,
