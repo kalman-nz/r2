@@ -1,0 +1,5 @@
+docker volume create rentmanplus_pb_data
+docker run --rm \
+  -v rentmanplus_pb_data:/data \
+  -v "$(pwd)":/backup \
+  alpine tar xzf /backup/pb_data.tar.gz -C /data

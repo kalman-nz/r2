@@ -6,7 +6,7 @@ services:
       # Published so the browser can talk to it directly (PocketBase's SDK is
       # designed to be hit straight from the client, not proxied) — set
       # VITE_POCKETBASE_URL to this host's LAN address, same idea as PRINTER_HOST.
-      - "8080:8080"
+      - "${POCKETBASE_PORT:-3002}:8080"
     env_file:
       - pocketbase/.env
     volumes:
@@ -20,9 +20,9 @@ services:
       args:
         # Baked into the web bundle at build time — must match wherever the
         # browser can reach the pocketbase service above (see its comment).
-        VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://localhost:8080}
+        VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-http://localhost:${POCKETBASE_PORT:-3002}}
     ports:
-      - "3001:3001"
+      - "${APP_PORT:-3001}:3001"
     env_file:
       - server/.env
     environment:
