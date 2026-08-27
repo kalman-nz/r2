@@ -8,6 +8,12 @@ services:
       - "${PORT:-3001}:${PORT:-3001}"
     environment:
       PORT: ${PORT:-3001}
+      PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL}
+      PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD}
+      RENTMAN_BASE_URL: ${RENTMAN_BASE_URL:-https://api.rentman.net}
+      RENTMAN_API_TOKEN: ${RENTMAN_API_TOKEN}
+      RENTMAN_WEBHOOK_SECRET: ${RENTMAN_WEBHOOK_SECRET:-}
+      PRINTER_HOST: ${PRINTER_HOST:-}
     volumes:
       - pb_data:/pb/pb_data
     restart: unless-stopped
