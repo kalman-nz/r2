@@ -5,6 +5,5 @@ dist-ssr
 .DS_Store
 
 .env
-pocketbase/.env
 print_jobs_backup.json
 pb_data.tar.gz

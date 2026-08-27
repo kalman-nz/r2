@@ -85,6 +85,7 @@ export interface Equipment extends RentmanRecord {
   current: number;
   country_of_origin: string;
   in_archive: boolean;
+  folder: string | null;
 }
 
 export const api = {

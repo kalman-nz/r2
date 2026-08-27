@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { ClientResponseError } from "pocketbase";
 import { pb } from "../lib/pocketbase";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
@@ -16,11 +17,21 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   // once per app load so permission changes show up without forcing a
   // manual log out/in; if the session's gone stale entirely (deleted user,
   // expired token), this clears it and RequireAuth naturally redirects.
+  //
+  // React's dev-mode StrictMode double-invokes this effect, and the SDK
+  // auto-cancels the first of two identical in-flight requests — that
+  // cancellation surfaces here as a rejected promise with isAbort: true,
+  // not a real auth failure (confirmed empirically: it was wiping a valid
+  // session and bouncing every dev-mode page load back to /login). Only
+  // clear the store for a genuine rejection from the server.
   useEffect(() => {
     if (!pb.authStore.isValid) return;
     pb.collection("users")
       .authRefresh()
-      .catch(() => pb.authStore.clear());
+      .catch((err) => {
+        if (err instanceof ClientResponseError && err.isAbort) return;
+        pb.authStore.clear();
+      });
   }, []);
 
   if (!isValid) {

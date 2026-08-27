@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import EquipmentList from "./pages/EquipmentList";
 import EquipmentDetail from "./pages/EquipmentDetail";
+import InventoryAuditPage from "./pages/InventoryAuditPage";
 import AssetDetail from "./pages/AssetDetail";
 import ProjectsList from "./pages/ProjectsList";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -63,6 +64,11 @@ function AppShell() {
             Custom label
           </NavLink>
           {record?.isAdmin === true && (
+            <NavLink to="/audit" className={navClass}>
+              Audit
+            </NavLink>
+          )}
+          {record?.isAdmin === true && (
             <NavLink to="/logs" className={navClass}>
               Logs
             </NavLink>
@@ -91,6 +97,14 @@ function AppShell() {
           <Route path="/projects" element={<ProjectsList />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/custom-label" element={<CustomLabelPage />} />
+          <Route
+            path="/audit"
+            element={
+              <RequireAdmin>
+                <InventoryAuditPage />
+              </RequireAdmin>
+            }
+          />
           <Route
             path="/logs"
             element={
