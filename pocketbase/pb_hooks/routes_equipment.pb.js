@@ -11,7 +11,10 @@ routerAdd(
   "/api/equipment",
   (e) => {
     const { rentman, quantityByEquipmentId } = require(`${__hooks}/lib/rentman.js`);
-    const data = rentman.listAllEquipment();
+    // Rentman's /equipment list includes archived items — the workshop only
+    // cares about live stock, so drop them here (the single-item route below
+    // still resolves an archived id if something links straight to it).
+    const data = rentman.listAllEquipment().filter((eq) => !eq.in_archive);
     const quantities = quantityByEquipmentId();
     return e.json(200, {
       data: data.map((eq) =>

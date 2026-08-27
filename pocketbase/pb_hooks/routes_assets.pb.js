@@ -12,7 +12,10 @@ routerAdd(
   (e) => {
     const { rentman, enrichSerialNumbers } = require(`${__hooks}/lib/rentman.js`);
     const data = rentman.listAllSerialNumbers();
-    return e.json(200, { data: enrichSerialNumbers(data) });
+    // Hide serials whose equipment type is archived — matches the /api/equipment
+    // list, which also drops archived items.
+    const enriched = enrichSerialNumbers(data).filter((s) => !(s._equipment && s._equipment.in_archive));
+    return e.json(200, { data: enriched });
   },
   $apis.requireAuth(),
 );
