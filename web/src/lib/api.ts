@@ -161,22 +161,9 @@ export interface ProjectFinancials {
   number: number | null;
   reference: string;
   customer: string | null;
-  accountManager: string | null;
-  projectType: string | null;
-  status: string | null;
   periodStart: string | null;
-  periodEnd: string | null;
   subprojectCount: number;
   totalPrice: number;
-  cancelledPrice: number;
-  rentalPrice: number;
-  salePrice: number;
-  crewPrice: number;
-  transportPrice: number;
-  otherPrice: number;
-  insurancePrice: number;
-  servicesPrice: number;
-  alreadyInvoiced: number;
   hasDiscount: boolean;
   discounts: ProjectDiscount[];
 }

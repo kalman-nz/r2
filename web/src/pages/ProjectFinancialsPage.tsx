@@ -4,10 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type ProjectFinancials } from "../lib/api";
 import RefreshButton from "../components/RefreshButton";
 
-// Admin-only rollup of every Rentman project's revenue — see
-// pocketbase/pb_hooks/routes_projects.pb.js for how the figures are summed
-// across each project's in_financial subprojects. Cost/margin are not shown:
-// Rentman's bulk API can't return the cost fields without timing out.
+// Admin-only list of every Rentman project, its rental value, and whether a
+// discount was given — with CSV / JSON export. See
+// pocketbase/pb_hooks/routes_projects.pb.js for how the figures are rolled up.
 
 const money = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -24,59 +23,16 @@ function describeDiscounts(row: ProjectFinancials): string {
     .join("; ");
 }
 
-type NumericKey =
-  | "totalPrice"
-  | "rentalPrice"
-  | "salePrice"
-  | "crewPrice"
-  | "transportPrice"
-  | "otherPrice"
-  | "servicesPrice"
-  | "insurancePrice"
-  | "alreadyInvoiced";
-
-type SortKey = "name" | "customer" | "projectType" | "status" | "periodStart" | NumericKey;
-
-const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
-  { key: "name", label: "Project" },
-  { key: "customer", label: "Customer" },
-  { key: "projectType", label: "Type" },
-  { key: "status", label: "Status" },
-  { key: "periodStart", label: "Period" },
-  { key: "totalPrice", label: "Total", numeric: true },
-  { key: "rentalPrice", label: "Rental", numeric: true },
-  { key: "salePrice", label: "Sale", numeric: true },
-  { key: "crewPrice", label: "Crew", numeric: true },
-  { key: "transportPrice", label: "Transport", numeric: true },
-  { key: "otherPrice", label: "Other", numeric: true },
-  { key: "servicesPrice", label: "Services", numeric: true },
-  { key: "insurancePrice", label: "Insurance", numeric: true },
-  { key: "alreadyInvoiced", label: "Invoiced", numeric: true },
-];
-
 const CSV_HEADERS = [
   "Project ID",
   "Project",
   "Number",
   "Reference",
   "Customer",
-  "Account manager",
-  "Type",
-  "Status",
   "Period start",
-  "Period end",
   "Subprojects",
   "Total price",
-  "Cancelled price",
-  "Rental",
-  "Sale",
-  "Crew",
-  "Transport",
-  "Other",
-  "Insurance",
-  "Services",
-  "Already invoiced",
-  "Has discount",
+  "Discount given",
   "Discount detail",
 ];
 
@@ -95,22 +51,9 @@ function toCsv(rows: ProjectFinancials[]): string {
         r.number ?? "",
         r.reference,
         r.customer ?? "",
-        r.accountManager ?? "",
-        r.projectType ?? "",
-        r.status ?? "",
         r.periodStart ?? "",
-        r.periodEnd ?? "",
         r.subprojectCount,
         r.totalPrice,
-        r.cancelledPrice,
-        r.rentalPrice,
-        r.salePrice,
-        r.crewPrice,
-        r.transportPrice,
-        r.otherPrice,
-        r.insurancePrice,
-        r.servicesPrice,
-        r.alreadyInvoiced,
         r.hasDiscount ? "yes" : "no",
         describeDiscounts(r),
       ]
@@ -131,6 +74,8 @@ function download(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
+type SortKey = "name" | "customer" | "periodStart" | "totalPrice";
+
 export default function ProjectFinancialsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["project-financials"],
@@ -139,28 +84,21 @@ export default function ProjectFinancialsPage() {
   });
 
   const [search, setSearch] = useState("");
-  const [discountsOnly, setDiscountsOnly] = useState(false);
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [discountFilter, setDiscountFilter] = useState<"all" | "with" | "without">("all");
   const [sortKey, setSortKey] = useState<SortKey>("periodStart");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const rows = useMemo(() => data?.data ?? [], [data]);
 
-  const types = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.projectType).filter(Boolean) as string[])).sort(),
-    [rows],
-  );
-
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     const result = rows.filter((r) => {
-      if (discountsOnly && !r.hasDiscount) return false;
-      if (typeFilter !== "all" && r.projectType !== typeFilter) return false;
+      if (discountFilter === "with" && !r.hasDiscount) return false;
+      if (discountFilter === "without" && r.hasDiscount) return false;
       if (!term) return true;
       return (
         r.name.toLowerCase().includes(term) ||
         (r.customer ?? "").toLowerCase().includes(term) ||
-        (r.accountManager ?? "").toLowerCase().includes(term) ||
         (r.reference ?? "").toLowerCase().includes(term) ||
         String(r.number ?? "").includes(term)
       );
@@ -173,31 +111,30 @@ export default function ProjectFinancialsPage() {
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     });
-  }, [rows, search, discountsOnly, typeFilter, sortKey, sortDir]);
+  }, [rows, search, discountFilter, sortKey, sortDir]);
 
   const totals = useMemo(
     () => ({
       count: filtered.length,
       value: filtered.reduce((s, r) => s + r.totalPrice, 0),
-      rental: filtered.reduce((s, r) => s + r.rentalPrice, 0),
       discounted: filtered.filter((r) => r.hasDiscount).length,
     }),
     [filtered],
   );
 
   function toggleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
-      setSortDir(key === "name" || key === "customer" || key === "projectType" ? "asc" : "desc");
+      setSortDir(key === "name" || key === "customer" ? "asc" : "desc");
     }
   }
 
+  const arrow = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
   return (
-    <div className="max-w-[90rem] mx-auto flex flex-col gap-6">
+    <div className="max-w-5xl mx-auto flex flex-col gap-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">Project financials</h1>
         <div className="flex items-center gap-2">
@@ -225,19 +162,20 @@ export default function ProjectFinancialsPage() {
         </div>
       </div>
 
-      {isLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
+      {isLoading && <p className="text-neutral-500 text-sm">Loading… (this pulls every project from Rentman)</p>}
       {error && (
-        <p className="text-red-400 text-sm">Couldn't load financials: {(error as Error).message}</p>
+        <p className="text-red-400 text-sm">
+          Couldn't load financials: {(error as Error).message}. Rentman can be slow — try Refresh again.
+        </p>
       )}
 
       {data && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {[
               { label: "Projects", value: totals.count.toLocaleString() },
-              { label: "Total value", value: money(totals.value) },
-              { label: "Rental value", value: money(totals.rental) },
-              { label: "With a discount", value: totals.discounted.toLocaleString() },
+              { label: "Total rental value", value: money(totals.value) },
+              { label: "Discount given", value: totals.discounted.toLocaleString() },
             ].map((tile) => (
               <div key={tile.label} className="border border-neutral-800 rounded-lg p-4 flex flex-col gap-1">
                 <span className="text-sm text-neutral-500">{tile.label}</span>
@@ -254,48 +192,36 @@ export default function ProjectFinancialsPage() {
               className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-1.5 text-sm w-72 focus:outline-none focus:border-neutral-600"
             />
             <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
+              value={discountFilter}
+              onChange={(e) => setDiscountFilter(e.target.value as typeof discountFilter)}
               className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-neutral-600"
             >
-              <option value="all">All types</option>
-              {types.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
+              <option value="all">All projects</option>
+              <option value="with">Discount given</option>
+              <option value="without">No discount</option>
             </select>
-            <label className="flex items-center gap-2 text-sm text-neutral-400 select-none">
-              <input
-                type="checkbox"
-                checked={discountsOnly}
-                onChange={(e) => setDiscountsOnly(e.target.checked)}
-              />
-              Discounts only
-            </label>
             <span className="text-xs text-neutral-600 ml-auto">
-              {filtered.length}/{rows.length} projects · data as of{" "}
-              {new Date(data.generatedAt).toLocaleTimeString()}
+              {filtered.length}/{rows.length} · data as of {new Date(data.generatedAt).toLocaleTimeString()}
             </span>
           </div>
 
           <div className="border border-neutral-800 rounded-lg overflow-hidden">
             <div className="max-h-[40rem] overflow-auto">
-              <table className="w-full text-xs border-collapse whitespace-nowrap">
+              <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 bg-neutral-950 z-10">
-                  <tr className="border-b border-neutral-800 text-left text-neutral-500">
-                    {COLUMNS.map((col) => (
-                      <th
-                        key={col.key}
-                        onClick={() => toggleSort(col.key)}
-                        className={`px-3 py-2 font-medium cursor-pointer hover:text-neutral-300 ${
-                          col.numeric ? "text-right" : ""
-                        }`}
-                      >
-                        {col.label}
-                        {sortKey === col.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
-                      </th>
-                    ))}
+                  <tr className="border-b border-neutral-800 text-left text-neutral-500 text-xs">
+                    <th onClick={() => toggleSort("name")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300">
+                      Project{arrow("name")}
+                    </th>
+                    <th onClick={() => toggleSort("customer")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300">
+                      Customer{arrow("customer")}
+                    </th>
+                    <th onClick={() => toggleSort("periodStart")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300">
+                      Period{arrow("periodStart")}
+                    </th>
+                    <th onClick={() => toggleSort("totalPrice")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300 text-right">
+                      Total{arrow("totalPrice")}
+                    </th>
                     <th className="px-3 py-2 font-medium">Discount</th>
                   </tr>
                 </thead>
@@ -303,27 +229,15 @@ export default function ProjectFinancialsPage() {
                   {filtered.map((r) => (
                     <tr key={r.id} className="hover:bg-neutral-900/50">
                       <td className="px-3 py-2">
-                        <Link to={`/projects/${r.id}`} className="hover:text-white text-neutral-200">
+                        <Link to={`/projects/${r.id}`} className="text-neutral-200 hover:text-white">
                           {r.name}
                         </Link>
-                        {r.subprojectCount > 1 && (
-                          <span className="text-neutral-600"> · {r.subprojectCount} subprojects</span>
-                        )}
+                        {r.number != null && <span className="text-neutral-600 text-xs"> · #{r.number}</span>}
                       </td>
                       <td className="px-3 py-2 text-neutral-400">{r.customer ?? "—"}</td>
-                      <td className="px-3 py-2 text-neutral-400">{r.projectType ?? "—"}</td>
-                      <td className="px-3 py-2 text-neutral-400">{r.status ?? "—"}</td>
-                      <td className="px-3 py-2 text-neutral-500">{date(r.periodStart)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium">{money(r.totalPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.rentalPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.salePrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.crewPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.transportPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.otherPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.servicesPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.insurancePrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.alreadyInvoiced)}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 text-neutral-500 text-xs whitespace-nowrap">{date(r.periodStart)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap">{money(r.totalPrice)}</td>
+                      <td className="px-3 py-2 text-xs">
                         {r.hasDiscount ? (
                           <span
                             title={describeDiscounts(r)}

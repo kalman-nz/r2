@@ -102,11 +102,7 @@ const rentman = {
 
   listSubprojects: (projectId) => rentmanFetch("/projects/" + projectId + "/subprojects"),
   listAllSubprojects: listAll("subprojects"),
-
   listAllContacts: listAll("contacts"),
-  listAllCrew: listAll("crew"),
-  listStatuses: list("statuses"),
-  listProjectTypes: list("projecttypes"),
 
   listProjectEquipment: list("projectequipment"),
   listAllProjectEquipment: listAll("projectequipment"),
