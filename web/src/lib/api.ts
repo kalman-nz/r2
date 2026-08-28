@@ -165,6 +165,8 @@ export interface ProjectFinancials {
   subprojectCount: number;
   totalPrice: number;
   hasDiscount: boolean;
+  /** Best-effort estimate of the currency value removed by discounts (Rentman exposes no discount-amount field). */
+  discountValue: number;
   discounts: ProjectDiscount[];
 }
 

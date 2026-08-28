@@ -65,6 +65,8 @@ routerAdd(
       const PROJECT_FIELDS = "id,name,displayname,number,reference,customer,planperiod_start,usageperiod_start";
       const SUBPROJECT_FIELDS = [
         "id", "name", "project", "in_financial", "project_total_price",
+        "project_rental_price", "project_sale_price", "project_crew_price",
+        "project_transport_price", "project_other_price", "project_services_price",
         "discount_rental", "discount_sale", "discount_crew", "discount_transport",
         "discount_additional_costs", "discount_services", "discount_subproject",
         "discount_fixed", "discount_fixed_amount",
@@ -73,17 +75,21 @@ routerAdd(
       // reads return a *computed* effective ratio, so tiny values (< 0.5%) are
       // rounding noise from the pricing engine, not a discount someone gave.
       const MIN_DISCOUNT_FRACTION = 0.005;
-      const PERCENT_DISCOUNT_FIELDS = [
-        ["discount_rental", "rental"],
-        ["discount_sale", "sale"],
-        ["discount_crew", "crew"],
-        ["discount_transport", "transport"],
-        ["discount_additional_costs", "additional costs"],
-        ["discount_services", "services"],
-        ["discount_subproject", "subproject"],
+      // Per-category discount: [percentage field, currency (post-discount) price field, label].
+      const CATEGORY_DISCOUNTS = [
+        ["discount_rental", "project_rental_price", "rental"],
+        ["discount_sale", "project_sale_price", "sale"],
+        ["discount_crew", "project_crew_price", "crew"],
+        ["discount_transport", "project_transport_price", "transport"],
+        ["discount_additional_costs", "project_other_price", "additional costs"],
+        ["discount_services", "project_services_price", "services"],
       ];
       const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
       const num = (v) => (typeof v === "number" && isFinite(v) ? v : 0);
+      // Undo a fraction-off discount to recover the amount it removed:
+      // if postPrice = pre * (1 - d) then discount = postPrice * d / (1 - d).
+      const discountAmount = (postPrice, d) =>
+        d >= MIN_DISCOUNT_FRACTION && d < 0.999 ? (num(postPrice) * d) / (1 - d) : 0;
 
       try {
         const projects = rentman.listAllProjects({ fields: PROJECT_FIELDS });
@@ -113,14 +119,32 @@ routerAdd(
           const subs = all.filter((s) => s.in_financial !== false);
 
           const discounts = [];
+          let totalPrice = 0;
+          // Best-effort estimate of the currency value removed by discounts —
+          // Rentman's API has no discount-amount field, so it's reconstructed
+          // from the fraction fields + the (post-discount) category/total prices.
+          let discountValue = 0;
+
           for (const s of subs) {
-            for (const [field, label] of PERCENT_DISCOUNT_FIELDS) {
-              if (num(s[field]) >= MIN_DISCOUNT_FRACTION) {
-                discounts.push({ subproject: s.name, type: label, percent: round2(num(s[field]) * 100) });
-              }
+            totalPrice += num(s.project_total_price);
+
+            for (const [field, priceField, label] of CATEGORY_DISCOUNTS) {
+              const d = num(s[field]);
+              if (d < MIN_DISCOUNT_FRACTION) continue;
+              discounts.push({ subproject: s.name, type: label, percent: round2(d * 100) });
+              discountValue += discountAmount(s[priceField], d);
             }
+
+            const dSub = num(s.discount_subproject);
+            if (dSub >= MIN_DISCOUNT_FRACTION) {
+              discounts.push({ subproject: s.name, type: "subproject", percent: round2(dSub * 100) });
+              discountValue += discountAmount(s.project_total_price, dSub);
+            }
+
             if (s.discount_fixed === true && num(s.discount_fixed_amount) !== 0) {
-              discounts.push({ subproject: s.name, type: "fixed", amount: round2(num(s.discount_fixed_amount)) });
+              const fixed = Math.abs(num(s.discount_fixed_amount));
+              discounts.push({ subproject: s.name, type: "fixed", amount: round2(fixed) });
+              discountValue += fixed;
             }
           }
 
@@ -132,8 +156,9 @@ routerAdd(
             customer: contactName.get(idFromRef(p.customer) || "") || null,
             periodStart: p.usageperiod_start || p.planperiod_start || null,
             subprojectCount: all.length,
-            totalPrice: round2(subs.reduce((acc, s) => acc + num(s.project_total_price), 0)),
+            totalPrice: round2(totalPrice),
             hasDiscount: discounts.length > 0,
+            discountValue: round2(discountValue),
             discounts: discounts,
           };
         });

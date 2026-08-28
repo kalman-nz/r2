@@ -33,6 +33,7 @@ const CSV_HEADERS = [
   "Subprojects",
   "Total price",
   "Discount given",
+  "Discount value (est.)",
   "Discount detail",
 ];
 
@@ -55,6 +56,7 @@ function toCsv(rows: ProjectFinancials[]): string {
         r.subprojectCount,
         r.totalPrice,
         r.hasDiscount ? "yes" : "no",
+        r.discountValue,
         describeDiscounts(r),
       ]
         .map(csvCell)
@@ -74,7 +76,7 @@ function download(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-type SortKey = "name" | "customer" | "periodStart" | "totalPrice";
+type SortKey = "name" | "customer" | "periodStart" | "totalPrice" | "discountValue";
 
 export default function ProjectFinancialsPage() {
   const { data, isLoading, error } = useQuery({
@@ -118,6 +120,7 @@ export default function ProjectFinancialsPage() {
       count: filtered.length,
       value: filtered.reduce((s, r) => s + r.totalPrice, 0),
       discounted: filtered.filter((r) => r.hasDiscount).length,
+      discountValue: filtered.reduce((s, r) => s + r.discountValue, 0),
     }),
     [filtered],
   );
@@ -171,11 +174,12 @@ export default function ProjectFinancialsPage() {
 
       {data && (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "Projects", value: totals.count.toLocaleString() },
               { label: "Total rental value", value: money(totals.value) },
-              { label: "Discount given", value: totals.discounted.toLocaleString() },
+              { label: "Discounts given", value: totals.discounted.toLocaleString() },
+              { label: "Discount value (est.)", value: money(totals.discountValue) },
             ].map((tile) => (
               <div key={tile.label} className="border border-neutral-800 rounded-lg p-4 flex flex-col gap-1">
                 <span className="text-sm text-neutral-500">{tile.label}</span>
@@ -222,6 +226,9 @@ export default function ProjectFinancialsPage() {
                     <th onClick={() => toggleSort("totalPrice")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300 text-right">
                       Total{arrow("totalPrice")}
                     </th>
+                    <th onClick={() => toggleSort("discountValue")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300 text-right" title="Estimated currency value of discounts given">
+                      Disc. value{arrow("discountValue")}
+                    </th>
                     <th className="px-3 py-2 font-medium">Discount</th>
                   </tr>
                 </thead>
@@ -237,6 +244,9 @@ export default function ProjectFinancialsPage() {
                       <td className="px-3 py-2 text-neutral-400">{r.customer ?? "—"}</td>
                       <td className="px-3 py-2 text-neutral-500 text-xs whitespace-nowrap">{date(r.periodStart)}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap">{money(r.totalPrice)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-amber-400">
+                        {r.discountValue > 0 ? money(r.discountValue) : <span className="text-neutral-700">—</span>}
+                      </td>
                       <td className="px-3 py-2 text-xs">
                         {r.hasDiscount ? (
                           <span
