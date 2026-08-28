@@ -7,6 +7,7 @@ import InventoryAuditPage from "./pages/InventoryAuditPage";
 import AssetDetail from "./pages/AssetDetail";
 import ProjectsList from "./pages/ProjectsList";
 import ProjectDetail from "./pages/ProjectDetail";
+import ProjectFinancialsPage from "./pages/ProjectFinancialsPage";
 import SettingsPage from "./pages/SettingsPage";
 import CustomLabelPage from "./pages/CustomLabelPage";
 import LogsPage from "./pages/LogsPage";
@@ -69,6 +70,11 @@ function AppShell() {
             </NavLink>
           )}
           {record?.isAdmin === true && (
+            <NavLink to="/project-financials" className={navClass}>
+              Financials
+            </NavLink>
+          )}
+          {record?.isAdmin === true && (
             <NavLink to="/logs" className={navClass}>
               Logs
             </NavLink>
@@ -102,6 +108,14 @@ function AppShell() {
             element={
               <RequireAdmin>
                 <InventoryAuditPage />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/project-financials"
+            element={
+              <RequireAdmin>
+                <ProjectFinancialsPage />
               </RequireAdmin>
             }
           />

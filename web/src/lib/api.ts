@@ -101,6 +101,8 @@ export const api = {
   getProject: (id: string) => request<RentmanRecord & { subprojects: RentmanRecord[] }>(`/api/projects/${id}`),
   getProjectEquipment: (id: string) =>
     request<{ lines: RentmanRecord[]; groups: RentmanRecord[] }>(`/api/projects/${id}/equipment`),
+  listProjectFinancials: () =>
+    request<{ data: ProjectFinancials[]; generatedAt: string }>("/api/projects/financials"),
 
   listLabels: () => request<(LabelTemplateData & { id: string })[]>("/api/labels"),
   getLabel: (id: string) => request<LabelTemplateData & { id: string }>(`/api/labels/${id}`),
@@ -143,6 +145,44 @@ export const api = {
   deleteUser: (id: string) => request<{ ok: true }>(`/api/users/${id}`, { method: "DELETE" }),
   getUserActivity: (id: string) => request<UserActivity>(`/api/users/${id}/activity`),
 };
+
+export interface ProjectDiscount {
+  subproject: string;
+  type: string;
+  /** Percentage points (10 === 10%) — present for percentage discounts. */
+  percent?: number;
+  /** Currency amount — present for a fixed-amount discount. */
+  amount?: number;
+}
+
+export interface ProjectFinancials {
+  id: number;
+  name: string;
+  number: number | null;
+  reference: string;
+  customer: string | null;
+  accountManager: string | null;
+  projectType: string | null;
+  status: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  subprojectCount: number;
+  totalPrice: number;
+  rentalPrice: number;
+  salePrice: number;
+  crewPrice: number;
+  transportPrice: number;
+  otherPrice: number;
+  insurancePrice: number;
+  servicesPrice: number;
+  estimatedCost: number;
+  plannedCost: number;
+  actualCost: number;
+  margin: number;
+  alreadyInvoiced: number;
+  hasDiscount: boolean;
+  discounts: ProjectDiscount[];
+}
 
 export interface UserActivity {
   stats: { prints: number; logins: number; pageViews: number };
