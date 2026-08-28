@@ -40,14 +40,16 @@ routerAdd(
   $apis.requireAuth(),
 );
 
-// Admin-only financial overview: every project with its rolled-up money
-// (totals + costs summed across its in_financial subprojects) and a flag +
-// breakdown for any discount applied on a subproject. Powers the
-// /project-financials page and its CSV/JSON export.
+// Admin-only financial overview: every project with its rolled-up revenue
+// (totals summed across its in_financial subprojects) and a flag + breakdown
+// for any discount applied on a subproject. Powers the /project-financials
+// page and its CSV/JSON export.
 //
 // Rentman keeps the money on subprojects, not the project, and only returns
-// the computed *_price / *_cost fields when an explicit `fields=` list is
-// requested — hence the long field lists below.
+// the computed *_price fields when an explicit `fields=` list is requested.
+// The cost fields (actual_cost / estimated_cost / planned_cost) are
+// deliberately NOT requested — Rentman computes those per row and a bulk
+// request for them times out (504), which is what sank the first version.
 (function () {
   const { requireAdmin } = require(`${__hooks}/lib/auth.js`);
 
@@ -62,7 +64,7 @@ routerAdd(
     "project_total_price", "project_total_price_cancelled",
     "project_rental_price", "project_sale_price", "project_crew_price",
     "project_transport_price", "project_other_price", "project_insurance_price",
-    "project_services_price", "estimated_cost", "planned_cost", "actual_cost",
+    "project_services_price",
     "discount_rental", "discount_sale", "discount_crew", "discount_transport",
     "discount_additional_costs", "discount_services", "discount_subproject",
     "discount_fixed", "discount_fixed_amount",
@@ -80,97 +82,100 @@ routerAdd(
   ];
 
   const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+  const num = (v) => (typeof v === "number" && isFinite(v) ? v : 0);
+
+  function nameById(records) {
+    const map = new Map();
+    for (const r of records) map.set(String(r.id), r.displayname || r.name || null);
+    return map;
+  }
+
+  function buildFinancialRows(rentman, idFromRef) {
+    const projects = rentman.listAllProjects({ fields: PROJECT_FIELDS });
+    const subprojects = rentman.listAllSubprojects({ fields: SUBPROJECT_FIELDS });
+    const statusName = nameById(rentman.listStatuses({ limit: 1500 }).data);
+    const typeName = nameById(rentman.listProjectTypes({ limit: 1500 }).data);
+
+    // Customer/account-manager names are a nice-to-have — a slow or failing
+    // contacts/crew walk shouldn't sink the whole financial report.
+    let contactName = new Map();
+    let crewName = new Map();
+    try {
+      contactName = nameById(rentman.listAllContacts({ fields: "id,name,displayname" }));
+      crewName = nameById(rentman.listAllCrew({ fields: "id,name,displayname" }));
+    } catch (err) {
+      console.warn("[projects/financials] could not resolve contact/crew names: " + err);
+    }
+
+    const subsByProject = new Map();
+    for (const s of subprojects) {
+      const pid = idFromRef(s.project);
+      if (!pid) continue;
+      if (!subsByProject.has(pid)) subsByProject.set(pid, []);
+      subsByProject.get(pid).push(s);
+    }
+
+    const rows = projects.map((p) => {
+      const all = (subsByProject.get(String(p.id)) || []).slice().sort((a, b) => num(a.order) - num(b.order));
+      const subs = all.filter((s) => s.in_financial !== false);
+      const sum = (f) => subs.reduce((acc, s) => acc + num(s[f]), 0);
+
+      const discounts = [];
+      for (const s of subs) {
+        for (const [field, label] of PERCENT_DISCOUNT_FIELDS) {
+          if (num(s[field]) > 0) {
+            discounts.push({ subproject: s.name, type: label, percent: round2(num(s[field]) * 100) });
+          }
+        }
+        if (s.discount_fixed === true && num(s.discount_fixed_amount) !== 0) {
+          discounts.push({ subproject: s.name, type: "fixed", amount: round2(num(s.discount_fixed_amount)) });
+        }
+      }
+
+      return {
+        id: p.id,
+        name: p.displayname || p.name || "",
+        number: typeof p.number === "number" ? p.number : null,
+        reference: p.reference || "",
+        customer: contactName.get(idFromRef(p.customer) || "") || null,
+        accountManager: crewName.get(idFromRef(p.account_manager) || "") || null,
+        projectType: typeName.get(idFromRef(p.project_type) || "") || null,
+        status: subs.length ? statusName.get(idFromRef(subs[0].status) || "") || null : null,
+        periodStart: p.usageperiod_start || p.planperiod_start || null,
+        periodEnd: p.usageperiod_end || p.planperiod_end || null,
+        subprojectCount: all.length,
+        totalPrice: round2(sum("project_total_price")),
+        cancelledPrice: round2(sum("project_total_price_cancelled")),
+        rentalPrice: round2(sum("project_rental_price")),
+        salePrice: round2(sum("project_sale_price")),
+        crewPrice: round2(sum("project_crew_price")),
+        transportPrice: round2(sum("project_transport_price")),
+        otherPrice: round2(sum("project_other_price")),
+        insurancePrice: round2(sum("project_insurance_price")),
+        servicesPrice: round2(sum("project_services_price")),
+        alreadyInvoiced: round2(num(p.already_invoiced)),
+        hasDiscount: discounts.length > 0,
+        discounts: discounts,
+      };
+    });
+
+    rows.sort((a, b) => String(b.periodStart || "").localeCompare(String(a.periodStart || "")));
+    return rows;
+  }
 
   routerAdd(
     "GET",
     "/api/projects/financials",
     (e) => {
       const { rentman, idFromRef } = require(`${__hooks}/lib/rentman.js`);
-
-      const projects = rentman.listAllProjects({ fields: PROJECT_FIELDS });
-      const subprojects = rentman.listAllSubprojects({ fields: SUBPROJECT_FIELDS });
-
-      const nameById = (records) => {
-        const map = new Map();
-        for (const r of records) map.set(String(r.id), r.displayname || r.name || null);
-        return map;
-      };
-      const statusName = nameById(rentman.listStatuses({ limit: 1500 }).data);
-      const typeName = nameById(rentman.listProjectTypes({ limit: 1500 }).data);
-      // Customer/account-manager names are a nice-to-have — a slow or failing
-      // contacts/crew walk shouldn't sink the whole financial report.
-      let contactName = new Map();
-      let crewName = new Map();
       try {
-        contactName = nameById(rentman.listAllContacts({ fields: "id,name,displayname" }));
-        crewName = nameById(rentman.listAllCrew({ fields: "id,name,displayname" }));
+        return e.json(200, { data: buildFinancialRows(rentman, idFromRef), generatedAt: new Date().toISOString() });
       } catch (err) {
-        console.warn("[projects/financials] could not resolve contact/crew names: " + err);
+        console.error("[projects/financials] " + err);
+        return e.json(502, {
+          message: "Rentman request failed: " + String(err && err.message ? err.message : err),
+        });
       }
-
-      const subsByProject = new Map();
-      for (const s of subprojects) {
-        const pid = idFromRef(s.project);
-        if (!pid) continue;
-        if (!subsByProject.has(pid)) subsByProject.set(pid, []);
-        subsByProject.get(pid).push(s);
-      }
-
-      const num = (v) => (typeof v === "number" && isFinite(v) ? v : 0);
-
-      const rows = projects.map((p) => {
-        const all = (subsByProject.get(String(p.id)) || []).slice().sort((a, b) => num(a.order) - num(b.order));
-        const subs = all.filter((s) => s.in_financial !== false);
-        const sum = (f) => subs.reduce((acc, s) => acc + num(s[f]), 0);
-
-        const discounts = [];
-        for (const s of subs) {
-          for (const [field, label] of PERCENT_DISCOUNT_FIELDS) {
-            if (num(s[field]) > 0) {
-              discounts.push({ subproject: s.name, type: label, percent: round2(num(s[field]) * 100) });
-            }
-          }
-          if (s.discount_fixed === true && num(s.discount_fixed_amount) !== 0) {
-            discounts.push({ subproject: s.name, type: "fixed", amount: round2(num(s.discount_fixed_amount)) });
-          }
-        }
-
-        const totalPrice = sum("project_total_price");
-        const actualCost = sum("actual_cost");
-
-        return {
-          id: p.id,
-          name: p.displayname || p.name || "",
-          number: typeof p.number === "number" ? p.number : null,
-          reference: p.reference || "",
-          customer: contactName.get(idFromRef(p.customer) || "") || null,
-          accountManager: crewName.get(idFromRef(p.account_manager) || "") || null,
-          projectType: typeName.get(idFromRef(p.project_type) || "") || null,
-          status: subs.length ? statusName.get(idFromRef(subs[0].status) || "") || null : null,
-          periodStart: p.usageperiod_start || p.planperiod_start || null,
-          periodEnd: p.usageperiod_end || p.planperiod_end || null,
-          subprojectCount: all.length,
-          totalPrice: round2(totalPrice),
-          rentalPrice: round2(sum("project_rental_price")),
-          salePrice: round2(sum("project_sale_price")),
-          crewPrice: round2(sum("project_crew_price")),
-          transportPrice: round2(sum("project_transport_price")),
-          otherPrice: round2(sum("project_other_price")),
-          insurancePrice: round2(sum("project_insurance_price")),
-          servicesPrice: round2(sum("project_services_price")),
-          estimatedCost: round2(sum("estimated_cost")),
-          plannedCost: round2(sum("planned_cost")),
-          actualCost: round2(actualCost),
-          margin: round2(totalPrice - actualCost),
-          alreadyInvoiced: round2(num(p.already_invoiced)),
-          hasDiscount: discounts.length > 0,
-          discounts: discounts,
-        };
-      });
-
-      rows.sort((a, b) => String(b.periodStart || "").localeCompare(String(a.periodStart || "")));
-
-      return e.json(200, { data: rows, generatedAt: new Date().toISOString() });
     },
     $apis.requireAuth(),
     requireAdmin,

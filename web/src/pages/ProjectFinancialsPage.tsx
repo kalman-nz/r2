@@ -4,9 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type ProjectFinancials } from "../lib/api";
 import RefreshButton from "../components/RefreshButton";
 
-// Admin-only rollup of every Rentman project's money — see
+// Admin-only rollup of every Rentman project's revenue — see
 // pocketbase/pb_hooks/routes_projects.pb.js for how the figures are summed
-// across each project's in_financial subprojects.
+// across each project's in_financial subprojects. Cost/margin are not shown:
+// Rentman's bulk API can't return the cost fields without timing out.
 
 const money = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -31,8 +32,7 @@ type NumericKey =
   | "transportPrice"
   | "otherPrice"
   | "servicesPrice"
-  | "actualCost"
-  | "margin"
+  | "insurancePrice"
   | "alreadyInvoiced";
 
 type SortKey = "name" | "customer" | "projectType" | "status" | "periodStart" | NumericKey;
@@ -50,8 +50,7 @@ const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "transportPrice", label: "Transport", numeric: true },
   { key: "otherPrice", label: "Other", numeric: true },
   { key: "servicesPrice", label: "Services", numeric: true },
-  { key: "actualCost", label: "Cost", numeric: true },
-  { key: "margin", label: "Margin", numeric: true },
+  { key: "insurancePrice", label: "Insurance", numeric: true },
   { key: "alreadyInvoiced", label: "Invoiced", numeric: true },
 ];
 
@@ -68,6 +67,7 @@ const CSV_HEADERS = [
   "Period end",
   "Subprojects",
   "Total price",
+  "Cancelled price",
   "Rental",
   "Sale",
   "Crew",
@@ -75,10 +75,6 @@ const CSV_HEADERS = [
   "Other",
   "Insurance",
   "Services",
-  "Estimated cost",
-  "Planned cost",
-  "Actual cost",
-  "Margin",
   "Already invoiced",
   "Has discount",
   "Discount detail",
@@ -106,6 +102,7 @@ function toCsv(rows: ProjectFinancials[]): string {
         r.periodEnd ?? "",
         r.subprojectCount,
         r.totalPrice,
+        r.cancelledPrice,
         r.rentalPrice,
         r.salePrice,
         r.crewPrice,
@@ -113,10 +110,6 @@ function toCsv(rows: ProjectFinancials[]): string {
         r.otherPrice,
         r.insurancePrice,
         r.servicesPrice,
-        r.estimatedCost,
-        r.plannedCost,
-        r.actualCost,
-        r.margin,
         r.alreadyInvoiced,
         r.hasDiscount ? "yes" : "no",
         describeDiscounts(r),
@@ -186,8 +179,8 @@ export default function ProjectFinancialsPage() {
     () => ({
       count: filtered.length,
       value: filtered.reduce((s, r) => s + r.totalPrice, 0),
+      rental: filtered.reduce((s, r) => s + r.rentalPrice, 0),
       discounted: filtered.filter((r) => r.hasDiscount).length,
-      margin: filtered.reduce((s, r) => s + r.margin, 0),
     }),
     [filtered],
   );
@@ -243,8 +236,8 @@ export default function ProjectFinancialsPage() {
             {[
               { label: "Projects", value: totals.count.toLocaleString() },
               { label: "Total value", value: money(totals.value) },
+              { label: "Rental value", value: money(totals.rental) },
               { label: "With a discount", value: totals.discounted.toLocaleString() },
-              { label: "Total margin", value: money(totals.margin) },
             ].map((tile) => (
               <div key={tile.label} className="border border-neutral-800 rounded-lg p-4 flex flex-col gap-1">
                 <span className="text-sm text-neutral-500">{tile.label}</span>
@@ -328,14 +321,7 @@ export default function ProjectFinancialsPage() {
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.transportPrice)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.otherPrice)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.servicesPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.actualCost)}</td>
-                      <td
-                        className={`px-3 py-2 text-right tabular-nums ${
-                          r.margin < 0 ? "text-red-400" : "text-emerald-400"
-                        }`}
-                      >
-                        {money(r.margin)}
-                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.insurancePrice)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{money(r.alreadyInvoiced)}</td>
                       <td className="px-3 py-2">
                         {r.hasDiscount ? (

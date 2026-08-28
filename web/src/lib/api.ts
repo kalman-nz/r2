@@ -168,6 +168,7 @@ export interface ProjectFinancials {
   periodEnd: string | null;
   subprojectCount: number;
   totalPrice: number;
+  cancelledPrice: number;
   rentalPrice: number;
   salePrice: number;
   crewPrice: number;
@@ -175,10 +176,6 @@ export interface ProjectFinancials {
   otherPrice: number;
   insurancePrice: number;
   servicesPrice: number;
-  estimatedCost: number;
-  plannedCost: number;
-  actualCost: number;
-  margin: number;
   alreadyInvoiced: number;
   hasDiscount: boolean;
   discounts: ProjectDiscount[];
