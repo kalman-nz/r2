@@ -10,8 +10,8 @@ export default function RecordFields({ record }: { record: RentmanRecord }) {
     <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
       {entries.map(([key, value]) => (
         <div key={key} className="contents">
-          <dt className="text-neutral-500">{key}</dt>
-          <dd className="text-neutral-100 break-words">
+          <dt className="text-gray-500">{key}</dt>
+          <dd className="text-gray-900 break-words">
             {value === null || value === undefined || value === ""
               ? "—"
               : typeof value === "object"

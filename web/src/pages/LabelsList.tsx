@@ -105,18 +105,10 @@ export default function LabelsList() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
-          <button
-            onClick={exportAll}
-            disabled={!templates || templates.length === 0}
-            className="text-sm px-3 py-1.5 rounded-md border border-neutral-800 hover:bg-neutral-900 disabled:opacity-50"
-          >
+          <button onClick={exportAll} disabled={!templates || templates.length === 0} className="btn-secondary">
             Export all
           </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="text-sm px-3 py-1.5 rounded-md border border-neutral-800 hover:bg-neutral-900 disabled:opacity-50"
-          >
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="btn-secondary">
             {importing ? "Importing…" : "Import"}
           </button>
           <input
@@ -130,38 +122,35 @@ export default function LabelsList() {
               if (file) void importFromFile(file);
             }}
           />
-          <Link
-            to="/labels/new"
-            className="text-sm px-3 py-1.5 rounded-md bg-white text-black font-medium hover:bg-neutral-200"
-          >
+          <Link to="/labels/new" className="btn-primary">
             New template
           </Link>
         </div>
       </div>
 
-      {isLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
+      {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
 
-      <div className="border border-neutral-800 rounded-lg divide-y divide-neutral-800 overflow-hidden">
+      <div className="card divide-y divide-gray-100 overflow-hidden">
         {templates?.map((t) => (
-          <div key={t.id} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-neutral-900">
+          <div key={t.id} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-gray-50">
             <Link to={`/labels/${t.id}`} className="flex flex-col">
-              <span className="font-medium">{t.name}</span>
-              <span className="text-neutral-500 text-xs">
+              <span className="font-medium text-gray-900">{t.name}</span>
+              <span className="text-gray-500 text-xs">
                 {t.widthMm}×{t.heightMm}mm · {t.elements.length} element{t.elements.length === 1 ? "" : "s"}
               </span>
             </Link>
             <div className="flex items-center gap-3">
-              <button onClick={() => exportOne(t)} className="text-neutral-600 hover:text-white text-xs">
+              <button onClick={() => exportOne(t)} className="text-gray-400 hover:text-gray-900 text-xs">
                 Export
               </button>
-              <button onClick={() => remove(t.id, t.name)} className="text-neutral-600 hover:text-red-400 text-xs">
+              <button onClick={() => remove(t.id, t.name)} className="text-gray-400 hover:text-red-600 text-xs">
                 Delete
               </button>
             </div>
           </div>
         ))}
         {!isLoading && templates?.length === 0 && (
-          <p className="px-4 py-6 text-neutral-500 text-sm">No templates yet — create one to start printing labels.</p>
+          <p className="px-4 py-6 text-gray-500 text-sm">No templates yet — create one to start printing labels.</p>
         )}
       </div>
     </div>

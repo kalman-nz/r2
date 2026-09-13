@@ -1,5 +1,33 @@
 @import "tailwindcss";
 
 body {
-  @apply bg-neutral-950 text-neutral-100;
+  @apply text-gray-900;
+  background: #f3f6fb;
+}
+
+@layer components {
+  .input {
+    @apply bg-white border border-gray-300 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#167cfb]/20 focus:border-[#167cfb];
+  }
+  .btn-primary {
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-[#167cfb] text-white hover:bg-[#0f6ae0];
+  }
+  .btn-secondary {
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
+  }
+  .btn-danger {
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-[#fc3465] text-white hover:bg-[#e11d48];
+  }
+  .card {
+    @apply bg-white border border-gray-200 rounded-md;
+  }
+  .tab-underline-active {
+    @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-[#167cfb] border-[#167cfb];
+  }
+  .tab-underline-inactive {
+    @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300;
+  }
+  .status-dot {
+    @apply inline-block w-1.5 h-1.5 rounded-full shrink-0;
+  }
 }

@@ -67,26 +67,17 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-lg border border-neutral-800 bg-neutral-950 p-5 shadow-xl flex flex-col gap-4 transition-all duration-150 ease-out ${
+            className={`w-full max-w-sm rounded-lg border border-gray-200 bg-white p-5 shadow-xl flex flex-col gap-4 transition-all duration-150 ease-out ${
               visible ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
           >
-            {state.title && <h2 className="text-sm font-semibold">{state.title}</h2>}
-            <p className="text-sm text-neutral-300">{state.message}</p>
+            {state.title && <h2 className="text-sm font-semibold text-gray-900">{state.title}</h2>}
+            <p className="text-sm text-gray-600">{state.message}</p>
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => close(false)}
-                className="text-sm px-3 py-1.5 rounded-md border border-neutral-800 hover:bg-neutral-900"
-              >
+              <button onClick={() => close(false)} className="btn-secondary">
                 {state.cancelLabel ?? "Cancel"}
               </button>
-              <button
-                onClick={() => close(true)}
-                autoFocus
-                className={`text-sm px-3 py-1.5 rounded-md font-medium ${
-                  state.danger ? "bg-red-600 hover:bg-red-500 text-white" : "bg-white hover:bg-neutral-200 text-black"
-                }`}
-              >
+              <button onClick={() => close(true)} autoFocus className={state.danger ? "btn-danger" : "btn-primary"}>
                 {state.confirmLabel ?? "Confirm"}
               </button>
             </div>

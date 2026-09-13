@@ -42,21 +42,17 @@ export default function PrintButton({
 
   return (
     <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        disabled={printing}
-        className="text-sm px-3 py-1.5 rounded-md border border-neutral-700 hover:bg-neutral-900 disabled:opacity-50"
-      >
+      <button onClick={() => setOpen((v) => !v)} disabled={printing} className="btn-secondary">
         {printing ? "Printing…" : label}
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-2 w-56 border border-neutral-800 bg-neutral-950 rounded-lg shadow-lg z-10 overflow-hidden">
-          {templates === undefined && <p className="px-3 py-3 text-sm text-neutral-500">Loading templates…</p>}
+        <div className="absolute top-full right-0 mt-2 w-56 card shadow-lg z-10 overflow-hidden">
+          {templates === undefined && <p className="px-3 py-3 text-sm text-gray-500">Loading templates…</p>}
           {templates?.length === 0 && (
-            <p className="px-3 py-3 text-sm text-neutral-500">
+            <p className="px-3 py-3 text-sm text-gray-500">
               No label templates yet.{" "}
-              <Link to="/labels/new" className="text-white underline">
+              <Link to="/labels/new" className="text-blue-600 underline">
                 Create one
               </Link>
               .
@@ -66,10 +62,10 @@ export default function PrintButton({
             <button
               key={t.id}
               onClick={() => printWith(t.id)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-900"
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               {t.name}
-              <span className="text-neutral-500"> · {t.widthMm}×{t.heightMm}mm</span>
+              <span className="text-gray-500"> · {t.widthMm}×{t.heightMm}mm</span>
             </button>
           ))}
         </div>

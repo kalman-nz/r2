@@ -139,12 +139,12 @@ export default function ProjectFinancialsPage() {
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold">Project financials</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Project financials</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => download(`project-financials-${stamp}.csv`, toCsv(filtered), "text/csv")}
             disabled={filtered.length === 0}
-            className="text-sm px-3 py-1.5 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50"
+            className="btn-primary"
           >
             Export CSV
           </button>
@@ -157,7 +157,7 @@ export default function ProjectFinancialsPage() {
               )
             }
             disabled={filtered.length === 0}
-            className="text-sm px-3 py-1.5 rounded-md border border-neutral-800 hover:bg-neutral-900 disabled:opacity-50"
+            className="btn-secondary"
           >
             Export JSON
           </button>
@@ -165,9 +165,9 @@ export default function ProjectFinancialsPage() {
         </div>
       </div>
 
-      {isLoading && <p className="text-neutral-500 text-sm">Loading… (this pulls every project from Rentman)</p>}
+      {isLoading && <p className="text-gray-500 text-sm">Loading… (this pulls every project from Rentman)</p>}
       {error && (
-        <p className="text-red-400 text-sm">
+        <p className="text-red-600 text-sm">
           Couldn't load financials: {(error as Error).message}. Rentman can be slow — try Refresh again.
         </p>
       )}
@@ -181,9 +181,9 @@ export default function ProjectFinancialsPage() {
               { label: "Discounts given", value: totals.discounted.toLocaleString() },
               { label: "Discount value (est.)", value: money(totals.discountValue) },
             ].map((tile) => (
-              <div key={tile.label} className="border border-neutral-800 rounded-lg p-4 flex flex-col gap-1">
-                <span className="text-sm text-neutral-500">{tile.label}</span>
-                <span className="text-2xl font-semibold tabular-nums">{tile.value}</span>
+              <div key={tile.label} className="card p-4 flex flex-col gap-1">
+                <span className="text-sm text-gray-500">{tile.label}</span>
+                <span className="text-2xl font-semibold tabular-nums text-gray-900">{tile.value}</span>
               </div>
             ))}
           </div>
@@ -193,70 +193,70 @@ export default function ProjectFinancialsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search project / customer / reference…"
-              className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-1.5 text-sm w-72 focus:outline-none focus:border-neutral-600"
+              className="input w-72"
             />
             <select
               value={discountFilter}
               onChange={(e) => setDiscountFilter(e.target.value as typeof discountFilter)}
-              className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-neutral-600"
+              className="input w-auto"
             >
               <option value="all">All projects</option>
               <option value="with">Discount given</option>
               <option value="without">No discount</option>
             </select>
-            <span className="text-xs text-neutral-600 ml-auto">
+            <span className="text-xs text-gray-500 ml-auto">
               {filtered.length}/{rows.length} · data as of {new Date(data.generatedAt).toLocaleTimeString()}
             </span>
           </div>
 
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="max-h-[40rem] overflow-auto">
               <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 bg-neutral-950 z-10">
-                  <tr className="border-b border-neutral-800 text-left text-neutral-500 text-xs">
-                    <th onClick={() => toggleSort("name")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300">
+                <thead className="sticky top-0 bg-gray-50 z-10">
+                  <tr className="border-b border-gray-200 text-left text-gray-500 text-xs">
+                    <th onClick={() => toggleSort("name")} className="px-3 py-2 font-medium cursor-pointer hover:text-gray-700">
                       Project{arrow("name")}
                     </th>
-                    <th onClick={() => toggleSort("customer")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300">
+                    <th onClick={() => toggleSort("customer")} className="px-3 py-2 font-medium cursor-pointer hover:text-gray-700">
                       Customer{arrow("customer")}
                     </th>
-                    <th onClick={() => toggleSort("periodStart")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300">
+                    <th onClick={() => toggleSort("periodStart")} className="px-3 py-2 font-medium cursor-pointer hover:text-gray-700">
                       Period{arrow("periodStart")}
                     </th>
-                    <th onClick={() => toggleSort("totalPrice")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300 text-right">
+                    <th onClick={() => toggleSort("totalPrice")} className="px-3 py-2 font-medium cursor-pointer hover:text-gray-700 text-right">
                       Total{arrow("totalPrice")}
                     </th>
-                    <th onClick={() => toggleSort("discountValue")} className="px-3 py-2 font-medium cursor-pointer hover:text-neutral-300 text-right" title="Estimated currency value of discounts given">
+                    <th onClick={() => toggleSort("discountValue")} className="px-3 py-2 font-medium cursor-pointer hover:text-gray-700 text-right" title="Estimated currency value of discounts given">
                       Disc. value{arrow("discountValue")}
                     </th>
                     <th className="px-3 py-2 font-medium">Discount</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-900">
+                <tbody className="divide-y divide-gray-100">
                   {filtered.map((r) => (
-                    <tr key={r.id} className="hover:bg-neutral-900/50">
+                    <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2">
-                        <Link to={`/projects/${r.id}`} className="text-neutral-200 hover:text-white">
+                        <Link to={`/projects/${r.id}`} className="text-gray-800 hover:text-gray-900">
                           {r.name}
                         </Link>
-                        {r.number != null && <span className="text-neutral-600 text-xs"> · #{r.number}</span>}
+                        {r.number != null && <span className="text-gray-400 text-xs"> · #{r.number}</span>}
                       </td>
-                      <td className="px-3 py-2 text-neutral-400">{r.customer ?? "—"}</td>
-                      <td className="px-3 py-2 text-neutral-500 text-xs whitespace-nowrap">{date(r.periodStart)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap">{money(r.totalPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-amber-400">
-                        {r.discountValue > 0 ? money(r.discountValue) : <span className="text-neutral-700">—</span>}
+                      <td className="px-3 py-2 text-gray-600">{r.customer ?? "—"}</td>
+                      <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{date(r.periodStart)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium whitespace-nowrap text-gray-900">{money(r.totalPrice)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-amber-600">
+                        {r.discountValue > 0 ? money(r.discountValue) : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {r.hasDiscount ? (
                           <span
                             title={describeDiscounts(r)}
-                            className="text-amber-400 border border-amber-400/30 bg-amber-400/10 rounded px-1.5 py-0.5"
+                            className="text-amber-700 border border-amber-200 bg-amber-50 rounded px-1.5 py-0.5"
                           >
                             {describeDiscounts(r)}
                           </span>
                         ) : (
-                          <span className="text-neutral-700">—</span>
+                          <span className="text-gray-300">—</span>
                         )}
                       </td>
                     </tr>
@@ -264,7 +264,7 @@ export default function ProjectFinancialsPage() {
                 </tbody>
               </table>
               {filtered.length === 0 && (
-                <p className="px-3 py-6 text-neutral-500 text-sm">No projects match this filter.</p>
+                <p className="px-3 py-6 text-gray-500 text-sm">No projects match this filter.</p>
               )}
             </div>
           </div>

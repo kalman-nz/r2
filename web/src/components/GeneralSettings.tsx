@@ -30,12 +30,12 @@ export default function GeneralSettings() {
     }
   }
 
-  if (isLoading) return <p className="text-neutral-500 text-sm">Loading…</p>;
+  if (isLoading) return <p className="text-gray-500 text-sm">Loading…</p>;
 
   return (
     <div className="flex flex-col gap-4 max-w-sm">
       <div className="flex flex-col gap-1">
-        <label htmlFor="businessName" className="text-sm text-neutral-400">
+        <label htmlFor="businessName" className="text-sm text-gray-500">
           Business name
         </label>
         <input
@@ -44,12 +44,12 @@ export default function GeneralSettings() {
           placeholder="e.g. Bay AV Workshop"
           value={businessName}
           onChange={(e) => setBusinessName(e.target.value)}
-          className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+          className="input py-2"
         />
-        <p className="text-xs text-neutral-500">Shown in the header alongside "Rentman+".</p>
+        <p className="text-xs text-gray-500">Shown in the header alongside "Rentman+".</p>
       </div>
       <div className="flex flex-col gap-1">
-        <label htmlFor="businessShortName" className="text-sm text-neutral-400">
+        <label htmlFor="businessShortName" className="text-sm text-gray-500">
           Business short name
         </label>
         <input
@@ -58,22 +58,18 @@ export default function GeneralSettings() {
           placeholder="e.g. Bay AV"
           value={businessShortName}
           onChange={(e) => setBusinessShortName(e.target.value)}
-          className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+          className="input py-2"
         />
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-gray-500">
           Used for the browser tab title instead, since there's little room there for the full name. Falls back to
           the business name, then "Rentman+", if left blank.
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="text-sm px-3 py-1.5 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50 w-fit"
-        >
+        <button onClick={save} disabled={saving} className="btn-primary py-2 w-fit">
           {saving ? "Saving…" : "Save"}
         </button>
-        {saved && <span className="text-sm text-emerald-400">Saved</span>}
+        {saved && <span className="text-sm text-emerald-600">Saved</span>}
       </div>
     </div>
   );

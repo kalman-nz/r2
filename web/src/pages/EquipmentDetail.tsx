@@ -34,19 +34,19 @@ export default function EquipmentDetail() {
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <Link to="/equipment" className="text-sm text-neutral-500 hover:text-white w-fit">
+      <Link to="/equipment" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
         ← Assets
       </Link>
 
-      {isLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
-      {error && <p className="text-red-400 text-sm">Couldn't load this equipment: {(error as Error).message}</p>}
+      {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
+      {error && <p className="text-red-600 text-sm">Couldn't load this equipment: {(error as Error).message}</p>}
 
       {equipment && (
         <>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-xl font-semibold">{equipment.displayname ?? equipment.name}</h1>
-              <p className="text-neutral-500 text-sm">
+              <h1 className="text-xl font-semibold text-gray-900">{equipment.displayname ?? equipment.name}</h1>
+              <p className="text-gray-500 text-sm">
                 {equipment.code}
                 {equipment.location_in_warehouse ? ` · ${equipment.location_in_warehouse}` : ""}
                 {equipment.tags ? ` · ${equipment.tags}` : ""}
@@ -59,7 +59,7 @@ export default function EquipmentDetail() {
             <BatchPrintBar assets={selectedAssets} onDone={() => setSelected(new Set())} />
           )}
 
-          <section className="border border-neutral-800 rounded-lg overflow-hidden">
+          <section className="card overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-1">
               <div className="flex items-center gap-3">
                 {equipment.serialNumbers.length > 0 && (
@@ -72,23 +72,23 @@ export default function EquipmentDetail() {
                     onChange={toggleAll}
                   />
                 )}
-                <h2 className="text-sm font-semibold text-neutral-400">
+                <h2 className="text-sm font-semibold text-gray-500">
                   Serial numbers ({equipment.serialNumbers.length})
                 </h2>
               </div>
               <RefreshButton queryKeys={[["equipment", id]]} />
             </div>
-            <div className="divide-y divide-neutral-800">
+            <div className="divide-y divide-gray-100">
               {equipment.serialNumbers.map((sn) => (
-                <div key={sn.id} className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-900 text-sm">
+                <div key={sn.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-sm">
                   <input
                     type="checkbox"
                     checked={selected.has(String(sn.id))}
                     onChange={() => toggle(String(sn.id))}
                   />
                   <Link to={`/assets/${sn.id}`} className="flex-1 flex flex-col min-w-0">
-                    <span className="font-medium truncate">{sn.displayname}</span>
-                    <span className="text-neutral-500 text-xs truncate">
+                    <span className="font-medium text-gray-900 truncate">{sn.displayname}</span>
+                    <span className="text-gray-500 text-xs truncate">
                       {(sn._location?.displayname as string) ?? "no location"}
                       {sn.qrcodes ? ` · ${sn.qrcodes}` : ""}
                     </span>
@@ -96,7 +96,7 @@ export default function EquipmentDetail() {
                 </div>
               ))}
               {equipment.serialNumbers.length === 0 && (
-                <p className="px-4 py-6 text-neutral-500 text-sm">
+                <p className="px-4 py-6 text-gray-500 text-sm">
                   No serialized units for this equipment (may be tracked as bulk stock instead).
                 </p>
               )}

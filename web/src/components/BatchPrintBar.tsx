@@ -58,15 +58,15 @@ export default function BatchPrintBar({
 
   if (progress) {
     return (
-      <div className="flex items-center gap-3 border border-neutral-800 rounded-lg px-4 py-2 text-sm bg-neutral-950">
+      <div className="flex items-center gap-3 card px-4 py-2 text-sm text-gray-700">
         <span>
           Printing {progress.done}/{progress.total}…
         </span>
         {progress.failed.length > 0 && (
-          <span className="text-red-400">Failed: {progress.failed.join(", ")}</span>
+          <span className="text-red-600">Failed: {progress.failed.join(", ")}</span>
         )}
         {progress.done === progress.total && progress.failed.length > 0 && (
-          <button onClick={() => setProgress(null)} className="text-neutral-500 hover:text-white ml-auto">
+          <button onClick={() => setProgress(null)} className="text-gray-500 hover:text-gray-900 ml-auto">
             Dismiss
           </button>
         )}
@@ -75,36 +75,28 @@ export default function BatchPrintBar({
   }
 
   return (
-    <div className="relative flex items-center gap-3 border border-neutral-800 rounded-lg px-4 py-2 text-sm bg-neutral-950">
-      <span className="font-medium">{assets.length} selected</span>
+    <div className="relative flex items-center gap-3 card px-4 py-2 text-sm">
+      <span className="font-medium text-gray-900">{assets.length} selected</span>
 
-      <label className="flex items-center gap-2 text-neutral-500">
+      <label className="flex items-center gap-2 text-gray-500">
         Copies each
-        <NumberInput
-          min={1}
-          value={copies}
-          onChange={setCopies}
-          className="w-14 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-white"
-        />
+        <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
       </label>
 
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="px-3 py-1 rounded-md bg-white text-black font-medium hover:bg-neutral-200"
-      >
+      <button onClick={() => setOpen((v) => !v)} className="btn-primary">
         Print {assets.length * copies} label{assets.length * copies === 1 ? "" : "s"}
       </button>
-      <button onClick={onDone} className="text-neutral-500 hover:text-white ml-auto">
+      <button onClick={onDone} className="text-gray-500 hover:text-gray-900 ml-auto">
         Clear selection
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-2 w-56 border border-neutral-800 bg-neutral-950 rounded-lg shadow-lg z-10 overflow-hidden">
-          {templates === undefined && <p className="px-3 py-3 text-sm text-neutral-500">Loading templates…</p>}
+        <div className="absolute top-full left-0 mt-2 w-56 card shadow-lg z-10 overflow-hidden">
+          {templates === undefined && <p className="px-3 py-3 text-sm text-gray-500">Loading templates…</p>}
           {templates?.length === 0 && (
-            <p className="px-3 py-3 text-sm text-neutral-500">
+            <p className="px-3 py-3 text-sm text-gray-500">
               No label templates yet.{" "}
-              <Link to="/labels/new" className="text-white underline">
+              <Link to="/labels/new" className="text-blue-600 underline">
                 Create one
               </Link>
               .
@@ -114,10 +106,10 @@ export default function BatchPrintBar({
             <button
               key={t.id}
               onClick={() => printAllWith(t.id)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-900"
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               {t.name}
-              <span className="text-neutral-500"> · {t.widthMm}×{t.heightMm}mm</span>
+              <span className="text-gray-500"> · {t.widthMm}×{t.heightMm}mm</span>
             </button>
           ))}
         </div>

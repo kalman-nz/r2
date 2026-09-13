@@ -14,9 +14,9 @@ const REASON_LABEL: Record<DuplicateReason, string> = {
 };
 
 const REASON_STYLE: Record<DuplicateReason, string> = {
-  "same-code": "bg-red-950 text-red-300 border-red-900",
-  "same-name": "bg-amber-950 text-amber-300 border-amber-900",
-  "similar-name": "bg-neutral-800 text-neutral-400 border-neutral-700",
+  "same-code": "bg-red-50 text-red-700 border-red-200",
+  "same-name": "bg-amber-50 text-amber-700 border-amber-200",
+  "similar-name": "bg-gray-100 text-gray-600 border-gray-200",
 };
 
 // rental_sales isn't a plain boolean in Rentman — it's a free-text-ish
@@ -56,9 +56,9 @@ function formatPrice(price: number | null | undefined): string {
 
 function StatCard({ label, value, tone }: { label: string; value: number; tone?: "warn" }) {
   return (
-    <div className="border border-neutral-800 rounded-lg px-4 py-3 flex-1 min-w-[140px]">
-      <div className={`text-2xl font-semibold ${tone === "warn" && value > 0 ? "text-amber-400" : ""}`}>{value}</div>
-      <div className="text-neutral-500 text-xs mt-0.5">{label}</div>
+    <div className="card px-4 py-3 flex-1 min-w-[140px]">
+      <div className={`text-2xl font-semibold ${tone === "warn" && value > 0 ? "text-amber-600" : "text-gray-900"}`}>{value}</div>
+      <div className="text-gray-500 text-xs mt-0.5">{label}</div>
     </div>
   );
 }
@@ -67,11 +67,11 @@ function EquipmentRow({ item, trailing }: { item: Equipment; trailing?: React.Re
   return (
     <Link
       to={`/equipment/${item.id}`}
-      className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-neutral-900 text-sm"
+      className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50 text-sm"
     >
       <div className="flex flex-col min-w-0">
-        <span className="font-medium truncate">{item.displayname ?? item.name}</span>
-        <span className="text-neutral-500 text-xs truncate">
+        <span className="font-medium text-gray-900 truncate">{item.displayname ?? item.name}</span>
+        <span className="text-gray-500 text-xs truncate">
           {item.code || "no code"}
           {item.location_in_warehouse ? ` · ${item.location_in_warehouse}` : ""}
         </span>
@@ -134,16 +134,16 @@ export default function InventoryAuditPage() {
     <div className="max-w-4xl mx-auto flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Inventory audit</h1>
-          <p className="text-neutral-500 text-sm mt-0.5">
+          <h1 className="text-lg font-semibold text-gray-900">Inventory audit</h1>
+          <p className="text-gray-500 text-sm mt-0.5">
             Find duplicate equipment entries and missing catalog info before it goes live.
           </p>
         </div>
         <RefreshButton queryKeys={[["equipment"]]} />
       </div>
 
-      {isLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
-      {error && <p className="text-red-400 text-sm">Couldn't load equipment: {(error as Error).message}</p>}
+      {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
+      {error && <p className="text-red-600 text-sm">Couldn't load equipment: {(error as Error).message}</p>}
 
       {!isLoading && !error && (
         <>
@@ -154,8 +154,8 @@ export default function InventoryAuditPage() {
             <StatCard label="Missing info" value={infoIssues.length} tone="warn" />
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-1">
+          <div className="flex items-center justify-between gap-3 border-b border-gray-200">
+            <div className="flex gap-5">
               {(
                 [
                   ["duplicates", `Duplicates (${duplicateGroups.length})`],
@@ -166,11 +166,7 @@ export default function InventoryAuditPage() {
                 <button
                   key={key}
                   onClick={() => setTab(key)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${
-                    tab === key
-                      ? "bg-neutral-800 text-white"
-                      : "text-neutral-400 hover:text-white hover:bg-neutral-900"
-                  }`}
+                  className={tab === key ? "tab-underline-active" : "tab-underline-inactive"}
                 >
                   {label}
                 </button>
@@ -180,42 +176,42 @@ export default function InventoryAuditPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter…"
-              className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-1.5 text-sm w-56 focus:outline-none focus:border-neutral-600"
+              className="input w-56"
             />
           </div>
 
           {tab === "duplicates" && (
             <div className="flex flex-col gap-3">
-              <p className="text-neutral-500 text-xs">
+              <p className="text-gray-500 text-xs">
                 Grouped by matching code, matching name, or names that share most of their words. Same-code matches
                 are the strongest signal — equipment codes are meant to be unique.
               </p>
               {filteredGroups.length === 0 && (
-                <p className="border border-neutral-800 rounded-lg px-4 py-6 text-neutral-500 text-sm text-center">
+                <p className="card px-4 py-6 text-gray-500 text-sm text-center">
                   {duplicateGroups.length === 0 ? "No likely duplicates found." : "No duplicates match your filter."}
                 </p>
               )}
               {filteredGroups.map((group: DuplicateGroup) => (
-                <div key={group.key} className="border border-neutral-800 rounded-lg overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-2 bg-neutral-950 border-b border-neutral-800">
+                <div key={group.key} className="card overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full border ${REASON_STYLE[group.reason]}`}
                     >
                       {REASON_LABEL[group.reason]}
                     </span>
-                    <span className="text-neutral-500 text-xs">{group.items.length} items</span>
+                    <span className="text-gray-500 text-xs">{group.items.length} items</span>
                   </div>
-                  <div className="divide-y divide-neutral-800">
+                  <div className="divide-y divide-gray-100">
                     {group.items.map((item) => (
                       <EquipmentRow
                         key={item.id}
                         item={item}
                         trailing={
                           <>
-                            <span className="text-neutral-400 text-xs bg-neutral-900 border border-neutral-800 rounded-full px-2 py-0.5">
+                            <span className="text-gray-600 text-xs bg-gray-100 rounded-full px-2 py-0.5">
                               {item.current_quantity ?? 0} in stock
                             </span>
-                            <span className="text-neutral-400 text-xs bg-neutral-900 border border-neutral-800 rounded-full px-2 py-0.5">
+                            <span className="text-gray-600 text-xs bg-gray-100 rounded-full px-2 py-0.5">
                               {formatPrice(item.price)}
                             </span>
                           </>
@@ -226,31 +222,31 @@ export default function InventoryAuditPage() {
                 </div>
               ))}
               {duplicateItemCount > 0 && (
-                <p className="text-neutral-600 text-xs">{duplicateItemCount} equipment types flagged in total.</p>
+                <p className="text-gray-400 text-xs">{duplicateItemCount} equipment types flagged in total.</p>
               )}
             </div>
           )}
 
           {tab === "price" && (
-            <div className="border border-neutral-800 rounded-lg overflow-hidden">
-              <div className="px-4 py-2 bg-neutral-950 border-b border-neutral-800 text-neutral-500 text-xs">
-                Rentman's <code className="text-neutral-400">price</code> field is empty or zero. Items that look
+            <div className="card overflow-hidden">
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-gray-500 text-xs">
+                Rentman's <code className="text-gray-600">price</code> field is empty or zero. Items that look
                 sale-only (based on the rental/sales field) are skipped.
               </div>
-              <div className="divide-y divide-neutral-800">
+              <div className="divide-y divide-gray-100">
                 {filteredPriceIssues.map((item) => (
                   <EquipmentRow
                     key={item.id}
                     item={item}
                     trailing={
-                      <span className="text-red-400 text-xs bg-red-950 border border-red-900 rounded-full px-2 py-0.5">
+                      <span className="text-red-700 text-xs bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
                         no price
                       </span>
                     }
                   />
                 ))}
                 {filteredPriceIssues.length === 0 && (
-                  <p className="px-4 py-6 text-neutral-500 text-sm text-center">
+                  <p className="px-4 py-6 text-gray-500 text-sm text-center">
                     {priceIssues.length === 0 ? "Every rentable item has a hire price." : "Nothing matches your filter."}
                   </p>
                 )}
@@ -262,7 +258,7 @@ export default function InventoryAuditPage() {
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap gap-3 text-sm">
                 {INFO_CHECKS.map((check) => (
-                  <label key={check.key} className="flex items-center gap-1.5 text-neutral-400">
+                  <label key={check.key} className="flex items-center gap-1.5 text-gray-600">
                     <input
                       type="checkbox"
                       checked={enabledChecks.has(check.key)}
@@ -279,7 +275,7 @@ export default function InventoryAuditPage() {
                   </label>
                 ))}
               </div>
-              <div className="border border-neutral-800 rounded-lg overflow-hidden divide-y divide-neutral-800">
+              <div className="card overflow-hidden divide-y divide-gray-100">
                 {filteredInfoIssues.map(({ item, failed }) => (
                   <EquipmentRow
                     key={item.id}
@@ -289,7 +285,7 @@ export default function InventoryAuditPage() {
                         {failed.map((c) => (
                           <span
                             key={c.key}
-                            className="text-amber-400 text-xs bg-amber-950 border border-amber-900 rounded-full px-2 py-0.5"
+                            className="text-amber-700 text-xs bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
                           >
                             no {c.label.toLowerCase()}
                           </span>
@@ -299,7 +295,7 @@ export default function InventoryAuditPage() {
                   />
                 ))}
                 {filteredInfoIssues.length === 0 && (
-                  <p className="px-4 py-6 text-neutral-500 text-sm text-center">
+                  <p className="px-4 py-6 text-gray-500 text-sm text-center">
                     {activeChecks.length === 0
                       ? "Select at least one check above."
                       : infoIssues.length === 0

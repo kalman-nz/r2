@@ -68,13 +68,13 @@ function ToastItem({ toast, onDone }: { toast: Toast; onDone: () => void }) {
         visible && !leaving ? "opacity-100 translate-x-0 translate-y-0" : "opacity-0 translate-x-4"
       } ${
         toast.type === "error"
-          ? "bg-red-950 border-red-800 text-red-200"
-          : "bg-emerald-950 border-emerald-800 text-emerald-200"
+          ? "bg-red-50 border-red-200 text-red-700"
+          : "bg-emerald-50 border-emerald-200 text-emerald-700"
       }`}
     >
       <span className="flex-1">{toast.message}</span>
       {toast.type === "error" && (
-        <button onClick={() => setLeaving(true)} className="text-red-400 hover:text-white shrink-0">
+        <button onClick={() => setLeaving(true)} className="text-red-500 hover:text-red-700 shrink-0">
           ×
         </button>
       )}

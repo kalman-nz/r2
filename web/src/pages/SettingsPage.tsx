@@ -5,16 +5,14 @@ import PrinterSettings from "../components/PrinterSettings";
 import GeneralSettings from "../components/GeneralSettings";
 
 function tabClass({ isActive }: { isActive: boolean }) {
-  return `px-3 py-2 rounded-md text-sm font-medium ${
-    isActive ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white hover:bg-neutral-900"
-  }`;
+  return isActive ? "tab-underline-active" : "tab-underline-inactive";
 }
 
 export default function SettingsPage() {
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Settings</h1>
-      <nav className="flex gap-1 border-b border-neutral-800 pb-2">
+      <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
+      <nav className="flex gap-5 border-b border-gray-200">
         <NavLink to="/settings/general" className={tabClass}>
           General
         </NavLink>

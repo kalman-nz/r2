@@ -19,11 +19,7 @@ export default function RefreshButton({ queryKeys }: { queryKeys: string[][] }) 
   }
 
   return (
-    <button
-      onClick={refresh}
-      disabled={refreshing}
-      className="text-sm px-3 py-1.5 rounded-md border border-neutral-800 hover:bg-neutral-900 disabled:opacity-50"
-    >
+    <button onClick={refresh} disabled={refreshing} className="btn-secondary">
       {refreshing ? "Refreshing…" : "Refresh"}
     </button>
   );

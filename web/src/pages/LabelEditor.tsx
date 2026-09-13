@@ -286,7 +286,7 @@ export default function LabelEditor() {
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4">
-      <Link to="/settings/labels" className="text-sm text-neutral-500 hover:text-white w-fit">
+      <Link to="/settings/labels" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
         ← Settings
       </Link>
 
@@ -294,20 +294,16 @@ export default function LabelEditor() {
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="bg-transparent text-xl font-semibold focus:outline-none border-b border-transparent focus:border-neutral-700"
+          className="bg-transparent text-xl font-semibold text-gray-900 focus:outline-none border-b border-transparent focus:border-gray-300"
         />
-        <button
-          onClick={save}
-          disabled={saving}
-          className="text-sm px-4 py-1.5 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50"
-        >
+        <button onClick={save} disabled={saving} className="btn-primary py-1.5 px-4">
           {saving ? "Saving…" : "Save template"}
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 border border-neutral-800 rounded-lg p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-4 card p-3 text-sm">
         <div className="flex items-center gap-2">
-          <span className="text-neutral-500">Preset</span>
+          <span className="text-gray-500">Preset</span>
           {SIZE_PRESETS.map((p) => (
             <button
               key={p.name}
@@ -315,19 +311,15 @@ export default function LabelEditor() {
                 setWidthMm(p.widthMm);
                 setHeightMm(p.heightMm);
               }}
-              className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900"
+              className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               {p.name}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-neutral-500">Tape width</span>
-          <select
-            value={widthMm}
-            onChange={(e) => setWidthMm(Number(e.target.value))}
-            className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1"
-          >
+          <span className="text-gray-500">Tape width</span>
+          <select value={widthMm} onChange={(e) => setWidthMm(Number(e.target.value))} className="input py-1">
             {TAPE_WIDTHS.map((w) => (
               <option key={w.mm} value={w.mm}>
                 {w.mm}mm
@@ -336,32 +328,27 @@ export default function LabelEditor() {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-neutral-500">Length</span>
-          <NumberInput
-            min={5}
-            value={heightMm}
-            onChange={setHeightMm}
-            className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 w-20"
-          />
-          <span className="text-neutral-500">mm</span>
+          <span className="text-gray-500">Length</span>
+          <NumberInput min={5} value={heightMm} onChange={setHeightMm} className="input py-1 w-20" />
+          <span className="text-gray-500">mm</span>
         </div>
         <div className="flex items-center gap-2 ml-auto">
-          <span className="text-neutral-500">Add</span>
-          <button onClick={() => addElement("text")} className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900">
+          <span className="text-gray-500">Add</span>
+          <button onClick={() => addElement("text")} className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
             Text
           </button>
-          <button onClick={() => addElement("staticText")} className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900">
+          <button onClick={() => addElement("staticText")} className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
             Static text
           </button>
-          <button onClick={() => addElement("barcode")} className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900">
+          <button onClick={() => addElement("barcode")} className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
             Barcode
           </button>
-          <button onClick={() => addElement("qr")} className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900">
+          <button onClick={() => addElement("qr")} className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
             QR
           </button>
           <button
             onClick={() => addImageInputRef.current?.click()}
-            className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900"
+            className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Image
           </button>
@@ -382,9 +369,9 @@ export default function LabelEditor() {
       <div className="flex gap-4 items-start">
         {/* Padded workspace so elements can be dragged past the label's edges
             (e.g. a full-bleed logo) without running out of room to grab them. */}
-        <div className="border border-dashed border-neutral-800 shrink-0" style={{ padding: 60 }}>
+        <div className="border border-dashed border-gray-300 bg-gray-100 shrink-0" style={{ padding: 60 }}>
           <div
-            className="relative bg-white"
+            className="relative bg-white shadow-sm"
             style={{ width: widthMm * EDITOR_SCALE, height: heightMm * EDITOR_SCALE }}
             onPointerDown={() => setSelectedId(null)}
           >
@@ -415,20 +402,20 @@ export default function LabelEditor() {
           </div>
         </div>
 
-        <div className="flex-1 border border-neutral-800 rounded-lg p-4 text-sm min-w-64">
+        <div className="flex-1 card p-4 text-sm min-w-64">
           {!selected ? (
-            <p className="text-neutral-500">Select an element to edit it, or add one above. Drag to move, drag the corner to resize.</p>
+            <p className="text-gray-500">Select an element to edit it, or add one above. Drag to move, drag the corner to resize.</p>
           ) : (
             <div className="flex flex-col gap-3">
-              <h3 className="font-semibold text-neutral-300 capitalize">{selected.type}</h3>
+              <h3 className="font-semibold text-gray-700 capitalize">{selected.type}</h3>
 
               {(selected.type === "text" || selected.type === "barcode" || selected.type === "qr") && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-neutral-500">Data field</span>
+                  <span className="text-gray-500">Data field</span>
                   <select
                     value={selected.dataField}
                     onChange={(e) => updateSelected({ dataField: e.target.value as DataFieldKey })}
-                    className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1"
+                    className="input py-1"
                   >
                     {DATA_FIELDS.map((f) => (
                       <option key={f.key} value={f.key}>
@@ -442,7 +429,7 @@ export default function LabelEditor() {
               {selected.dataField === "equipmentFolder" &&
                 (selected.type === "text" || selected.type === "barcode" || selected.type === "qr") && (
                   <div className="flex flex-col gap-1">
-                    <span className="text-neutral-500">Folder levels</span>
+                    <span className="text-gray-500">Folder levels</span>
                     <div className="flex gap-1 flex-wrap">
                       {[1, 2, 3, 4, 5].map((level) => {
                         const active = (selected.folderLevels ?? []).includes(level);
@@ -456,8 +443,8 @@ export default function LabelEditor() {
                             }}
                             className={`w-8 h-8 rounded border ${
                               active
-                                ? "border-blue-500 text-white"
-                                : "border-neutral-800 text-neutral-500 hover:bg-neutral-900"
+                                ? "border-blue-500 text-blue-700 bg-blue-50"
+                                : "border-gray-300 text-gray-500 hover:bg-gray-50"
                             }`}
                           >
                             {level}
@@ -468,14 +455,14 @@ export default function LabelEditor() {
                         onClick={() => updateSelected({ folderLevels: [] })}
                         className={`px-2 h-8 rounded border ${
                           (selected.folderLevels ?? []).length === 0
-                            ? "border-blue-500 text-white"
-                            : "border-neutral-800 text-neutral-500 hover:bg-neutral-900"
+                            ? "border-blue-500 text-blue-700 bg-blue-50"
+                            : "border-gray-300 text-gray-500 hover:bg-gray-50"
                         }`}
                       >
                         All
                       </button>
                     </div>
-                    <span className="text-xs text-neutral-600">
+                    <span className="text-xs text-gray-400">
                       e.g. "{applyFolderLevels(SAMPLE_CONTEXT.equipmentFolder, selected.folderLevels) || "(empty)"}"
                       for {SAMPLE_CONTEXT.equipmentFolder}
                     </span>
@@ -489,7 +476,7 @@ export default function LabelEditor() {
                     checked={selected.lockAspect ?? false}
                     onChange={(e) => updateSelected({ lockAspect: e.target.checked })}
                   />
-                  <span className="text-neutral-500">
+                  <span className="text-gray-500">
                     Lock aspect ratio{selected.type === "qr" ? " (recommended — keeps the QR scannable)" : ""}
                   </span>
                 </label>
@@ -498,11 +485,11 @@ export default function LabelEditor() {
               {selected.type === "image" && (
                 <div className="flex flex-col gap-2">
                   {selected.imageData && (
-                    <img src={selected.imageData} alt="" className="max-h-24 max-w-full object-contain border border-neutral-800 rounded bg-white" />
+                    <img src={selected.imageData} alt="" className="max-h-24 max-w-full object-contain border border-gray-200 rounded bg-white" />
                   )}
                   <button
                     onClick={() => replaceImageInputRef.current?.click()}
-                    className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900 w-fit"
+                    className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 w-fit"
                   >
                     Replace image
                   </button>
@@ -522,11 +509,11 @@ export default function LabelEditor() {
 
               {selected.type === "staticText" && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-neutral-500">Text</span>
+                  <span className="text-gray-500">Text</span>
                   <input
                     value={selected.text ?? ""}
                     onChange={(e) => updateSelected({ text: e.target.value })}
-                    className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1"
+                    className="input py-1"
                   />
                 </label>
               )}
@@ -534,21 +521,21 @@ export default function LabelEditor() {
               {(selected.type === "text" || selected.type === "staticText") && (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="text-neutral-500">Font size (mm)</span>
+                    <span className="text-gray-500">Font size (mm)</span>
                     <NumberInput
                       min={1}
                       value={selected.fontSize ?? 4}
                       onChange={(fontSize) => updateSelected({ fontSize })}
-                      className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1"
+                      className="input py-1"
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-neutral-500">Padding (mm)</span>
+                    <span className="text-gray-500">Padding (mm)</span>
                     <NumberInput
                       min={0}
                       value={selected.padding ?? 0}
                       onChange={(padding) => updateSelected({ padding })}
-                      className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1"
+                      className="input py-1"
                     />
                   </label>
                   <label className="flex items-center gap-2">
@@ -557,11 +544,11 @@ export default function LabelEditor() {
                       checked={selected.bold ?? false}
                       onChange={(e) => updateSelected({ bold: e.target.checked })}
                     />
-                    <span className="text-neutral-500">Bold</span>
+                    <span className="text-gray-500">Bold</span>
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="text-neutral-500">Align</span>
+                    <span className="text-gray-500">Align</span>
                     <div className="flex gap-1">
                       {(["left", "center", "right"] as const).map((a) => (
                         <button
@@ -569,8 +556,8 @@ export default function LabelEditor() {
                           onClick={() => updateSelected({ align: a })}
                           className={`flex-1 px-2 py-1 rounded border capitalize ${
                             (selected.align ?? "left") === a
-                              ? "border-blue-500 text-white"
-                              : "border-neutral-800 text-neutral-500 hover:bg-neutral-900"
+                              ? "border-blue-500 text-blue-700 bg-blue-50"
+                              : "border-gray-300 text-gray-500 hover:bg-gray-50"
                           }`}
                         >
                           {a}
@@ -580,7 +567,7 @@ export default function LabelEditor() {
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="text-neutral-500">Vertical align</span>
+                    <span className="text-gray-500">Vertical align</span>
                     <div className="flex gap-1">
                       {(["top", "middle", "bottom"] as const).map((v) => (
                         <button
@@ -588,8 +575,8 @@ export default function LabelEditor() {
                           onClick={() => updateSelected({ valign: v })}
                           className={`flex-1 px-2 py-1 rounded border capitalize ${
                             (selected.valign ?? "top") === v
-                              ? "border-blue-500 text-white"
-                              : "border-neutral-800 text-neutral-500 hover:bg-neutral-900"
+                              ? "border-blue-500 text-blue-700 bg-blue-50"
+                              : "border-gray-300 text-gray-500 hover:bg-gray-50"
                           }`}
                         >
                           {v}
@@ -604,7 +591,7 @@ export default function LabelEditor() {
                       checked={selected.wrap ?? false}
                       onChange={(e) => updateSelected({ wrap: e.target.checked })}
                     />
-                    <span className="text-neutral-500">Wrap text (instead of squeezing onto one line)</span>
+                    <span className="text-gray-500">Wrap text (instead of squeezing onto one line)</span>
                   </label>
 
                   {selected.wrap && (
@@ -614,7 +601,7 @@ export default function LabelEditor() {
                         checked={selected.breakWords ?? true}
                         onChange={(e) => updateSelected({ breakWords: e.target.checked })}
                       />
-                      <span className="text-neutral-500">
+                      <span className="text-gray-500">
                         Break long words that don't fit (off condenses them onto one line instead)
                       </span>
                     </label>
@@ -623,27 +610,27 @@ export default function LabelEditor() {
               )}
 
               <label className="flex flex-col gap-1">
-                <span className="text-neutral-500">Rotation</span>
+                <span className="text-gray-500">Rotation</span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => updateSelected({ rotation: rotate(selected.rotation, -90) })}
-                    className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900"
+                    className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
                     title="Rotate left 90°"
                   >
                     ⟲ Left
                   </button>
                   <button
                     onClick={() => updateSelected({ rotation: rotate(selected.rotation, 90) })}
-                    className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900"
+                    className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
                     title="Rotate right 90°"
                   >
                     ⟳ Right
                   </button>
-                  <span className="text-neutral-500 text-xs">{selected.rotation ?? 0}°</span>
+                  <span className="text-gray-500 text-xs">{selected.rotation ?? 0}°</span>
                 </div>
               </label>
 
-              <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500">
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
                 <span>x: {selected.x}mm</span>
                 <span>y: {selected.y}mm</span>
                 <span>w: {selected.width}mm</span>
@@ -651,14 +638,14 @@ export default function LabelEditor() {
               </div>
 
               <div className="flex items-center gap-3 mt-2">
-                <button onClick={() => duplicate(selected)} className="text-neutral-400 hover:text-white">
+                <button onClick={() => duplicate(selected)} className="text-gray-500 hover:text-gray-900">
                   Duplicate
                 </button>
-                <button onClick={deleteSelected} className="text-red-400 hover:text-red-300">
+                <button onClick={deleteSelected} className="text-red-600 hover:text-red-700">
                   Delete element
                 </button>
               </div>
-              <p className="text-xs text-neutral-600">Cmd/Ctrl+C then Cmd/Ctrl+V also works.</p>
+              <p className="text-xs text-gray-400">Cmd/Ctrl+C then Cmd/Ctrl+V also works.</p>
             </div>
           )}
         </div>

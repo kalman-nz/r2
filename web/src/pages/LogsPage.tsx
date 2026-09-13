@@ -54,17 +54,17 @@ export default function LogsPage() {
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold">Logs</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Logs</h1>
 
-        {statsLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
-        {statsError && <p className="text-red-400 text-sm">Couldn't load stats: {(statsError as Error).message}</p>}
+        {statsLoading && <p className="text-gray-500 text-sm">Loading…</p>}
+        {statsError && <p className="text-red-600 text-sm">Couldn't load stats: {(statsError as Error).message}</p>}
 
         {stats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {TILES.map(({ key, label }) => (
-              <div key={key} className="border border-neutral-800 rounded-lg p-4 flex flex-col gap-1">
-                <span className="text-sm text-neutral-500">{label}</span>
-                <span className="text-2xl font-semibold">{stats[key].toLocaleString()}</span>
+              <div key={key} className="card p-4 flex flex-col gap-1">
+                <span className="text-sm text-gray-500">{label}</span>
+                <span className="text-2xl font-semibold text-gray-900">{stats[key].toLocaleString()}</span>
               </div>
             ))}
           </div>
@@ -73,15 +73,11 @@ export default function LogsPage() {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-neutral-400">
+          <h2 className="text-sm font-semibold text-gray-500">
             System logs {logs && `(${filteredLogs.length}/${logs.length})`}
           </h2>
           <div className="flex items-center gap-2">
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1.5 text-xs font-mono focus:outline-none focus:border-neutral-600"
-            >
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input py-1.5 text-xs font-mono">
               <option value="all">all types</option>
               {types.map((t) => (
                 <option key={t} value={t}>
@@ -93,27 +89,27 @@ export default function LogsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="search who / summary / details"
-              className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1.5 text-xs font-mono w-64 focus:outline-none focus:border-neutral-600"
+              className="input py-1.5 text-xs font-mono w-64"
             />
             <button
               onClick={() => exportLogs(filteredLogs)}
               disabled={!logs || filteredLogs.length === 0}
-              className="text-xs px-2.5 py-1.5 rounded-md border border-neutral-800 hover:bg-neutral-900 disabled:opacity-50"
+              className="btn-secondary text-xs py-1.5"
             >
               Export JSON
             </button>
           </div>
         </div>
 
-        {logsLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
-        {logsError && <p className="text-red-400 text-sm">Couldn't load logs: {(logsError as Error).message}</p>}
+        {logsLoading && <p className="text-gray-500 text-sm">Loading…</p>}
+        {logsError && <p className="text-red-600 text-sm">Couldn't load logs: {(logsError as Error).message}</p>}
 
         {logs && (
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="max-h-[36rem] overflow-y-auto overflow-x-auto">
               <table className="w-full text-xs font-mono border-collapse">
-                <thead className="sticky top-0 bg-neutral-950">
-                  <tr className="border-b border-neutral-800 text-left text-neutral-500">
+                <thead className="sticky top-0 bg-gray-50">
+                  <tr className="border-b border-gray-200 text-left text-gray-500">
                     <th className="px-3 py-2 font-medium whitespace-nowrap">Timestamp</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">Type</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">Who</th>
@@ -121,16 +117,16 @@ export default function LogsPage() {
                     <th className="px-3 py-2 font-medium">Details</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-900">
+                <tbody className="divide-y divide-gray-100">
                   {filteredLogs.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-neutral-900/50 align-top">
-                      <td className="px-3 py-2 whitespace-nowrap text-neutral-500">
+                    <tr key={entry.id} className="hover:bg-gray-50 align-top text-gray-800">
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-500">
                         {new Date(entry.timestamp).toLocaleString()}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">{entry.type}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{entry.who || "—"}</td>
                       <td className="px-3 py-2">{entry.summary}</td>
-                      <td className="px-3 py-2 text-neutral-500 break-all max-w-xs">
+                      <td className="px-3 py-2 text-gray-500 break-all max-w-xs">
                         {JSON.stringify(entry.details)}
                       </td>
                     </tr>
@@ -138,7 +134,7 @@ export default function LogsPage() {
                 </tbody>
               </table>
               {filteredLogs.length === 0 && (
-                <p className="px-3 py-6 text-neutral-500 text-sm">
+                <p className="px-3 py-6 text-gray-500 text-sm">
                   {logs.length === 0 ? "No activity yet." : "No log entries match this filter."}
                 </p>
               )}

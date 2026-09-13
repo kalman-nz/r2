@@ -31,11 +31,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-4">
-        <h1 className="text-xl font-semibold text-center">Rentman+</h1>
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
+      <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-4 card p-6 shadow-sm">
+        <div className="flex flex-col items-center gap-2 mb-1">
+          <img src="/favicon.svg" alt="" className="w-9 h-9 rounded-md" />
+          <h1 className="text-xl font-semibold text-gray-900">Rentman+</h1>
+        </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="email" className="text-sm text-neutral-400">
+          <label htmlFor="email" className="text-sm text-gray-500">
             Email
           </label>
           <input
@@ -45,11 +48,11 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+            className="input py-2"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="password" className="text-sm text-neutral-400">
+          <label htmlFor="password" className="text-sm text-gray-500">
             Password
           </label>
           <input
@@ -59,18 +62,14 @@ export default function LoginPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+            className="input py-2"
           />
         </div>
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="text-sm px-3 py-2 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50"
-        >
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <button type="submit" disabled={submitting} className="btn-primary py-2">
           {submitting ? "Signing in…" : "Sign in"}
         </button>
-        <p className="text-xs text-neutral-500 text-center">
+        <p className="text-xs text-gray-500 text-center">
           Don't have an account? Ask whoever manages your workshop's Rentman+ setup to create one for you.
         </p>
       </form>

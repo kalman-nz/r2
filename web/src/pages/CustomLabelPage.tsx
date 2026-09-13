@@ -21,9 +21,7 @@ const PREVIEW_SCALE = 6; // px per mm — matches LabelEditor's on-screen scale
 type Mode = "text" | "template";
 
 function tabClass(active: boolean) {
-  return `px-3 py-1.5 rounded-md text-sm font-medium ${
-    active ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white hover:bg-neutral-900"
-  }`;
+  return active ? "tab-underline-active" : "tab-underline-inactive";
 }
 
 // Prints the same rendered PNG `copies` times, sequentially (the printer
@@ -55,9 +53,9 @@ export default function CustomLabelPage() {
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Custom label</h1>
+      <h1 className="text-lg font-semibold text-gray-900">Custom label</h1>
 
-      <div className="flex items-center gap-1 border border-neutral-800 rounded-md p-0.5 w-fit">
+      <div className="flex items-center gap-5 border-b border-gray-200 w-fit">
         <button className={tabClass(mode === "text")} onClick={() => setMode("text")}>
           Big text
         </button>
@@ -112,7 +110,7 @@ function BigTextMode() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <label htmlFor="customText" className="text-sm text-neutral-400">
+        <label htmlFor="customText" className="text-sm text-gray-500">
           Label text
         </label>
         <textarea
@@ -121,36 +119,27 @@ function BigTextMode() {
           onChange={(e) => setText(e.target.value)}
           placeholder="e.g. Jam Stands"
           rows={2}
-          className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600 resize-none"
+          className="input resize-none"
         />
       </div>
 
       <SizePicker widthMm={widthMm} heightMm={heightMm} onWidth={setWidthMm} onHeight={setHeightMm}>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={rotate90} onChange={(e) => setRotate90(e.target.checked)} />
-          <span className="text-neutral-500">Rotate 90°</span>
+          <span className="text-gray-500">Rotate 90°</span>
         </label>
       </SizePicker>
 
-      <div className="flex items-center justify-center border border-neutral-800 rounded-lg p-6 bg-neutral-950 overflow-auto">
-        <canvas ref={canvasRef} className="bg-white" />
+      <div className="flex items-center justify-center border border-gray-200 rounded-lg p-6 bg-gray-100 overflow-auto">
+        <canvas ref={canvasRef} className="bg-white shadow-sm" />
       </div>
 
       <div className="flex items-center justify-end gap-3">
-        <label className="flex items-center gap-2 text-sm text-neutral-500">
+        <label className="flex items-center gap-2 text-sm text-gray-500">
           Copies
-          <NumberInput
-            min={1}
-            value={copies}
-            onChange={setCopies}
-            className="w-14 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-white"
-          />
+          <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
         </label>
-        <button
-          onClick={print}
-          disabled={printing || !text.trim()}
-          className="text-sm px-4 py-2 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50"
-        >
+        <button onClick={print} disabled={printing || !text.trim()} className="btn-primary py-2 px-4">
           {printing ? "Printing…" : "Print"}
         </button>
       </div>
@@ -212,7 +201,7 @@ function FromTemplateMode() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <label htmlFor="template" className="text-sm text-neutral-400">
+        <label htmlFor="template" className="text-sm text-gray-500">
           Template
         </label>
         <select
@@ -222,7 +211,7 @@ function FromTemplateMode() {
             setTemplateId(e.target.value);
             setFieldValues({});
           }}
-          className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+          className="input py-2"
         >
           <option value="">Select a template…</option>
           {templates?.map((t) => (
@@ -236,12 +225,12 @@ function FromTemplateMode() {
       {template && (
         <>
           {fields.length > 0 && (
-            <div className="flex flex-col gap-3 border border-neutral-800 rounded-lg p-3">
+            <div className="flex flex-col gap-3 card p-3">
               {fields.map((key) => {
                 const label = DATA_FIELDS.find((f) => f.key === key)?.label ?? key;
                 return (
                   <div key={key} className="flex flex-col gap-1">
-                    <label htmlFor={`field-${key}`} className="text-sm text-neutral-400">
+                    <label htmlFor={`field-${key}`} className="text-sm text-gray-500">
                       {label}
                     </label>
                     <input
@@ -249,7 +238,7 @@ function FromTemplateMode() {
                       type="text"
                       value={fieldValues[key] ?? ""}
                       onChange={(e) => setFieldValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                      className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+                      className="input py-2"
                     />
                   </div>
                 );
@@ -257,25 +246,16 @@ function FromTemplateMode() {
             </div>
           )}
 
-          <div className="flex items-center justify-center border border-neutral-800 rounded-lg p-6 bg-neutral-950 overflow-auto">
-            <canvas ref={canvasRef} className="bg-white" />
+          <div className="flex items-center justify-center border border-gray-200 rounded-lg p-6 bg-gray-100 overflow-auto">
+            <canvas ref={canvasRef} className="bg-white shadow-sm" />
           </div>
 
           <div className="flex items-center justify-end gap-3">
-            <label className="flex items-center gap-2 text-sm text-neutral-500">
+            <label className="flex items-center gap-2 text-sm text-gray-500">
               Copies
-              <NumberInput
-                min={1}
-                value={copies}
-                onChange={setCopies}
-                className="w-14 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-white"
-              />
+              <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
             </label>
-            <button
-              onClick={print}
-              disabled={printing}
-              className="text-sm px-4 py-2 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50"
-            >
+            <button onClick={print} disabled={printing} className="btn-primary py-2 px-4">
               {printing ? "Printing…" : "Print"}
             </button>
           </div>
@@ -299,9 +279,9 @@ function SizePicker({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-4 border border-neutral-800 rounded-lg p-3 text-sm">
+    <div className="flex flex-wrap items-center gap-4 card p-3 text-sm">
       <div className="flex items-center gap-2">
-        <span className="text-neutral-500">Preset</span>
+        <span className="text-gray-500">Preset</span>
         {SIZE_PRESETS.map((p) => (
           <button
             key={p.name}
@@ -309,19 +289,15 @@ function SizePicker({
               onWidth(p.widthMm);
               onHeight(p.heightMm);
             }}
-            className="px-2 py-1 rounded border border-neutral-800 hover:bg-neutral-900"
+            className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             {p.name}
           </button>
         ))}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-neutral-500">Tape width</span>
-        <select
-          value={widthMm}
-          onChange={(e) => onWidth(Number(e.target.value))}
-          className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1"
-        >
+        <span className="text-gray-500">Tape width</span>
+        <select value={widthMm} onChange={(e) => onWidth(Number(e.target.value))} className="input py-1">
           {TAPE_WIDTHS.map((w) => (
             <option key={w.mm} value={w.mm}>
               {w.mm}mm
@@ -330,14 +306,9 @@ function SizePicker({
         </select>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-neutral-500">Length</span>
-        <NumberInput
-          min={5}
-          value={heightMm}
-          onChange={onHeight}
-          className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 w-20"
-        />
-        <span className="text-neutral-500">mm</span>
+        <span className="text-gray-500">Length</span>
+        <NumberInput min={5} value={heightMm} onChange={onHeight} className="input py-1 w-20" />
+        <span className="text-gray-500">mm</span>
       </div>
       {children}
     </div>

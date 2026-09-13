@@ -8,9 +8,9 @@ import { useAuthRecord } from "../lib/pocketbase";
 
 function StatTile({ label, value }: { label: string; value: number }) {
   return (
-    <div className="border border-neutral-800 rounded-lg p-3 flex flex-col gap-1">
-      <span className="text-xs text-neutral-500">{label}</span>
-      <span className="text-xl font-semibold">{value}</span>
+    <div className="card p-3 flex flex-col gap-1">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-xl font-semibold text-gray-900">{value}</span>
     </div>
   );
 }
@@ -102,26 +102,21 @@ export default function UserDetail() {
 
   return (
     <div className="max-w-xl mx-auto flex flex-col gap-4">
-      <Link to="/settings/users" className="text-sm text-neutral-500 hover:text-white w-fit">
+      <Link to="/settings/users" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
         ← Users
       </Link>
 
-      <h1 className="text-xl font-semibold">{isNew ? "New user" : name || email || "User"}</h1>
+      <h1 className="text-xl font-semibold text-gray-900">{isNew ? "New user" : name || email || "User"}</h1>
 
-      <div className="flex flex-col gap-3 border border-neutral-800 rounded-lg p-4">
+      <div className="flex flex-col gap-3 card p-4">
         <div className="flex flex-col gap-1">
-          <label htmlFor="name" className="text-sm text-neutral-400">
+          <label htmlFor="name" className="text-sm text-gray-500">
             Name
           </label>
-          <input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
-          />
+          <input id="name" value={name} onChange={(e) => setName(e.target.value)} className="input py-2" />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="email" className="text-sm text-neutral-400">
+          <label htmlFor="email" className="text-sm text-gray-500">
             Email
           </label>
           <input
@@ -129,11 +124,11 @@ export default function UserDetail() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+            className="input py-2"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="password" className="text-sm text-neutral-400">
+          <label htmlFor="password" className="text-sm text-gray-500">
             {isNew ? "Password" : "New password (leave blank to keep current)"}
           </label>
           <input
@@ -142,7 +137,7 @@ export default function UserDetail() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={isNew ? "" : "••••••••"}
-            className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-neutral-600"
+            className="input py-2"
           />
         </div>
         <label className="flex items-center gap-2">
@@ -152,19 +147,15 @@ export default function UserDetail() {
             disabled={isSelf}
             onChange={(e) => setIsAdmin(e.target.checked)}
           />
-          <span className="text-neutral-500 text-sm">Admin{isSelf ? " (can't change your own)" : ""}</span>
+          <span className="text-gray-600 text-sm">Admin{isSelf ? " (can't change your own)" : ""}</span>
         </label>
 
         <div className="flex items-center justify-between pt-1">
-          <button
-            onClick={save}
-            disabled={saving || !name.trim() || !email.trim()}
-            className="text-sm px-4 py-2 rounded-md bg-white text-black font-medium hover:bg-neutral-200 disabled:opacity-50"
-          >
+          <button onClick={save} disabled={saving || !name.trim() || !email.trim()} className="btn-primary py-2">
             {saving ? "Saving…" : isNew ? "Create user" : "Save"}
           </button>
           {!isNew && !isSelf && (
-            <button onClick={remove} className="text-sm text-red-400 hover:text-red-300">
+            <button onClick={remove} className="text-sm text-red-600 hover:text-red-700">
               Delete user
             </button>
           )}
@@ -173,21 +164,24 @@ export default function UserDetail() {
 
       {!isNew && (
         <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-400">Activity</h2>
+          <h2 className="text-sm font-semibold text-gray-500">Activity</h2>
           <div className="grid grid-cols-3 gap-3">
             <StatTile label="Prints" value={stats.prints} />
             <StatTile label="Logins" value={stats.logins} />
             <StatTile label="Page views" value={stats.pageViews} />
           </div>
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
-            <div className="max-h-96 overflow-y-auto divide-y divide-neutral-900">
+          <div className="card overflow-hidden">
+            <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
               {recentLogs.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between gap-4 px-3 py-2 text-xs font-mono">
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between gap-4 px-3 py-2 text-xs font-mono text-gray-700"
+                >
                   <span>{entry.summary}</span>
-                  <span className="text-neutral-500 shrink-0">{new Date(entry.timestamp).toLocaleString()}</span>
+                  <span className="text-gray-500 shrink-0">{new Date(entry.timestamp).toLocaleString()}</span>
                 </div>
               ))}
-              {recentLogs.length === 0 && <p className="px-3 py-6 text-neutral-500 text-sm">No activity yet.</p>}
+              {recentLogs.length === 0 && <p className="px-3 py-6 text-gray-500 text-sm">No activity yet.</p>}
             </div>
           </div>
         </div>

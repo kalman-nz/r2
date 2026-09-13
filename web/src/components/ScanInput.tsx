@@ -46,7 +46,7 @@ export default function ScanInput() {
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={handleKeyDown}
       placeholder="Scan or type serial…"
-      className="bg-neutral-900 border border-neutral-800 rounded-md px-3 py-1.5 text-sm w-44 focus:outline-none focus:border-neutral-600"
+      className="input w-56"
     />
   );
 }
