@@ -93,7 +93,7 @@ function AppShell() {
   const businessName = useBusinessName();
   usePageViewLogging();
   return (
-    <div className="min-h-screen flex">
+    <div className="h-screen flex overflow-hidden">
       <aside className="w-52 shrink-0 flex flex-col h-screen sticky top-0 py-3" style={{ background: "#2b2d31" }}>
         <div className="flex items-center gap-2.5 px-4 h-9 mb-3 shrink-0">
           <div className="w-7 h-7 rounded-md bg-white/10 flex items-center justify-center text-white font-bold text-xs shrink-0">
@@ -127,7 +127,7 @@ function AppShell() {
         )}
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <header className="h-12 border-b border-gray-200 bg-white px-4 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {businessName && <span className="text-sm font-medium text-gray-700 truncate">{businessName}</span>}
@@ -147,7 +147,7 @@ function AppShell() {
             </button>
           </div>
         </header>
-        <main className="flex-1 p-5 min-w-0">
+        <main className="flex-1 min-h-0 overflow-y-auto p-5 min-w-0">
           <Routes>
             <Route path="/" element={<Navigate to="/equipment" replace />} />
             <Route path="/equipment" element={<EquipmentList />} />

@@ -131,6 +131,13 @@ export const api = {
   logEvent: (type: string, details?: Record<string, unknown>) =>
     request<LogEntry>("/api/activity", { method: "POST", body: JSON.stringify({ type, details }) }),
 
+  listEquipmentViews: () => request<EquipmentView[]>("/api/equipment-views"),
+  createEquipmentView: (data: EquipmentViewInput) =>
+    request<EquipmentView>("/api/equipment-views", { method: "POST", body: JSON.stringify(data) }),
+  updateEquipmentView: (id: string, data: EquipmentViewInput) =>
+    request<EquipmentView>(`/api/equipment-views/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteEquipmentView: (id: string) => request<{ ok: true }>(`/api/equipment-views/${id}`, { method: "DELETE" }),
+
   listUsers: () => request<UserRecord[]>("/api/users"),
   createUser: (data: { name: string; email: string; password: string; isAdmin?: boolean }) =>
     request<UserRecord>("/api/users", { method: "POST", body: JSON.stringify(data) }),
@@ -153,6 +160,21 @@ export interface UserRecord {
   verified: boolean;
   created: string;
 }
+
+export interface EquipmentView {
+  id: string;
+  name: string;
+  columns: string[];
+  widths: Record<string, number>;
+  sortKey: string;
+  sortDir: "asc" | "desc";
+  shared: boolean;
+  ownerId: string;
+  ownerName: string;
+  isOwner: boolean;
+}
+
+export type EquipmentViewInput = Omit<EquipmentView, "id" | "ownerId" | "ownerName" | "isOwner">;
 
 export interface Settings {
   printerHost: string;
