@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Equipment, type EquipmentView } from "../lib/api";
 import { renderEquipmentLabelImage, sendRenderedLabel } from "../lib/print";
+import { money, num } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import BatchPrintBar from "../components/BatchPrintBar";
 
@@ -21,15 +22,6 @@ interface Column {
   defaultWidth: number;
   sortValue: (item: Equipment) => string | number;
   render: (item: Equipment) => React.ReactNode;
-}
-
-function money(n: number | null | undefined): string {
-  if (n == null || n === 0) return "—";
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function num(n: number | null | undefined): string {
-  return n == null ? "—" : n.toLocaleString();
 }
 
 const COLUMNS: Column[] = [
