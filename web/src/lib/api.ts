@@ -122,8 +122,9 @@ export const api = {
   // PocketBase's own built-in superuser endpoints (see
   // pocketbase/pb_hooks/routes_app_settings.pb.js and routes_activity.pb.js).
   getSettings: () => request<Settings>("/api/app-settings"),
-  updateSettings: (settings: Partial<{ printerHost: string; businessName: string; businessShortName: string }>) =>
-    request<Settings>("/api/app-settings", { method: "PUT", body: JSON.stringify(settings) }),
+  updateSettings: (
+    settings: Partial<{ printerHost: string; businessName: string; businessShortName: string; defaultTemplateId: string }>,
+  ) => request<Settings>("/api/app-settings", { method: "PUT", body: JSON.stringify(settings) }),
 
   getStats: () => request<Stats>("/api/stats"),
   getLogs: () => request<LogEntry[]>("/api/activity"),
@@ -157,6 +158,7 @@ export interface Settings {
   printerHost: string;
   businessName: string;
   businessShortName: string;
+  defaultTemplateId: string;
 }
 
 export interface Stats {

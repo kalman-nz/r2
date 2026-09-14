@@ -1,5 +1,3 @@
-const { rentman } = require(`${__hooks}/lib/rentman.js`);
-
 // Record.get() on a "json" field returns the raw stored bytes (a plain JS
 // array of char codes), not a decoded value — confirmed empirically: an
 // untouched pass-through to e.json() round-trips fine (Go's json.Marshaler
@@ -18,11 +16,11 @@ function decodeJsonField(raw) {
   return raw;
 }
 
-// resolveSerials pulls in Rentman's full serial-number catalog to turn a
-// print's rentmanSerialNumberId into a readable asset name — the only part
-// of this that ever needs Rentman at all. The admin activity feed wants
-// that polish; a single user's own activity view doesn't need to pay for
-// it, so false skips the Rentman call entirely.
+// resolveSerials looks up the local serial-number mirror (lib/mirror.js) to
+// turn a print's rentmanSerialNumberId into a readable asset name — that
+// mirror is kept current by lib/sync.js, so this never hits Rentman
+// directly. The admin activity feed wants that polish; a single user's own
+// activity view doesn't need it, so false skips the lookup entirely.
 function summarizeLogs(rows, opts) {
   const resolveSerials = (opts && opts.resolveSerials) || false;
 
@@ -31,7 +29,8 @@ function summarizeLogs(rows, opts) {
 
   let labelFor = (id) => id;
   if (resolveSerials) {
-    const serials = rentman.listAllSerialNumbers();
+    const { allData } = require(`${__hooks}/lib/mirror.js`);
+    const serials = allData($app, "rm_serialnumbers");
     const serialLabelById = new Map(serials.map((s) => [String(s.id), s.displayname || String(s.id)]));
     labelFor = (id) => serialLabelById.get(id) || id;
   }

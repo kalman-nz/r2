@@ -1,7 +1,8 @@
-import { api, type RentmanRecord, type SerialNumber } from "./api";
+import { api, type Equipment, type RentmanRecord, type SerialNumber } from "./api";
 import { renderLabelToCanvas } from "./renderLabel";
 import { renderCustomTextCanvas } from "./customLabel";
 import {
+  buildEquipmentLabelContext,
   buildLabelContext,
   dotsPerMm,
   labelIdForWidth,
@@ -11,6 +12,39 @@ import {
 } from "./labelSpec";
 
 export type PrintableAsset = SerialNumber & { _lastSubproject?: RentmanRecord | null };
+export type PrintableEquipment = Equipment & { _folder?: RentmanRecord | null };
+
+async function renderToDataUrl(
+  template: LabelTemplateData & { id: string },
+  context: LabelDataContext,
+): Promise<string> {
+  const canvas = await renderLabelToCanvas(template, context, dotsPerMm(template.widthMm));
+  return canvas.toDataURL("image/png");
+}
+
+// Renders-only, for a preview step before committing to print — see
+// LabelPreviewModal, PrintButton, BatchPrintBar.
+export function renderContextImage(context: LabelDataContext, template: LabelTemplateData & { id: string }) {
+  return renderToDataUrl(template, context);
+}
+
+export function renderAssetLabelImage(asset: PrintableAsset, template: LabelTemplateData & { id: string }) {
+  return renderToDataUrl(template, buildLabelContext(asset));
+}
+
+export function renderEquipmentLabelImage(equipment: PrintableEquipment, template: LabelTemplateData & { id: string }) {
+  return renderToDataUrl(template, buildEquipmentLabelContext(equipment));
+}
+
+// Sends an already-rendered image straight to the printer — used once a
+// preview has been confirmed, so repeat copies don't re-render the canvas.
+export function sendRenderedLabel(
+  imageDataUrl: string,
+  template: LabelTemplateData & { id: string },
+  rentmanSerialNumberId?: string,
+): Promise<{ ok: boolean; message: string }> {
+  return api.print({ templateId: template.id, rentmanSerialNumberId, imageDataUrl, label: labelIdForWidth(template.widthMm) });
+}
 
 // Shared by every "print a template against some data" path — a specific
 // serial (rentmanSerialNumberId set), an equipment type or hand-typed
@@ -20,13 +54,16 @@ export async function printRecord(
   template: LabelTemplateData & { id: string },
   rentmanSerialNumberId?: string,
 ): Promise<{ ok: boolean; message: string }> {
-  const canvas = await renderLabelToCanvas(template, context, dotsPerMm(template.widthMm));
-  const imageDataUrl = canvas.toDataURL("image/png");
-  return api.print({ templateId: template.id, rentmanSerialNumberId, imageDataUrl, label: labelIdForWidth(template.widthMm) });
+  const imageDataUrl = await renderToDataUrl(template, context);
+  return sendRenderedLabel(imageDataUrl, template, rentmanSerialNumberId);
 }
 
 export function printAsset(asset: PrintableAsset, template: LabelTemplateData & { id: string }) {
   return printRecord(buildLabelContext(asset), template, String(asset.id));
+}
+
+export function printEquipment(equipment: PrintableEquipment, template: LabelTemplateData & { id: string }) {
+  return printRecord(buildEquipmentLabelContext(equipment), template);
 }
 
 // A real saved template, but the field values are typed in by hand instead

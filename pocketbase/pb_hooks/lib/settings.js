@@ -25,6 +25,6 @@ function setSetting(key, value) {
 }
 
 // Known settings and their defaults when no row exists for that key yet.
-const DEFAULTS = { printerHost: "", businessName: "", businessShortName: "" };
+const DEFAULTS = { printerHost: "", businessName: "", businessShortName: "", defaultTemplateId: "" };
 
 module.exports = { getAllSettings, setSetting, DEFAULTS };

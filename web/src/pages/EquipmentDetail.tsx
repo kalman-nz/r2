@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { api, type SerialNumber } from "../lib/api";
 import { buildEquipmentLabelContext } from "../lib/labelSpec";
+import { renderAssetLabelImage, sendRenderedLabel } from "../lib/print";
 import BatchPrintBar from "../components/BatchPrintBar";
 import PrintButton from "../components/PrintButton";
 import RefreshButton from "../components/RefreshButton";
@@ -56,7 +57,13 @@ export default function EquipmentDetail() {
           </div>
 
           {selectedAssets.length > 0 && (
-            <BatchPrintBar assets={selectedAssets} onDone={() => setSelected(new Set())} />
+            <BatchPrintBar<SerialNumber>
+              items={selectedAssets}
+              getDisplayName={(a) => a.displayname ?? String(a.id)}
+              renderImage={(a, t) => renderAssetLabelImage(a, t)}
+              sendPrint={(image, t, a) => sendRenderedLabel(image, t, String(a.id))}
+              onDone={() => setSelected(new Set())}
+            />
           )}
 
           <section className="card overflow-hidden">

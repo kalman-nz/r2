@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Equipment } from "../lib/api";
+import { renderEquipmentLabelImage, sendRenderedLabel } from "../lib/print";
 import RefreshButton from "../components/RefreshButton";
+import BatchPrintBar from "../components/BatchPrintBar";
 
 const COLUMNS_STORAGE_KEY = "assets.visibleColumns";
 
@@ -223,6 +225,7 @@ export default function EquipmentList() {
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadVisibleColumns);
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...visibleColumns]));
@@ -294,6 +297,20 @@ export default function EquipmentList() {
   const activeFilterCount =
     (typeFilter !== "all" ? 1 : 0) + (locationFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0) + (lowStockOnly ? 1 : 0);
 
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((i) => String(i.id)))));
+  }
+
+  const selectedEquipment = filtered.filter((i) => selected.has(String(i.id)));
+
   return (
     <div className="w-full flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -362,11 +379,33 @@ export default function EquipmentList() {
         </p>
       )}
 
+      {selectedEquipment.length > 0 && (
+        <BatchPrintBar<Equipment>
+          items={selectedEquipment}
+          getDisplayName={(i) => i.displayname ?? i.name}
+          renderImage={(i, t) => renderEquipmentLabelImage(i, t)}
+          sendPrint={(image, t) => sendRenderedLabel(image, t)}
+          onDone={() => setSelected(new Set())}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-[13px] border-collapse">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="border-b border-gray-200 text-left text-gray-500">
+                <th className="px-3 py-2 w-8">
+                  {filtered.length > 0 && (
+                    <input
+                      type="checkbox"
+                      checked={selected.size > 0 && selected.size === filtered.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selected.size > 0 && selected.size < filtered.length;
+                      }}
+                      onChange={toggleSelectAll}
+                    />
+                  )}
+                </th>
                 {columns.map((c) => (
                   <th
                     key={c.key}
@@ -388,6 +427,13 @@ export default function EquipmentList() {
                   onClick={() => navigate(`/equipment/${item.id}`)}
                   className="hover:bg-gray-50 cursor-pointer"
                 >
+                  <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(String(item.id))}
+                      onChange={() => toggleSelect(String(item.id))}
+                    />
+                  </td>
                   {columns.map((c) => (
                     <td key={c.key} className={`px-3 py-1.5 ${c.align === "right" ? "text-right" : ""}`}>
                       {c.render(item)}
