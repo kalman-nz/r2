@@ -103,7 +103,11 @@ export default function LabelsList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Label templates</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Designs used when printing — shared by everyone on the team.</p>
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={exportAll} disabled={!templates || templates.length === 0} className="btn-secondary">
             Export all

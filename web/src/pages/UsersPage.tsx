@@ -7,7 +7,11 @@ export default function UsersPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Users</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Who can sign in to Rentman+ and print labels.</p>
+        </div>
         <Link to="/users/new" className="btn-primary">
           New user
         </Link>
