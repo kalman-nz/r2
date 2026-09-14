@@ -13,7 +13,7 @@ import UserDetail from "./pages/UserDetail";
 import LoginPage from "./pages/LoginPage";
 import RequireAuth from "./components/RequireAuth";
 import RequireAdmin from "./components/RequireAdmin";
-import ScanInput from "./components/ScanInput";
+import GlobalSearch from "./components/GlobalSearch";
 import { pb, useAuthRecord } from "./lib/pocketbase";
 import { api } from "./lib/api";
 
@@ -133,7 +133,7 @@ function AppShell() {
             {businessName && <span className="text-sm font-medium text-gray-700 truncate">{businessName}</span>}
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <ScanInput />
+            <GlobalSearch />
             <div className="w-7 h-7 rounded-full bg-[#167cfb]/10 text-[#167cfb] text-xs font-semibold flex items-center justify-center shrink-0">
               {(record?.name || record?.email || "?").slice(0, 1).toUpperCase()}
             </div>

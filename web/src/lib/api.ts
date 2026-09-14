@@ -93,6 +93,11 @@ export const api = {
   getAsset: (id: string) => request<SerialNumber & { _lastSubproject: RentmanRecord | null }>(`/api/assets/${id}`),
   searchAssets: (q: string) => request<{ id: string }>(`/api/assets/search?q=${encodeURIComponent(q)}`),
 
+  // Global search across equipment/assets/label templates — see
+  // pocketbase/pb_hooks/routes_search.pb.js.
+  search: (q: string, signal?: AbortSignal) =>
+    request<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`, { signal }),
+
   listEquipment: () => request<RentmanListResponse<Equipment>>("/api/equipment"),
   getEquipment: (id: string) =>
     request<Equipment & { serialNumbers: SerialNumber[]; _folder: RentmanRecord | null }>(`/api/equipment/${id}`),
@@ -159,6 +164,18 @@ export interface UserRecord {
   isAdmin: boolean;
   verified: boolean;
   created: string;
+}
+
+export interface SearchResultItem {
+  id: string;
+  name: string;
+  subtitle: string;
+}
+
+export interface SearchResults {
+  equipment: SearchResultItem[];
+  assets: SearchResultItem[];
+  labels: SearchResultItem[];
 }
 
 export interface EquipmentView {
