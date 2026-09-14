@@ -6,7 +6,6 @@ const TILES: { key: keyof Stats; label: string }[] = [
   { key: "equipmentTypes", label: "Equipment types" },
   { key: "totalStockUnits", label: "Total stock units" },
   { key: "trackedSerials", label: "Tracked serial numbers" },
-  { key: "projects", label: "Projects" },
   { key: "labelTemplates", label: "Label templates" },
   { key: "labelsPrinted", label: "Labels printed" },
   { key: "crewAccounts", label: "Crew accounts" },

@@ -4,11 +4,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import type { ReactNode, SVGProps } from "react";
 import EquipmentList from "./pages/EquipmentList";
 import EquipmentDetail from "./pages/EquipmentDetail";
-import InventoryAuditPage from "./pages/InventoryAuditPage";
 import AssetDetail from "./pages/AssetDetail";
-import ProjectsList from "./pages/ProjectsList";
-import ProjectDetail from "./pages/ProjectDetail";
-import ProjectFinancialsPage from "./pages/ProjectFinancialsPage";
 import SettingsPage from "./pages/SettingsPage";
 import CustomLabelPage from "./pages/CustomLabelPage";
 import LogsPage from "./pages/LogsPage";
@@ -41,21 +37,6 @@ const icons = {
     <Icon>
       <path d="M3 8a2 2 0 0 1 2-2h9l7 6-7 6H5a2 2 0 0 1-2-2V8z" />
       <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
-    </Icon>
-  ),
-  audit: (
-    <Icon>
-      <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z" />
-      <rect x="5" y="6" width="14" height="15" rx="2" />
-      <path d="M9 12.5l1.8 1.8L15 10" />
-    </Icon>
-  ),
-  financials: (
-    <Icon>
-      <path d="M4 19V5" />
-      <rect x="7" y="12" width="3.5" height="7" />
-      <rect x="13" y="8" width="3.5" height="11" />
-      <path d="M4 19h16" />
     </Icon>
   ),
   logs: (
@@ -172,25 +153,7 @@ function AppShell() {
             <Route path="/equipment" element={<EquipmentList />} />
             <Route path="/equipment/:id" element={<EquipmentDetail />} />
             <Route path="/assets/:id" element={<AssetDetail />} />
-            <Route path="/projects" element={<ProjectsList />} />
-            <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/custom-label" element={<CustomLabelPage />} />
-            <Route
-              path="/audit"
-              element={
-                <RequireAdmin>
-                  <InventoryAuditPage />
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/project-financials"
-              element={
-                <RequireAdmin>
-                  <ProjectFinancialsPage />
-                </RequireAdmin>
-              }
-            />
             <Route
               path="/logs"
               element={

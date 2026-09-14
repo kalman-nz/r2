@@ -2,6 +2,12 @@
 // Port of the old server/src/rentman/client.ts — same shape, but built on
 // PocketBase JSVM's $http.send instead of Node's fetch, and sleep() instead
 // of setTimeout for the 429 backoff (JSVM hooks run synchronously, no timers).
+//
+// Only what a label-printing app actually needs is exposed here: equipment,
+// serial numbers, stock locations, folders, and stock movements (for
+// current_quantity) — see lib/sync.js for how these feed the local mirror,
+// and resolveRef for the one live lookup label printing still needs
+// (an asset's current project, resolved on demand — see routes_assets.pb.js).
 
 const BASE_URL = $os.getenv("RENTMAN_BASE_URL") || "https://api.rentman.net";
 const TOKEN = $os.getenv("RENTMAN_API_TOKEN");
@@ -68,10 +74,6 @@ function list(resource) {
   return (params) => rentmanFetch("/" + resource, params);
 }
 
-function item(resource) {
-  return (id) => rentmanFetch("/" + resource + "/" + id).data;
-}
-
 // Rentman caps every list request at 1500 items and cursor-paginates beyond
 // that (next_page_url) — walk every page rather than just the first.
 function listAll(resource) {
@@ -88,27 +90,8 @@ function listAll(resource) {
 }
 
 const rentman = {
-  listEquipment: list("equipment"),
   listAllEquipment: listAll("equipment"),
-  getEquipment: item("equipment"),
-
-  listSerialNumbers: list("serialnumbers"),
   listAllSerialNumbers: listAll("serialnumbers"),
-  getSerialNumber: item("serialnumbers"),
-
-  listProjects: list("projects"),
-  listAllProjects: listAll("projects"),
-  getProject: item("projects"),
-
-  listSubprojects: (projectId) => rentmanFetch("/projects/" + projectId + "/subprojects"),
-  listAllSubprojects: listAll("subprojects"),
-  listAllContacts: listAll("contacts"),
-
-  listProjectEquipment: list("projectequipment"),
-  listAllProjectEquipment: listAll("projectequipment"),
-  listProjectEquipmentGroups: list("projectequipmentgroup"),
-  listAllProjectEquipmentGroups: listAll("projectequipmentgroup"),
-
   listStockLocations: list("stocklocations"),
   listAllFolders: listAll("folders"),
   listAllStockMovements: listAll("stockmovements"),
@@ -129,29 +112,6 @@ function idFromRef(ref) {
   return typeof ref === "string" ? ref.split("/").pop() || null : null;
 }
 
-// Resolves the "/equipment/123" style reference fields Rentman puts on a
-// serial number into the equipment name/code/warehouse location — joins
-// against the full equipment/location/folder lists (bulk-fetched once,
-// cached) instead of resolving each ref with its own request.
-function enrichSerialNumbers(records) {
-  const allEquipment = rentman.listAllEquipment();
-  const allLocations = rentman.listStockLocations();
-  const allFolders = rentman.listAllFolders();
-
-  const equipmentById = new Map(allEquipment.map((e) => [String(e.id), e]));
-  const locationById = new Map(allLocations.data.map((l) => [String(l.id), l]));
-  const folderById = new Map(allFolders.map((f) => [String(f.id), f]));
-
-  return records.map((r) => {
-    const equipment = equipmentById.get(idFromRef(r.equipment) || "") || null;
-    return Object.assign({}, r, {
-      _equipment: equipment,
-      _location: locationById.get(idFromRef(r.asset_location) || "") || null,
-      _folder: folderById.get(idFromRef(equipment ? equipment.folder : null) || "") || null,
-    });
-  });
-}
-
 // The bulk /equipment list never populates current_quantity — sum
 // stockmovements' `amount` entries per equipment instead (matches what the
 // single-item Rentman endpoint returns).
@@ -166,4 +126,4 @@ function quantityByEquipmentId() {
   return quantities;
 }
 
-module.exports = { rentman, clearRentmanCache, idFromRef, enrichSerialNumbers, quantityByEquipmentId };
+module.exports = { rentman, clearRentmanCache, idFromRef, quantityByEquipmentId };

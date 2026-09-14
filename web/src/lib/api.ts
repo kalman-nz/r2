@@ -97,13 +97,6 @@ export const api = {
   getEquipment: (id: string) =>
     request<Equipment & { serialNumbers: SerialNumber[]; _folder: RentmanRecord | null }>(`/api/equipment/${id}`),
 
-  listProjects: () => request<RentmanListResponse>("/api/projects"),
-  getProject: (id: string) => request<RentmanRecord & { subprojects: RentmanRecord[] }>(`/api/projects/${id}`),
-  getProjectEquipment: (id: string) =>
-    request<{ lines: RentmanRecord[]; groups: RentmanRecord[] }>(`/api/projects/${id}/equipment`),
-  listProjectFinancials: () =>
-    request<{ data: ProjectFinancials[]; generatedAt: string }>("/api/projects/financials"),
-
   listLabels: () => request<(LabelTemplateData & { id: string })[]>("/api/labels"),
   getLabel: (id: string) => request<LabelTemplateData & { id: string }>(`/api/labels/${id}`),
   createLabel: (template: LabelTemplateData) =>
@@ -146,30 +139,6 @@ export const api = {
   getUserActivity: (id: string) => request<UserActivity>(`/api/users/${id}/activity`),
 };
 
-export interface ProjectDiscount {
-  subproject: string;
-  type: string;
-  /** Percentage points (10 === 10%) — present for percentage discounts. */
-  percent?: number;
-  /** Currency amount — present for a fixed-amount discount. */
-  amount?: number;
-}
-
-export interface ProjectFinancials {
-  id: number;
-  name: string;
-  number: number | null;
-  reference: string;
-  customer: string | null;
-  periodStart: string | null;
-  subprojectCount: number;
-  totalPrice: number;
-  hasDiscount: boolean;
-  /** Best-effort estimate of the currency value removed by discounts (Rentman exposes no discount-amount field). */
-  discountValue: number;
-  discounts: ProjectDiscount[];
-}
-
 export interface UserActivity {
   stats: { prints: number; logins: number; pageViews: number };
   recent: LogEntry[];
@@ -194,7 +163,6 @@ export interface Stats {
   equipmentTypes: number;
   totalStockUnits: number;
   trackedSerials: number;
-  projects: number;
   labelTemplates: number;
   labelsPrinted: number;
   crewAccounts: number;
@@ -207,14 +175,4 @@ export interface LogEntry {
   timestamp: string;
   summary: string;
   details: Record<string, unknown>;
-}
-
-// Best-effort helpers for reading Rentman's loosely-typed records — field
-// names get tightened once we confirm the real shape against a live token.
-export function pick(record: RentmanRecord, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = record[key];
-    if (value !== undefined && value !== null && value !== "") return String(value);
-  }
-  return "—";
 }

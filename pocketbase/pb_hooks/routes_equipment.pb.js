@@ -2,6 +2,12 @@
 // Each handler does its own require() at the top of its own function body —
 // see routes_assets.pb.js for why (route handlers don't retain a closure
 // over anything outside their own body at request time).
+//
+// Reads come from the local rm_equipment/rm_serialnumbers/rm_folders
+// mirror (lib/mirror.js), kept current by lib/sync.js — not from Rentman
+// directly, so these are instant regardless of how slow Rentman's API is.
+// See routes_sync.pb.js / cron_sync.pb.js / routes_webhook_rentman.pb.js
+// for how the mirror gets refreshed.
 
 // The workshop thinks in equipment *types* first ("14-35 1000W PACIFIC", 8 in
 // stock) and drills into individual serials second — this is the primary
@@ -10,19 +16,11 @@ routerAdd(
   "GET",
   "/api/equipment",
   (e) => {
-    const { rentman, quantityByEquipmentId } = require(`${__hooks}/lib/rentman.js`);
-    // Rentman's /equipment list includes archived items — the workshop only
-    // cares about live stock, so drop them here (the single-item route below
-    // still resolves an archived id if something links straight to it).
-    const data = rentman.listAllEquipment().filter((eq) => !eq.in_archive);
-    const quantities = quantityByEquipmentId();
-    return e.json(200, {
-      data: data.map((eq) =>
-        Object.assign({}, eq, {
-          current_quantity: eq.current_quantity != null ? eq.current_quantity : quantities.get(String(eq.id)) || 0,
-        }),
-      ),
-    });
+    const { allData } = require(`${__hooks}/lib/mirror.js`);
+    // The mirror includes archived items (so /api/equipment/{id} below can
+    // still resolve one) — the workshop only cares about live stock here.
+    const data = allData($app, "rm_equipment").filter((eq) => !eq.in_archive);
+    return e.json(200, { data: data });
   },
   $apis.requireAuth(),
 );
@@ -31,23 +29,24 @@ routerAdd(
   "GET",
   "/api/equipment/{id}",
   (e) => {
-    const { rentman, idFromRef, enrichSerialNumbers, quantityByEquipmentId } = require(`${__hooks}/lib/rentman.js`);
+    const { dataById, allData } = require(`${__hooks}/lib/mirror.js`);
+    const { idFromRef, enrichSerialNumbersLocal } = require(`${__hooks}/lib/enrich.js`);
     const id = e.request.pathValue("id");
-    const allEquipment = rentman.listAllEquipment();
-    const allSerials = rentman.listAllSerialNumbers();
-    const allFolders = rentman.listAllFolders();
-    const quantities = quantityByEquipmentId();
 
-    const equipment = allEquipment.find((eq) => String(eq.id) === id);
+    const equipment = dataById($app, "rm_equipment", id);
     if (!equipment) throw new NotFoundError("Equipment not found");
 
+    const allSerials = allData($app, "rm_serialnumbers");
+    const allFolders = allData($app, "rm_folders");
+    const allLocations = allData($app, "rm_stocklocations");
+    const allEquipment = allData($app, "rm_equipment");
     const serials = allSerials.filter((s) => idFromRef(s.equipment) === id);
     const folder = allFolders.find((f) => String(f.id) === idFromRef(equipment.folder));
+
     return e.json(
       200,
       Object.assign({}, equipment, {
-        current_quantity: equipment.current_quantity != null ? equipment.current_quantity : quantities.get(id) || 0,
-        serialNumbers: enrichSerialNumbers(serials),
+        serialNumbers: enrichSerialNumbersLocal(allEquipment, allLocations, allFolders, serials),
         _folder: folder || null,
       }),
     );

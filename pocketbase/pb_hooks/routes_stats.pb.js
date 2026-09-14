@@ -8,24 +8,17 @@ routerAdd(
   "GET",
   "/api/stats",
   (e) => {
-    const { rentman, quantityByEquipmentId } = require(`${__hooks}/lib/rentman.js`);
-    const equipment = rentman.listAllEquipment();
-    const serials = rentman.listAllSerialNumbers();
-    const quantities = quantityByEquipmentId();
-    // Same 1500-item cap as GET /api/projects — fine for a headline count.
-    const projects = rentman.listProjects({ limit: 1500 });
+    const { allData } = require(`${__hooks}/lib/mirror.js`);
+    const equipment = allData($app, "rm_equipment");
+    const serials = allData($app, "rm_serialnumbers");
     const templates = $app.findAllRecords("label_templates");
     const labelsPrinted = $app.findRecordsByFilter("logs", 'type = "print"', "", 0, 0);
     const users = $app.findAllRecords("users");
 
     const stats = {
       equipmentTypes: equipment.length,
-      totalStockUnits: equipment.reduce(
-        (sum, eq) => sum + (typeof eq.current_quantity === "number" ? eq.current_quantity : quantities.get(String(eq.id)) || 0),
-        0,
-      ),
+      totalStockUnits: equipment.reduce((sum, eq) => sum + (eq.current_quantity || 0), 0),
       trackedSerials: serials.length,
-      projects: projects.data.length,
       labelTemplates: templates.length,
       labelsPrinted: labelsPrinted.length,
       crewAccounts: users.length,
