@@ -63,6 +63,20 @@ function syncSerialNumbers(app) {
   return all.length;
 }
 
+// Custom field *definitions* (Rentman calls them "extra input fields") —
+// not the per-item custom values themselves (those already ride along
+// inside each equipment/serialnumber's own `custom` object, synced above).
+// This is what lets the label designer show a real field name instead of
+// the raw "custom_12" key — see routes_custom_fields.pb.js.
+function syncExtraInputFields(app) {
+  const { rentman } = require(`${__hooks}/lib/rentman.js`);
+  const { upsert, removeMissing } = require(`${__hooks}/lib/mirror.js`);
+  const all = rentman.listAllExtraInputFields();
+  for (const row of all) upsert(app, "rm_extrainputfields", row.id, row);
+  removeMissing(app, "rm_extrainputfields", all.map((r) => r.id));
+  return all.length;
+}
+
 // Order matters a little: equipment needs a fresh stockmovements pull for
 // quantities, and everything else is independent — cheapest/most-likely-to-
 // fail-fast resources first so a slow Rentman outage is caught quickly.
@@ -77,6 +91,7 @@ function syncAll(app) {
       folders: syncFolders(app),
       equipment: syncEquipment(app),
       serialnumbers: syncSerialNumbers(app),
+      extrainputfields: syncExtraInputFields(app),
     };
     setSyncState(app, "lastSyncedAt", new Date().toISOString());
     setSyncState(app, "lastSyncError", "");
@@ -94,6 +109,7 @@ const RESOURCE_SYNCERS = {
   serialnumbers: syncSerialNumbers,
   stocklocations: syncStockLocations,
   folders: syncFolders,
+  extrainputfields: syncExtraInputFields,
 };
 
 // Rentman's exact webhook payload shape isn't confirmed yet — their docs
@@ -134,4 +150,5 @@ module.exports = {
   syncFolders,
   syncEquipment,
   syncSerialNumbers,
+  syncExtraInputFields,
 };

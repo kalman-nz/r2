@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { renderLabelToCanvas } from "../lib/renderLabel";
 import { trimWhitespace } from "../lib/imageTrim";
@@ -12,7 +13,6 @@ import {
   SAMPLE_CONTEXT,
   SIZE_PRESETS,
   TAPE_WIDTHS,
-  type DataFieldKey,
   type ElementType,
   type LabelElement,
 } from "../lib/labelSpec";
@@ -77,6 +77,7 @@ export default function LabelEditor() {
   const isNew = id === "new";
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { data: customFields = [] } = useQuery({ queryKey: ["customFields"], queryFn: api.listCustomFields });
 
   const [name, setName] = useState("New template");
   const [widthMm, setWidthMm] = useState(62);
@@ -95,10 +96,18 @@ export default function LabelEditor() {
     });
   }, [id, isNew]);
 
+  // Custom fields have no real value to preview with until an actual
+  // asset/equipment is printed — a generic placeholder is enough to show
+  // "yes, something will render here" while designing.
+  const previewContext = useMemo(
+    () => ({ ...SAMPLE_CONTEXT, ...Object.fromEntries(customFields.map((f) => [f.key, `Sample ${f.label}`])) }),
+    [customFields],
+  );
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     let cancelled = false;
-    renderLabelToCanvas({ widthMm, heightMm, elements }, SAMPLE_CONTEXT, EDITOR_SCALE).then((rendered) => {
+    renderLabelToCanvas({ widthMm, heightMm, elements }, previewContext, EDITOR_SCALE).then((rendered) => {
       const canvas = canvasRef.current;
       if (!canvas || cancelled) return;
       canvas.width = rendered.width;
@@ -108,7 +117,7 @@ export default function LabelEditor() {
     return () => {
       cancelled = true;
     };
-  }, [widthMm, heightMm, elements]);
+  }, [widthMm, heightMm, elements, previewContext]);
 
   const dragRef = useRef<DragState | null>(null);
   const addImageInputRef = useRef<HTMLInputElement>(null);
@@ -414,7 +423,7 @@ export default function LabelEditor() {
                   <span className="text-gray-500">Data field</span>
                   <select
                     value={selected.dataField}
-                    onChange={(e) => updateSelected({ dataField: e.target.value as DataFieldKey })}
+                    onChange={(e) => updateSelected({ dataField: e.target.value })}
                     className="input py-1"
                   >
                     {DATA_FIELDS.map((f) => (
@@ -422,6 +431,15 @@ export default function LabelEditor() {
                         {f.label}
                       </option>
                     ))}
+                    {customFields.length > 0 && (
+                      <optgroup label="Custom fields">
+                        {customFields.map((f) => (
+                          <option key={f.key} value={f.key}>
+                            {f.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </label>
               )}

@@ -9,7 +9,7 @@ export interface LabelElement {
   y: number; // mm from top
   width: number; // mm
   height: number; // mm
-  dataField?: DataFieldKey; // text/barcode/qr
+  dataField?: string; // text/barcode/qr — a DataFieldKey, or a "custom_<id>" account custom field (see CustomFieldDef in lib/api.ts)
   text?: string; // literal content, staticText only
   fontSize?: number; // mm-ish character height, text/staticText only
   bold?: boolean;
@@ -131,7 +131,25 @@ export const DATA_FIELDS: { key: DataFieldKey; label: string }[] = [
   { key: "project", label: "Current project" },
 ];
 
-export type LabelDataContext = Record<DataFieldKey, string>;
+// A plain string-keyed map rather than Record<DataFieldKey, string> — a
+// dataField can also be a "custom_<id>" account custom field (dynamic,
+// account-specific, not part of the fixed DataFieldKey union). Every
+// DATA_FIELDS/SAMPLE_CONTEXT object below still satisfies this structurally.
+export type LabelDataContext = Record<string, string>;
+
+// Rentman custom field values arrive typed (string/number/boolean/null) —
+// stringified the same way the fixed fields already are (e.g. `active`,
+// `sealed` render as "Yes"/"No" rather than true/false).
+export function normalizeCustomFields(custom: Record<string, unknown> | null | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!custom) return result;
+  for (const [key, value] of Object.entries(custom)) {
+    if (value == null) result[key] = "";
+    else if (typeof value === "boolean") result[key] = value ? "Yes" : "No";
+    else result[key] = String(value);
+  }
+  return result;
+}
 
 // Placeholder values the designer renders with when there's no real asset
 // in hand yet (i.e. whenever you're just building/editing a template).
@@ -267,6 +285,11 @@ export function buildLabelContext(asset: SerialNumber & { _lastSubproject?: Rent
     project: asset._lastSubproject
       ? ((asset._lastSubproject.displayname as string) ?? (asset._lastSubproject.name as string) ?? "")
       : "",
+    // Custom field ids are unique account-wide regardless of which item
+    // type they're defined on, so equipment-level and serial-level custom
+    // values never collide sharing this one flat namespace.
+    ...normalizeCustomFields(asset._equipment?.custom as Record<string, unknown> | undefined),
+    ...normalizeCustomFields(asset.custom),
   };
 }
 
@@ -303,6 +326,7 @@ export function buildEquipmentLabelContext(equipment: Equipment & { _folder?: Re
       "",
     location: "",
     project: "",
+    ...normalizeCustomFields(equipment.custom),
   };
 }
 

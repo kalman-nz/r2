@@ -8,7 +8,6 @@ import {
   SAMPLE_CONTEXT,
   SIZE_PRESETS,
   TAPE_WIDTHS,
-  type DataFieldKey,
   type LabelDataContext,
   type LabelTemplateData,
 } from "../lib/labelSpec";
@@ -147,24 +146,35 @@ function BigTextMode() {
   );
 }
 
-function usedDataFields(template: LabelTemplateData): DataFieldKey[] {
-  const keys = new Set<DataFieldKey>();
+// Every dataField a template actually uses, in first-used order — not
+// filtered against DATA_FIELDS, since a template can reference an account
+// custom field ("custom_12") that isn't in that fixed list.
+function usedDataFields(template: LabelTemplateData): string[] {
+  const keys: string[] = [];
   for (const el of template.elements) {
-    if (el.dataField) keys.add(el.dataField);
+    if (el.dataField && !keys.includes(el.dataField)) keys.push(el.dataField);
   }
-  return DATA_FIELDS.filter((f) => keys.has(f.key)).map((f) => f.key);
+  return keys;
 }
 
 const EMPTY_CONTEXT: LabelDataContext = Object.fromEntries(DATA_FIELDS.map((f) => [f.key, ""])) as LabelDataContext;
 
 function FromTemplateMode() {
   const { data: templates } = useQuery({ queryKey: ["labels"], queryFn: api.listLabels });
+  const { data: customFields = [] } = useQuery({ queryKey: ["customFields"], queryFn: api.listCustomFields });
   const [templateId, setTemplateId] = useState("");
-  const [fieldValues, setFieldValues] = useState<Partial<LabelDataContext>>({});
+  const [fieldValues, setFieldValues] = useState<LabelDataContext>({});
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { showToast } = useToast();
+
+  const fieldLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of DATA_FIELDS) map.set(f.key, f.label);
+    for (const f of customFields) map.set(f.key, f.label);
+    return (key: string) => map.get(key) ?? key;
+  }, [customFields]);
 
   const template = templates?.find((t) => t.id === templateId);
   const fields = useMemo(() => (template ? usedDataFields(template) : []), [template]);
@@ -227,7 +237,7 @@ function FromTemplateMode() {
           {fields.length > 0 && (
             <div className="flex flex-col gap-3 card p-3">
               {fields.map((key) => {
-                const label = DATA_FIELDS.find((f) => f.key === key)?.label ?? key;
+                const label = fieldLabel(key);
                 return (
                   <div key={key} className="flex flex-col gap-1">
                     <label htmlFor={`field-${key}`} className="text-sm text-gray-500">

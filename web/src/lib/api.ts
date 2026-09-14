@@ -48,6 +48,9 @@ export interface SerialNumber extends RentmanRecord {
   purchase_costs: number;
   current_book_value: number;
   sealed: boolean;
+  // Account-specific custom fields, keyed "custom_<id>" — see
+  // pocketbase/pb_hooks/routes_custom_fields.pb.js for the id -> name map.
+  custom?: Record<string, unknown>;
   _equipment: RentmanRecord | null;
   _location: RentmanRecord | null;
   _folder: RentmanRecord | null;
@@ -86,6 +89,7 @@ export interface Equipment extends RentmanRecord {
   country_of_origin: string;
   in_archive: boolean;
   folder: string | null;
+  custom?: Record<string, unknown>;
 }
 
 export const api = {
@@ -136,6 +140,10 @@ export const api = {
   logEvent: (type: string, details?: Record<string, unknown>) =>
     request<LogEntry>("/api/activity", { method: "POST", body: JSON.stringify({ type, details }) }),
 
+  // Account-specific custom fields defined in Rentman — see
+  // pocketbase/pb_hooks/routes_custom_fields.pb.js.
+  listCustomFields: () => request<CustomFieldDef[]>("/api/custom-fields"),
+
   listEquipmentViews: () => request<EquipmentView[]>("/api/equipment-views"),
   createEquipmentView: (data: EquipmentViewInput) =>
     request<EquipmentView>("/api/equipment-views", { method: "POST", body: JSON.stringify(data) }),
@@ -164,6 +172,12 @@ export interface UserRecord {
   isAdmin: boolean;
   verified: boolean;
   created: string;
+}
+
+export interface CustomFieldDef {
+  key: string;
+  label: string;
+  appliesTo: "equipment" | "asset";
 }
 
 export interface SearchResultItem {

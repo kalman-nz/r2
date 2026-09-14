@@ -95,6 +95,12 @@ const rentman = {
   listStockLocations: list("stocklocations"),
   listAllFolders: listAll("folders"),
   listAllStockMovements: listAll("stockmovements"),
+  // Custom field *definitions* — the account's own extra fields, each
+  // showing up as "custom_<id>" in an equipment/serialnumber's `custom`
+  // object. See lib/sync.js's syncExtraInputFields and
+  // routes_custom_fields.pb.js for how this turns into label-designer
+  // field picker options.
+  listAllExtraInputFields: listAll("extrainputfields"),
 
   // Rentman relates records by path-style references, e.g. an equipment
   // field like "/equipment/2989" rather than an embedded object or bare id.
