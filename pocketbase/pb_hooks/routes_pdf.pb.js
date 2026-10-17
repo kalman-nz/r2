@@ -43,6 +43,7 @@ routerAdd(
     const pdf = renderPdf("packing", {
       businessName: settings.businessName,
       job: summary.job,
+      periods: summary.periods,
       lines: summary.lines,
       packing: summary.packing,
       timezone: settings.timezone,

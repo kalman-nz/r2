@@ -168,10 +168,15 @@ export interface Job extends RecordModel {
   status: JobStatus;
   client: string;
   venue: string;
+  // Derived from the schedule (pb_hooks/lib/periods.js): kit booked over
+  // the usage periods, the project over everything, billing over the
+  // billing periods.
   prepAt: string;
-  showStart: string;
-  showEnd: string;
   returnAt: string;
+  startAt: string;
+  endAt: string;
+  billingStart: string;
+  billingEnd: string;
   chargeDays: number;
   discountPct: number;
   reference: string;
@@ -267,10 +272,15 @@ export interface JobInfo {
   status: JobStatus;
   client: string;
   venue: string;
+  // Derived from the schedule (pb_hooks/lib/periods.js): kit booked over
+  // the usage periods, the project over everything, billing over the
+  // billing periods.
   prepAt: string;
-  showStart: string;
-  showEnd: string;
   returnAt: string;
+  startAt: string;
+  endAt: string;
+  billingStart: string;
+  billingEnd: string;
   chargeDays: number;
   discountPct: number;
   reference: string;
@@ -304,7 +314,7 @@ export interface JobTotals {
 
 export interface JobPricing {
   days: number;
-  basis: "override" | "show" | "hire";
+  basis: "override" | "billing" | "hire";
   factor: number;
   gstRate: number;
   discountPct: number;
@@ -322,8 +332,22 @@ export interface QuoteSummary {
   validUntil: string;
 }
 
+export type PeriodKind = "usage" | "billing" | "other";
+
+// A line in a project's schedule (job_periods). The job's date fields are
+// derived from these on the server (pb_hooks/lib/periods.js).
+export interface JobPeriod {
+  id: string;
+  kind: PeriodKind;
+  name: string;
+  start: string;
+  end: string;
+  notes: string;
+}
+
 export interface JobSummary {
   job: JobInfo;
+  periods: JobPeriod[];
   lines: JobLineView[];
   packing: { items: PackingItem[]; packed: boolean; allBack: boolean; scanCount: number };
   includesPrices: boolean;
@@ -353,9 +377,12 @@ export interface QuoteSnapshot {
     name: string;
     reference: string;
     prepAt: string;
-    showStart: string;
-    showEnd: string;
     returnAt: string;
+    billingStart?: string;
+    billingEnd?: string;
+    // Quotes issued before schedules (migration 0025)
+    showStart?: string;
+    showEnd?: string;
     quoteNotes: string;
   };
   client: ContactInfo | null;

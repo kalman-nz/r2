@@ -9,8 +9,6 @@ const job = {
   status: "provisional",
   start: Date.UTC(2026, 9, 19, 9, 0),
   end: Date.UTC(2026, 9, 21, 12, 0),
-  showStart: NaN,
-  showEnd: NaN,
   client: "Kōwhai Events",
   venue: "Town Hall\nStage door",
   updated: Date.UTC(2026, 9, 16, 1, 2, 3),
@@ -50,4 +48,16 @@ test("confirmed jobs aren't labelled, and the calendar can be empty", () => {
   assert.match(ics, /SUMMARY:#1042 Gala\\; dinner\\, upstairs\r\n/);
   assert.match(ics, /STATUS:CONFIRMED/);
   assert.doesNotMatch(buildIcs([], "Demo", 0), /VEVENT/);
+});
+
+test("the schedule goes in the description, in UTC", () => {
+  const withSchedule = {
+    ...job,
+    periods: [
+      { kind: "other", name: "Pack in, dock B", start: Date.UTC(2026, 9, 19, 9, 0), end: Date.UTC(2026, 9, 19, 12, 0) },
+      { kind: "billing", name: "Show", start: Date.UTC(2026, 9, 20, 6, 0), end: Date.UTC(2026, 9, 20, 10, 30) },
+    ],
+  };
+  const unfolded = buildIcs([withSchedule], "Demo", Date.UTC(2026, 9, 16)).replace(/\r\n /g, "");
+  assert.match(unfolded, /Schedule \(UTC\):\\nPack in\\, dock B: 2026-10-19 09:00 to 2026-10-19 12:00\\nShow \(billed\): 2026-10-20 06:00 to 2026-10-20 10:30/);
 });

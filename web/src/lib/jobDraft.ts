@@ -10,9 +10,11 @@ export interface JobDraft {
   venue: string;
   // datetime-local strings in the browser's time zone
   prepAt: string;
-  showStart: string;
-  showEnd: string;
   returnAt: string;
+  // Only used when creating, to seed the first billing period ("" = the
+  // same as prep → return).
+  billingStart: string;
+  billingEnd: string;
   reference: string;
   discountPct: number;
   chargeDays: number;
@@ -27,9 +29,9 @@ export function draftFromJob(job: JobInfo): JobDraft {
     client: job.client,
     venue: job.venue,
     prepAt: toLocalInput(job.prepAt),
-    showStart: toLocalInput(job.showStart),
-    showEnd: toLocalInput(job.showEnd),
     returnAt: toLocalInput(job.returnAt),
+    billingStart: toLocalInput(job.billingStart),
+    billingEnd: toLocalInput(job.billingEnd),
     reference: job.reference,
     discountPct: job.discountPct,
     chargeDays: job.chargeDays,
@@ -53,9 +55,9 @@ export function newJobDraft(): JobDraft {
     client: "",
     venue: "",
     prepAt: toLocalInput(prep.toISOString()),
-    showStart: "",
-    showEnd: "",
     returnAt: toLocalInput(ret.toISOString()),
+    billingStart: "",
+    billingEnd: "",
     reference: "",
     discountPct: 0,
     chargeDays: 0,
@@ -64,13 +66,21 @@ export function newJobDraft(): JobDraft {
   };
 }
 
+// Creating sends the dates, which become the project's first usage and
+// billing periods; updating never does (the server refuses: dates come from the
+// schedule).
+export function draftToUpdate(d: JobDraft) {
+  const { prepAt: _p, returnAt: _r, billingStart: _bs, billingEnd: _be, ...rest } = d;
+  return { ...rest, name: d.name.trim() };
+}
+
 export function draftToPayload(d: JobDraft) {
   return {
     ...d,
     name: d.name.trim(),
     prepAt: fromLocalInput(d.prepAt),
-    showStart: fromLocalInput(d.showStart),
-    showEnd: fromLocalInput(d.showEnd),
     returnAt: fromLocalInput(d.returnAt),
+    billingStart: fromLocalInput(d.billingStart),
+    billingEnd: fromLocalInput(d.billingEnd),
   };
 }

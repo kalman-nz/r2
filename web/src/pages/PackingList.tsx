@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type JobLineView } from "../lib/api";
-import { formatDateTime, formatRange } from "../lib/format";
+import { formatDateTime, formatPeriod } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { useToast } from "../components/ToastProvider";
@@ -77,18 +77,39 @@ export default function PackingList() {
           <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
             <JobStatusBadge status={job.status} />
             <p>
-              <span className="text-gray-500">Prep</span> {formatDateTime(job.prepAt)}
+              <span className="text-gray-500">Out</span> {formatDateTime(job.prepAt)}
             </p>
-            {job.showStart && (
-              <p>
-                <span className="text-gray-500">Show</span> {formatRange(job.showStart, job.showEnd)}
-              </p>
-            )}
             <p>
               <span className="text-gray-500">Back</span> {formatDateTime(job.returnAt)}
             </p>
           </div>
         </header>
+
+        {summary.periods.length > 0 && (
+          <section className="flex flex-col gap-1">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Schedule</h2>
+            <table className="w-full border-collapse">
+              <tbody>
+                {[...summary.periods]
+                  .sort((a, b) => a.start.localeCompare(b.start))
+                  .map((p) => (
+                    <tr key={p.id} className="border-b border-gray-100 align-top">
+                      <td className="py-1 pr-3 w-48 font-medium">
+                        {p.name}
+                        {p.kind !== "other" && (
+                          <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                            {p.kind === "usage" ? "Kit booked" : "Billed"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{formatPeriod(p.start, p.end)}</td>
+                      <td className="py-1 text-gray-600">{p.notes}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <table className="w-full border-collapse">
           <thead>

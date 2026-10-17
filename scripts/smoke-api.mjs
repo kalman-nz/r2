@@ -330,8 +330,8 @@ const jobA = await planner.create("jobs", {
   client: client.id,
   venue: venue.id,
   prepAt: "2030-03-01 08:00:00Z",
-  showStart: "2030-03-02 08:00:00Z",
-  showEnd: "2030-03-03 20:00:00Z",
+  billingStart: "2030-03-02 08:00:00Z",
+  billingEnd: "2030-03-03 20:00:00Z",
   returnAt: "2030-03-04 12:00:00Z",
 });
 assert.equal(jobA.number, 1001);
@@ -343,6 +343,36 @@ const jobB = await planner.create("jobs", {
 });
 assert.equal(jobB.number, jobA.number + 1);
 log(`jobs #${jobA.number} and #${jobB.number}, numbered in order, dates validated`);
+
+// --- schedule ---
+const periodsOf = async (job) =>
+  (await planner.ok("GET", `/api/collections/job_periods/records?sort=start&filter=${encodeURIComponent(`job = "${job.id}"`)}`)).items;
+const jobRecord = (job) => planner.ok("GET", `/api/collections/jobs/records/${job.id}`);
+const seeded = await periodsOf(jobA);
+assert.deepEqual(seeded.map((p) => p.kind).sort(), ["billing", "usage"], "a new project starts with a usage and a billing period");
+const [usageA, billingA] = ["usage", "billing"].map((k) => seeded.find((p) => p.kind === k));
+assert.equal(billingA.start, "2030-03-02 08:00:00.000Z", "billed over the dates given at creation");
+await planner.fails("PATCH", `/api/collections/jobs/records/${jobA.id}`, { prepAt: "2030-02-01 08:00:00Z" }, 400, /schedule/);
+await planner.fails("DELETE", `/api/collections/job_periods/records/${usageA.id}`, null, 400, /at least one usage period/);
+await planner.fails("PATCH", `/api/collections/job_periods/records/${billingA.id}`, { kind: "other" }, 400, /at least one billing period/);
+const crewCall = await planner.create("job_periods", { job: jobA.id, kind: "other", name: "Crew call: riggers", start: "2030-02-28 20:00:00Z", end: "2030-03-01 04:00:00Z" });
+const showDay2 = await planner.create("job_periods", { job: jobA.id, kind: "billing", name: "Encore", start: "2030-03-03 18:00:00Z", end: "2030-03-03 22:00:00Z" });
+let derived = await jobRecord(jobA);
+assert.equal(derived.startAt, "2030-02-28 20:00:00.000Z", "the project starts at its earliest period");
+assert.equal(derived.prepAt, "2030-03-01 08:00:00.000Z", "a crew call doesn't book the kit");
+assert.equal(derived.billingEnd, "2030-03-03 22:00:00.000Z");
+const charged = (await planner.ok("GET", `/api/jobs/${jobA.id}/summary`)).pricing;
+assert.equal(charged.basis, "billing");
+assert.equal(charged.days, 2, "overlapping billing periods count once");
+await planner.fails("POST", "/api/collections/job_periods/records", { org: orgA, job: jobA.id, kind: "other", name: "x", start: "2030-03-02 10:00:00Z", end: "2030-03-02 09:00:00Z" }, 400, /end after it starts/);
+await tech.fails("POST", "/api/collections/job_periods/records", { org: orgA, job: jobA.id, kind: "other", name: "x", start: "2030-03-02 10:00:00Z", end: "2030-03-02 11:00:00Z" }, 400);
+await bossB.fails("POST", "/api/collections/job_periods/records", { org: orgB, job: jobA.id, kind: "other", name: "x", start: "2030-03-02 10:00:00Z", end: "2030-03-02 11:00:00Z" }, 400, /another organisation/);
+await planner.ok("DELETE", `/api/collections/job_periods/records/${crewCall.id}`);
+await planner.ok("DELETE", `/api/collections/job_periods/records/${showDay2.id}`);
+derived = await jobRecord(jobA);
+assert.equal(derived.startAt, "2030-03-01 08:00:00.000Z", "removing periods shrinks the project back");
+assert.equal(derived.billingEnd, "2030-03-03 20:00:00.000Z");
+log("the schedule: usage books the kit, billing sets the charge, both always kept, only the project's own planners can change it");
 
 // --- isolation ---
 const listed = await planner.ok("GET", `/api/collections/items/records?perPage=200&filter=${encodeURIComponent(`name ~ "${run}"`)}`);

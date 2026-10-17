@@ -44,6 +44,26 @@ export function formatRange(start: string | null | undefined, end: string | null
   return `${formatDateTime(start)} → ${formatDateTime(end)}`;
 }
 
+// A schedule period: "Fri 16 Oct, 8:00 am – 12:00 pm" on one day, the full
+// range across days.
+export function formatPeriod(start: string | null | undefined, end: string | null | undefined): string {
+  const a = parseDate(start);
+  const b = parseDate(end);
+  if (!a || !b) return formatRange(start, end);
+  return a.toDateString() === b.toDateString() ? `${formatDateTime(start)} – ${formatTime(end)}` : formatRange(start, end);
+}
+
+// "45 min", "4 h", "1 d 4 h"
+export function formatDuration(ms: number): string {
+  if (!(ms > 0)) return "";
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes} min`;
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  return [days && `${days} d`, hours && `${hours} h`, !days && mins && `${mins} min`].filter(Boolean).join(" ");
+}
+
 // <input type="datetime-local"> works in the browser's local time with no
 // zone ("2026-10-16T09:30"); these convert to/from the UTC PocketBase stores.
 export function toLocalInput(value: string | null | undefined): string {

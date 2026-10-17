@@ -29,6 +29,21 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
     for (const r of $app.findRecordsByIds(collection, ids.filter(Boolean))) if (r) map[r.id] = r.getString("name");
     return map;
   };
+  const periodsByJob = {};
+  if (jobs.length > 0) {
+    const periods = $app.findRecordsByFilter(
+      "job_periods",
+      "org = {:org} && end >= {:from} && start <= {:to}",
+      "start",
+      0,
+      0,
+      { org: org, from: toPbDate(now - 60 * DAY_MS), to: toPbDate(now + 400 * DAY_MS) },
+    );
+    for (const p of periods) {
+      const list = (periodsByJob[p.getString("job")] = periodsByJob[p.getString("job")] || []);
+      list.push({ kind: p.getString("kind"), name: p.getString("name"), start: toMs(p.getString("start")), end: toMs(p.getString("end")) });
+    }
+  }
   const clients = names("contacts", jobs.map((j) => j.getString("client")));
   const venues = names("venues", jobs.map((j) => j.getString("venue")));
   const proto = e.request.header.get("X-Forwarded-Proto") || (e.request.tls ? "https" : "http");
@@ -43,12 +58,11 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
       status: j.getString("status"),
       start: toMs(j.getString("prepAt")),
       end: toMs(j.getString("returnAt")),
-      showStart: toMs(j.getString("showStart")),
-      showEnd: toMs(j.getString("showEnd")),
       client: clients[j.getString("client")] || "",
       venue: venues[j.getString("venue")] || "",
       updated: toMs(j.getString("updated")),
       url: base + "/projects/" + j.id,
+      periods: periodsByJob[j.id] || [],
     })),
     (settings.businessShortName || settings.businessName || "R2") + " projects",
     now,

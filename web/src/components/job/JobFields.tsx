@@ -11,10 +11,13 @@ export default function JobFields({
   draft,
   onChange,
   readOnly,
+  withDates = false,
 }: {
   draft: JobDraft;
   onChange: (draft: JobDraft) => void;
   readOnly: boolean;
+  // Only when creating: after that the dates come from the Schedule tab.
+  withDates?: boolean;
 }) {
   const can = useCan();
   const { data: contacts = [] } = useContacts();
@@ -71,36 +74,28 @@ export default function JobFields({
       <Field label="Client reference" hint="Their PO number, if they have one">
         <input value={draft.reference} onChange={(e) => set("reference", e.target.value)} disabled={readOnly} className="input py-2" />
       </Field>
-      <Field label="Prep" hint="Kit is held from here">
-        <input type="datetime-local" value={draft.prepAt} onChange={(e) => set("prepAt", e.target.value)} disabled={readOnly} className="input py-2" />
-      </Field>
-      <Field label="Return" hint="Kit is held until it's back, plus turnaround">
-        <input
-          type="datetime-local"
-          value={draft.returnAt}
-          onChange={(e) => set("returnAt", e.target.value)}
-          disabled={readOnly}
-          className="input py-2"
-        />
-      </Field>
-      <Field label="Show start" hint="Leave the show dates empty for a dry hire">
-        <input
-          type="datetime-local"
-          value={draft.showStart}
-          onChange={(e) => set("showStart", e.target.value)}
-          disabled={readOnly}
-          className="input py-2"
-        />
-      </Field>
-      <Field label="Show end">
-        <input type="datetime-local" value={draft.showEnd} onChange={(e) => set("showEnd", e.target.value)} disabled={readOnly} className="input py-2" />
-      </Field>
+      {withDates && (
+        <>
+          <Field label="Equipment booked from" hint="The usage period: the kit is unavailable to other projects from here">
+            <input type="datetime-local" value={draft.prepAt} onChange={(e) => set("prepAt", e.target.value)} className="input py-2" />
+          </Field>
+          <Field label="Equipment booked until" hint="Plus the turnaround buffer">
+            <input type="datetime-local" value={draft.returnAt} onChange={(e) => set("returnAt", e.target.value)} className="input py-2" />
+          </Field>
+          <Field label="Billed from" hint="The billing period. Leave empty to charge for the whole booking">
+            <input type="datetime-local" value={draft.billingStart} onChange={(e) => set("billingStart", e.target.value)} className="input py-2" />
+          </Field>
+          <Field label="Billed until" hint="Add more billing periods, crew calls and the rest on the Schedule tab">
+            <input type="datetime-local" value={draft.billingEnd} onChange={(e) => set("billingEnd", e.target.value)} className="input py-2" />
+          </Field>
+        </>
+      )}
       {!readOnly && (
         <>
           <Field label="Project discount (%)" hint="Applied after any line discounts">
             <NumberInput value={draft.discountPct} min={0} max={100} onChange={(n) => set("discountPct", n)} className="input py-2" />
           </Field>
-          <Field label="Charge for days" hint="0 = work it out from the show dates (or prep → return)">
+          <Field label="Charge for days" hint="0 = count them from the billing periods">
             <NumberInput value={draft.chargeDays} min={0} onChange={(n) => set("chargeDays", Math.round(n))} className="input py-2" />
           </Field>
           <Field label="Notes on the quote" className="sm:col-span-2">
