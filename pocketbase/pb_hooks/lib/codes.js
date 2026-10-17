@@ -2,7 +2,7 @@
 // isGeneratedBarcode, typedCode) are tested in pocketbase/tests/codes.test.js;
 // the rest look at the database.
 //
-//   item code  5 digits, counting up per organisation from 10001: short
+//   item code  5 digits, counting up per organisation from 00001: short
 //              enough to say out loud and write on a case
 //   barcode    10 digits, so it never looks like an item code on the same
 //              label; never starts with 0 (spreadsheets drop it), and the
@@ -12,7 +12,7 @@
 // Both are only filled in when left blank, so imported codes and existing
 // asset tags still work.
 
-const FIRST_CODE = 10001;
+const FIRST_CODE = 1;
 
 // The Luhn check digit for a string of digits.
 function luhnDigit(digits) {
@@ -69,12 +69,12 @@ function nextItemCode(app, org) {
   const rows = arrayOf(new DynamicModel({ n: 0 }));
   app
     .db()
-    .newQuery("SELECT COALESCE(MAX(CAST(code AS INTEGER)), 0) AS n FROM items WHERE org = {:org} AND code GLOB '[1-9][0-9][0-9][0-9][0-9]'")
+    .newQuery("SELECT COALESCE(MAX(CAST(code AS INTEGER)), 0) AS n FROM items WHERE org = {:org} AND code GLOB '[0-9][0-9][0-9][0-9][0-9]'")
     .bind({ org: org })
     .all(rows);
   const next = Math.max(FIRST_CODE, rows[0].n + 1);
   if (next > 99999) throw new BadRequestError("This organisation has used every 5-digit item code");
-  return String(next);
+  return String(next).padStart(5, "0");
 }
 
 module.exports = { luhnDigit, makeBarcode, isGeneratedBarcode, typedCode, barcodeTaken, newBarcode, nextItemCode };
