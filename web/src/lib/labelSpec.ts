@@ -73,7 +73,6 @@ export const DATA_FIELDS: { key: DataFieldKey; label: string }[] = [
   { key: "equipmentName", label: "Item name" },
   { key: "equipmentCode", label: "Item code" },
   { key: "equipmentFolder", label: "Category" },
-  { key: "equipmentTags", label: "Item tags" },
   { key: "equipmentPrice", label: "Day rate" },
   { key: "equipmentWeight", label: "Weight (kg)" },
   { key: "equipmentPower", label: "Power (W)" },
@@ -143,7 +142,6 @@ function itemFields(item: Item | null, categoryPath: string): LabelDataContext {
     equipmentName: item?.name ?? "",
     equipmentCode: item?.code ?? "",
     equipmentFolder: categoryPath,
-    equipmentTags: item?.tags ?? "",
     equipmentPrice: numberText(item?.dayRate),
     equipmentWeight: numberText(item?.weightKg),
     equipmentPower: numberText(item?.powerW),
@@ -182,7 +180,6 @@ export function buildLabelContext(unit: LabelUnit): LabelDataContext {
     ...itemFields(item, unit.categoryPath),
     // Older templates' keys for the same values.
     ref: serial.barcode,
-    tags: item?.tags ?? "",
     active: serial.status === "active" ? "Yes" : "No",
     rentmanId: serial.rentmanId,
     // Custom field ids are unique account-wide regardless of which item
@@ -210,7 +207,6 @@ export function buildItemLabelContext(item: Item, categoryPath: string): LabelDa
     project: "",
     ...itemFields(item, categoryPath),
     ref: item.barcode,
-    tags: item.tags,
     active: "",
     rentmanId: item.rentmanId,
     ...normalizeCustomFields(item.custom),

@@ -197,7 +197,6 @@ function runRentmanImport(org, token, who) {
           powerW: Number(eq.power) || 0,
           barcode: eq.qrcodes || "",
           locationInWarehouse: eq.location_in_warehouse || "",
-          tags: eq.tags || "",
           description: eq.external_remark || "",
           notes: eq.internal_remark || "",
           archived: eq.in_archive === true,
@@ -309,7 +308,6 @@ function importItemRow(app, org, row, counts, cache) {
     powerW: csvNumber(row.powerW, "power") || 0,
     barcode: String(row.barcode || "").trim(),
     locationInWarehouse: String(row.locationInWarehouse || "").trim(),
-    tags: String(row.tags || "").trim(),
     description: String(row.description || "").trim(),
     notes: String(row.notes || "").trim(),
   });

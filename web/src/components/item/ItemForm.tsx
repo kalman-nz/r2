@@ -5,6 +5,7 @@ import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog"
 import { errorText } from "../../lib/errors";
 import Field from "../Field";
 import NumberInput from "../NumberInput";
+import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
 import { currentOrgId } from "../../lib/currentOrg";
 
@@ -22,7 +23,6 @@ interface ItemDraft {
   bufferHours: number;
   barcode: string;
   locationInWarehouse: string;
-  tags: string;
   description: string;
   notes: string;
   archived: boolean;
@@ -43,7 +43,6 @@ function draftFrom(item: Item | null): ItemDraft {
     bufferHours: item?.bufferHours ?? 0,
     barcode: item?.barcode ?? "",
     locationInWarehouse: item?.locationInWarehouse ?? "",
-    tags: item?.tags ?? "",
     description: item?.description ?? "",
     notes: item?.notes ?? "",
     archived: item?.archived ?? false,
@@ -53,8 +52,9 @@ function draftFrom(item: Item | null): ItemDraft {
 // Create or edit an item. hasSerials locks the bulk/serial choice: the
 // server refuses to switch an item with units to bulk, so the form doesn't
 // offer it. The item code is never edited here: the server assigns it.
-// Archiving is its own action on the item page. footer goes next to Save
-// (Cancel, Archive).
+// Used for new items; an existing item is edited section by section in
+// place (ItemDetails). The Save bar sticks to the bottom of the screen so
+// it's never a scroll away. footer goes next to Save.
 export default function ItemForm({
   item,
   readOnly,
@@ -120,7 +120,7 @@ export default function ItemForm({
         <Field label="Name" className="sm:col-span-2">
           <input value={draft.name} onChange={(e) => set("name", e.target.value)} disabled={readOnly} className="input py-2" placeholder="e.g. Shure SM58" />
         </Field>
-        <Field label="Category" hint={readOnly ? undefined : "Manage categories in Settings > Inventory"}>
+        <Field label="Category">
           <select value={draft.category} onChange={(e) => set("category", e.target.value)} disabled={readOnly} className="input py-2">
             <option value="">Uncategorised</option>
             {sortedCategories.map((c) => (
@@ -130,31 +130,33 @@ export default function ItemForm({
             ))}
           </select>
         </Field>
-        <Field label="What is it?" hint={isKit ? "A bundle of other items, priced as one line" : undefined}>
-          <select
+        <Field label="What is it?">
+          <Segmented
+            label="What is it?"
             value={draft.kind}
-            onChange={(e) => set("kind", e.target.value as "item" | "kit")}
+            onChange={(v) => set("kind", v)}
             disabled={readOnly || hasSerials}
-            className="input py-2"
-          >
-            <option value="item">Physical item</option>
-            <option value="kit">Kit (made of other items)</option>
-          </select>
+            options={[
+              { value: "item", label: "Physical item" },
+              { value: "kit", label: "Kit" },
+            ]}
+          />
         </Field>
         {!isKit && (
-          <Field label="Tracked" hint={hasSerials ? "Has units, so it stays serialised" : undefined}>
-            <select
+          <Field label="Tracking">
+            <Segmented
+              label="Tracking"
               value={draft.tracking}
-              onChange={(e) => set("tracking", e.target.value as "bulk" | "serial")}
+              onChange={(v) => set("tracking", v)}
               disabled={readOnly || hasSerials}
-              className="input py-2"
-            >
-              <option value="bulk">As a quantity (cables, consumables)</option>
-              <option value="serial">Unit by unit, each with its own barcode</option>
-            </select>
+              options={[
+                { value: "bulk", label: "Bulk" },
+                { value: "serial", label: "Serialised" },
+              ]}
+            />
           </Field>
         )}
-        <Field label="Barcode" hint={draft.tracking === "serial" && !isKit ? "For the item type; each unit has its own too" : "What gets scanned for this item"}>
+        <Field label="Barcode">
           <input
             value={draft.barcode}
             onChange={(e) => set("barcode", e.target.value)}
@@ -162,9 +164,6 @@ export default function ItemForm({
             placeholder={item ? "" : "Generated when you save, or scan an existing tag"}
             className="input py-2 font-mono"
           />
-        </Field>
-        <Field label="Tags" hint="Separate with commas">
-          <input value={draft.tags} onChange={(e) => set("tags", e.target.value)} disabled={readOnly} className="input py-2" />
         </Field>
       </Group>
 
@@ -193,7 +192,7 @@ export default function ItemForm({
               placeholder="e.g. Bay 3, top shelf"
             />
           </Field>
-          <Field label="Extra turnaround (hours)" hint="On top of the global buffer, e.g. time to test after a hire">
+          <Field label="Extra turnaround (h)">
             <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} disabled={readOnly} className="input py-2" />
           </Field>
           <Field label="Weight (kg)">
@@ -206,7 +205,7 @@ export default function ItemForm({
       )}
 
       <Group title="Quote & notes">
-        <Field label="Description" hint="Printed on quotes under the item" className="sm:col-span-2">
+        <Field label="Description" className="sm:col-span-2">
           <textarea value={draft.description} onChange={(e) => set("description", e.target.value)} disabled={readOnly} rows={2} className="input py-2" />
         </Field>
         <Field label="Internal notes" className="sm:col-span-2">
@@ -237,11 +236,10 @@ export default function ItemForm({
         </div>
       </Group>
       {!readOnly && (
-        <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
+        <div className="sticky bottom-0 -mx-4 -mb-4 px-4 py-3 flex items-center gap-3 flex-wrap bg-white/95 backdrop-blur border-t border-gray-200 rounded-b-md">
           <button onClick={save} disabled={saving || !dirty || !draft.name.trim()} className="btn-primary py-2">
             {saving ? "Saving…" : item ? "Save changes" : "Create item"}
           </button>
-          {!item && <span className="text-xs text-gray-500">The item code, and a barcode if you leave it blank, are assigned when you save.</span>}
           {footer}
         </div>
       )}

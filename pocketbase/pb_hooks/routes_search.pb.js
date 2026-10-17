@@ -18,7 +18,7 @@ routerAdd(
     const p = { q: term, org: ctx.orgId };
 
     const items = $app
-      .findRecordsByFilter("items", "org = {:org} && archived = false && (name ~ {:q} || code ~ {:q} || barcode ~ {:q} || tags ~ {:q})", "name", LIMIT, 0, p)
+      .findRecordsByFilter("items", "org = {:org} && archived = false && (name ~ {:q} || code ~ {:q} || barcode ~ {:q})", "name", LIMIT, 0, p)
       .map((it) => ({
         id: it.id,
         name: it.getString("name"),

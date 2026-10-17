@@ -137,15 +137,6 @@ const COLUMNS: Column[] = [
     render: (i) => <span className="text-gray-600">{i.locationInWarehouse || "—"}</span>,
   },
   {
-    key: "tags",
-    label: "Tags",
-    toggleable: true,
-    defaultVisible: false,
-    defaultWidth: 170,
-    sortValue: (i) => i.tags.toLowerCase(),
-    render: (i) => (i.tags ? <span className="text-gray-500 truncate">{i.tags}</span> : <span className="text-gray-300">—</span>),
-  },
-  {
     key: "barcode",
     label: "Barcode",
     toggleable: true,
@@ -593,7 +584,7 @@ export default function ItemsList() {
       if (unavailableOnly && !(i.freeNow !== null && i.freeNow <= 0)) return false;
       if (
         term &&
-        ![i.name, i.code, i.barcode, i.tags, i.categoryPath, i.locationInWarehouse].some((v) => v.toLowerCase().includes(term))
+        ![i.name, i.code, i.barcode, i.categoryPath, i.locationInWarehouse].some((v) => v.toLowerCase().includes(term))
       ) {
         return false;
       }
