@@ -3,6 +3,7 @@ import type { InviteResult, OrgRole } from "../lib/api";
 import { smallestRole } from "../lib/roles";
 import { errorText } from "../lib/errors";
 import { useToast } from "./ToastProvider";
+import { useOrg } from "../lib/org";
 import Field from "./Field";
 
 // Invite someone to an organisation by email (Settings → Team, and the
@@ -19,6 +20,7 @@ export default function InviteForm({
   defaultRoleId?: string;
 }) {
   const { showToast } = useToast();
+  const { refresh: refreshMe } = useOrg();
   const [email, setEmail] = useState("");
   const [chosen, setChosen] = useState("");
   const roleId = chosen || defaultRoleId || smallestRole(roles)?.id || "";
@@ -32,6 +34,8 @@ export default function InviteForm({
     setUnsent(null);
     try {
       const result = await onInvite(email.trim(), roleId);
+      // You might have invited yourself.
+      void refreshMe();
       if (result.emailed) showToast("success", `Invitation emailed to ${result.invitation.email}`);
       else setUnsent(result.invitation.email);
       setEmail("");
