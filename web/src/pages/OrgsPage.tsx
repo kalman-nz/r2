@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type Invitation, type Membership } from "../lib/api";
 import { useOrg } from "../lib/org";
@@ -18,6 +18,11 @@ export default function OrgsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const email = me?.user.email ?? "";
   const mustVerify = !!me && me.verificationRequired && !me.user.verified;
+
+  // Always the latest invitations here, not what was loaded at sign-in.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   function open(m: Membership) {
     switchOrg(m.org.id);

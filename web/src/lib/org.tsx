@@ -66,6 +66,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       return me;
     },
     enabled: !!userId,
+    // Invitations and role changes arrive without this person doing
+    // anything, so look again now and then (it's one small request).
+    refetchInterval: 60_000,
     initialData: () => storedMe(userId),
     initialDataUpdatedAt: 0,
   });

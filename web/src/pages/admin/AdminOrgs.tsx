@@ -104,7 +104,8 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
     setSaving(true);
     try {
       const created = await adminApi.createOrg(name.trim(), adminEmail.trim());
-      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      // Its first admin might be you: pick up that invitation.
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin"] }), queryClient.invalidateQueries({ queryKey: ["me"] })]);
       showToast("success", created.emailed && created.invitation ? `Created — invitation emailed to ${created.invitation.email}` : `Created ${created.name}`);
       navigate(`/admin/orgs/${created.id}`, {
         state: created.invitation && !created.emailed ? { unsentInvite: created.invitation.email } : undefined,
