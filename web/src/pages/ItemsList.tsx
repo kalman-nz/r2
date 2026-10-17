@@ -15,6 +15,8 @@ import FolderTree, { FolderIcon } from "../components/item/FolderTree";
 import FolderPicker from "../components/item/FolderPicker";
 import FolderActions, { useFolderActions } from "../components/item/FolderActions";
 import { useToast } from "../components/ToastProvider";
+import { useConfirm } from "../components/ConfirmProvider";
+import BulkEditModal, { updateEach } from "../components/item/BulkEditModal";
 
 const COLUMNS_STORAGE_KEY = "inventory.visibleColumns";
 const WIDTHS_STORAGE_KEY = "inventory.columnWidths";
@@ -511,7 +513,10 @@ export default function ItemsList() {
     setSelected(new Set());
   };
   const [movingItems, setMovingItems] = useState(false);
+  const [bulkEditing, setBulkEditing] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const [typeFilter, setTypeFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
   const [unavailableOnly, setUnavailableOnly] = useState(false);
@@ -656,6 +661,63 @@ export default function ItemsList() {
     } finally {
       await queryClient.invalidateQueries({ queryKey: ["items"] });
     }
+  }
+
+  // Archiving or restoring the selection. Items already that way are left alone.
+  async function archiveSelected(archived: boolean) {
+    const targets = selectedItems.filter((i) => i.archived !== archived);
+    const what = `${targets.length} item${targets.length === 1 ? "" : "s"}`;
+    if (archived) {
+      const ok = await confirm({
+        title: `Archive ${what}`,
+        message: `Archive ${what}? They're hidden from lists and can't be added to projects. Anything already booked keeps them, and you can restore them any time.`,
+        confirmLabel: "Archive",
+      });
+      if (!ok) return;
+    }
+    setBulkBusy(true);
+    const failed = await updateEach("items", targets, () => ({ archived }));
+    setBulkBusy(false);
+    await queryClient.invalidateQueries({ queryKey: ["items"] });
+    if (failed.length === 0) {
+      showToast("success", `${archived ? "Archived" : "Restored"} ${what}`);
+      setSelected(new Set());
+    } else {
+      showToast("error", `${failed.length} of ${targets.length} couldn't be ${archived ? "archived" : "restored"}: ${errorText(failed[0].error)}`);
+    }
+  }
+
+  // The server refuses items that have been on a project or scanned; those
+  // are counted and left selected, to archive instead.
+  async function deleteSelected() {
+    const targets = selectedItems;
+    const what = `${targets.length} item${targets.length === 1 ? "" : "s"}`;
+    const ok = await confirm({
+      title: `Delete ${what}`,
+      message: `Delete ${what}, with their units and kit links? This can't be undone. Anything that's been on a project or scanned is skipped: archive those instead.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    setBulkBusy(true);
+    const kept = new Set<string>();
+    for (const item of targets) {
+      try {
+        await pb.collection("items").delete(item.id);
+      } catch {
+        kept.add(item.id);
+      }
+    }
+    setBulkBusy(false);
+    await queryClient.invalidateQueries({ queryKey: ["items"] });
+    setSelected(kept);
+    const deleted = targets.length - kept.size;
+    if (kept.size === 0) showToast("success", `Deleted ${what}`);
+    else
+      showToast(
+        "error",
+        `Deleted ${deleted}. ${kept.size} couldn't be deleted (they've been used on projects or scanned) and are still selected, so you can archive them.`,
+      );
   }
 
   function toggleSort(key: string) {
@@ -854,12 +916,58 @@ export default function ItemsList() {
         {isLoading && <p className="text-gray-500 text-sm shrink-0">Loading…</p>}
         {error && <p className="text-red-600 text-sm shrink-0">Couldn't load inventory: {(error as Error).message}</p>}
 
-        {selectedItems.length > 0 && can("items.edit") && (
-          <div className="shrink-0 flex items-center gap-2 text-sm">
-            <button onClick={() => setMovingItems(true)} className="btn-secondary">
-              Move {selectedItems.length} to folder…
+        {selectedItems.length > 0 && (
+          <div className="shrink-0 card px-4 py-2 flex items-center gap-2 flex-wrap text-sm">
+            <span className="font-medium text-gray-900 mr-1">{selectedItems.length} selected</span>
+            {can("items.edit") && (
+              <>
+                <button onClick={() => setBulkEditing(true)} disabled={bulkBusy} className="btn-primary">
+                  Edit
+                </button>
+                <button onClick={() => setMovingItems(true)} disabled={bulkBusy} className="btn-secondary">
+                  Move
+                </button>
+              </>
+            )}
+            <BatchPrintBar<Row>
+              bare
+              items={selectedItems}
+              getDisplayName={(i) => i.name}
+              renderImage={(i, t) => renderItemLabelImage(i, i.categoryPath, t)}
+              sendPrint={(image, t) => sendRenderedLabel(image, t)}
+              onDone={() => setSelected(new Set())}
+            />
+            {can("items.edit") &&
+              (selectedItems.some((i) => !i.archived) ? (
+                <button onClick={() => archiveSelected(true)} disabled={bulkBusy} className="btn-secondary">
+                  Archive
+                </button>
+              ) : (
+                <button onClick={() => archiveSelected(false)} disabled={bulkBusy} className="btn-secondary">
+                  Restore
+                </button>
+              ))}
+            {can("items.delete") && (
+              <button onClick={deleteSelected} disabled={bulkBusy} className="btn-secondary hover:text-fault-ink">
+                Delete
+              </button>
+            )}
+            <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-900 ml-auto">
+              Clear selection
             </button>
           </div>
+        )}
+        {bulkEditing && (
+          <BulkEditModal
+            items={selectedItems}
+            onClose={() => setBulkEditing(false)}
+            onDone={async (failed) => {
+              setBulkEditing(false);
+              await queryClient.invalidateQueries({ queryKey: ["items"] });
+              if (failed === 0) showToast("success", `Updated ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}`);
+              else showToast("error", `${failed} of ${selectedItems.length} items couldn't be updated`);
+            }}
+          />
         )}
         {movingItems && (
           <FolderPicker
@@ -870,17 +978,6 @@ export default function ItemsList() {
             onPick={moveSelected}
             onClose={() => setMovingItems(false)}
           />
-        )}
-        {selectedItems.length > 0 && (
-          <div className="shrink-0">
-            <BatchPrintBar<Row>
-              items={selectedItems}
-              getDisplayName={(i) => i.name}
-              renderImage={(i, t) => renderItemLabelImage(i, i.categoryPath, t)}
-              sendPrint={(image, t) => sendRenderedLabel(image, t)}
-              onDone={() => setSelected(new Set())}
-            />
-          </div>
         )}
 
         <div className="card overflow-hidden flex-1 min-h-0 flex flex-col">
