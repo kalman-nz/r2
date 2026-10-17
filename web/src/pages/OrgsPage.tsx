@@ -128,7 +128,7 @@ export default function OrgsPage() {
             {isPlatformAdmin && (
               <p>
                 As a platform admin you can also{" "}
-                <Link to="/admin/orgs" className="text-[#167cfb] hover:underline">
+                <Link to="/admin/orgs" className="text-signal-ink hover:underline">
                   create one in the admin panel
                 </Link>
                 .
@@ -144,7 +144,7 @@ export default function OrgsPage() {
                   disabled={m.org.suspended}
                   className="text-left min-w-0 flex-1 disabled:cursor-not-allowed group"
                 >
-                  <div className="text-sm font-medium text-gray-900 truncate group-enabled:group-hover:text-[#167cfb]">{m.org.name}</div>
+                  <div className="text-sm font-medium text-gray-900 truncate group-enabled:group-hover:text-signal-ink">{m.org.name}</div>
                   <div className="flex items-center gap-2 mt-1">
                     <RoleBadge name={m.role.name} locked={m.role.locked} />
                     {m.org.id === org?.id && <span className="text-xs text-gray-500">Current</span>}

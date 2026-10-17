@@ -167,7 +167,7 @@ function ScanJob({ jobId }: { jobId: string }) {
             className={`flex-1 py-3 rounded-md text-base font-semibold border transition-colors ${
               direction === d
                 ? d === "out"
-                  ? "bg-[#167cfb] border-[#167cfb] text-white"
+                  ? "bg-carbon border-carbon text-white"
                   : "bg-emerald-600 border-emerald-600 text-white"
                 : "bg-white border-gray-300 text-gray-600"
             }`}

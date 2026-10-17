@@ -366,7 +366,7 @@ export default function LabelEditor() {
                 key={el.id}
                 onPointerDown={(e) => onHandlePointerDown(e, el, "move")}
                 className={`absolute border cursor-move ${
-                  el.id === selectedId ? "border-blue-500" : "border-transparent hover:border-blue-500/40"
+                  el.id === selectedId ? "border-signal" : "border-transparent hover:border-signal/40"
                 }`}
                 style={{
                   left: el.x * EDITOR_SCALE,
@@ -379,7 +379,7 @@ export default function LabelEditor() {
                 {el.id === selectedId && (
                   <div
                     onPointerDown={(e) => onHandlePointerDown(e, el, "resize")}
-                    className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-blue-500 rounded-sm cursor-nwse-resize"
+                    className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-signal rounded-sm cursor-nwse-resize"
                   />
                 )}
               </div>
@@ -437,7 +437,7 @@ export default function LabelEditor() {
                             }}
                             className={`w-8 h-8 rounded border ${
                               active
-                                ? "border-blue-500 text-blue-700 bg-blue-50"
+                                ? "border-signal text-signal-ink bg-signal-soft"
                                 : "border-gray-300 text-gray-500 hover:bg-gray-50"
                             }`}
                           >
@@ -449,7 +449,7 @@ export default function LabelEditor() {
                         onClick={() => updateSelected({ folderLevels: [] })}
                         className={`px-2 h-8 rounded border ${
                           (selected.folderLevels ?? []).length === 0
-                            ? "border-blue-500 text-blue-700 bg-blue-50"
+                            ? "border-signal text-signal-ink bg-signal-soft"
                             : "border-gray-300 text-gray-500 hover:bg-gray-50"
                         }`}
                       >
@@ -550,7 +550,7 @@ export default function LabelEditor() {
                           onClick={() => updateSelected({ align: a })}
                           className={`flex-1 px-2 py-1 rounded border capitalize ${
                             (selected.align ?? "left") === a
-                              ? "border-blue-500 text-blue-700 bg-blue-50"
+                              ? "border-signal text-signal-ink bg-signal-soft"
                               : "border-gray-300 text-gray-500 hover:bg-gray-50"
                           }`}
                         >
@@ -569,7 +569,7 @@ export default function LabelEditor() {
                           onClick={() => updateSelected({ valign: v })}
                           className={`flex-1 px-2 py-1 rounded border capitalize ${
                             (selected.valign ?? "top") === v
-                              ? "border-blue-500 text-blue-700 bg-blue-50"
+                              ? "border-signal text-signal-ink bg-signal-soft"
                               : "border-gray-300 text-gray-500 hover:bg-gray-50"
                           }`}
                         >

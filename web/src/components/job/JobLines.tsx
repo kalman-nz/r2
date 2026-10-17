@@ -16,7 +16,7 @@ function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boole
   if (line.lineType === "custom" || jobDone) return <span className="text-gray-300">—</span>;
   if (line.item?.kind === "kit") {
     return line.componentsShort ? (
-      <span className="text-[#fc3465] font-medium" title="One or more of this kit's contents is short — see the lines below">
+      <span className="text-fault-ink font-medium" title="One or more of this kit's contents is short — see the lines below">
         Contents short
       </span>
     ) : (
@@ -32,8 +32,8 @@ function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boole
         : `${a.free} free for these dates.`;
     return (
       <span className="inline-flex flex-col leading-tight" title={title}>
-        <span className="inline-flex items-center gap-1.5 text-[#fc3465] font-medium">
-          <span className="status-dot bg-[#fc3465]" />
+        <span className="inline-flex items-center gap-1.5 text-fault-ink font-medium">
+          <span className="status-dot bg-fault" />
           Short {a.short}
         </span>
         {a.shortFirm < a.short && (
@@ -44,7 +44,7 @@ function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boole
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-gray-600" title={`${a.free} free for these dates, ${a.needed} on this project`}>
-      <span className="status-dot bg-[#16d590]" />
+      <span className="status-dot bg-lock" />
       {a.free - a.needed} spare
     </span>
   );

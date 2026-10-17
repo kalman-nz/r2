@@ -111,7 +111,7 @@ export default function AccountPage() {
 
       <p className="text-sm text-gray-500">
         Your organisations and invitations are on the{" "}
-        <Link to="/orgs" className="text-[#167cfb] hover:underline">
+        <Link to="/orgs" className="text-signal-ink hover:underline">
           Organisations
         </Link>{" "}
         page.

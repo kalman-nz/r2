@@ -106,7 +106,7 @@ export default function JobsList() {
                 job.status === "out" && (parseDate(job.returnAt)?.getTime() ?? Infinity) < now;
               return (
                 <tr key={job.id} onClick={() => navigate(`/projects/${job.id}`)} className="hover:bg-gray-50 cursor-pointer">
-                  <td className="px-3 py-2 text-gray-500 tabular-nums">{job.number}</td>
+                  <td className="px-3 py-2 text-gray-500 font-mono text-xs">{job.number}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col min-w-0">
                       <span className="font-medium text-gray-900 truncate">{job.name}</span>
@@ -116,7 +116,7 @@ export default function JobsList() {
                   <td className="px-3 py-2 text-gray-600 hidden md:table-cell">{job.expand?.venue?.name ?? "—"}</td>
                   <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDateTime(job.prepAt)}</td>
                   <td
-                    className={`px-3 py-2 whitespace-nowrap hidden sm:table-cell ${overdue ? "text-[#fc3465] font-medium" : "text-gray-600"}`}
+                    className={`px-3 py-2 whitespace-nowrap hidden sm:table-cell ${overdue ? "text-fault-ink font-medium" : "text-gray-600"}`}
                     title={overdue ? "Overdue back" : undefined}
                   >
                     {formatDateTime(job.returnAt)}

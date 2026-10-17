@@ -89,7 +89,7 @@ export function ResetPasswordPage() {
     <AuthLayout
       title="Choose a new password"
       footer={
-        <Link to="/login" className="text-[#167cfb] hover:underline">
+        <Link to="/login" className="text-signal-ink hover:underline">
           Back to sign in
         </Link>
       }

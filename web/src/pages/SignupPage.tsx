@@ -55,7 +55,7 @@ export default function SignupPage() {
       footer={
         <>
           Already have an account?{" "}
-          <Link to="/login" state={location.state} className="text-[#167cfb] hover:underline">
+          <Link to="/login" state={location.state} className="text-signal-ink hover:underline">
             Sign in
           </Link>
         </>

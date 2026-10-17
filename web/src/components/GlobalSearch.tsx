@@ -168,7 +168,7 @@ export default function GlobalSearch() {
                       onMouseEnter={() => setHighlighted(idx)}
                       onClick={() => select({ ...item, section })}
                       className={`w-full text-left px-3 py-1.5 text-sm flex flex-col min-w-0 ${
-                        highlighted === idx ? "bg-blue-50" : "hover:bg-gray-50"
+                        highlighted === idx ? "bg-gray-100" : "hover:bg-gray-50"
                       }`}
                     >
                       <span className="text-gray-900 truncate">{item.name}</span>

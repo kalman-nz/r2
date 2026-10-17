@@ -223,7 +223,7 @@ function ExistingJob({ id }: { id: string }) {
       </div>
 
       {shortLines > 0 && (
-        <div className="card border-[#fc3465]/40 bg-red-50/60 px-4 py-2.5 text-sm text-red-700">
+        <div className="card border-fault/40 bg-red-50/60 px-4 py-2.5 text-sm text-red-700">
           {shortLines} line{shortLines === 1 ? " is" : "s are"} short for these dates. Hover a shortage for detail; a subhire or
           different dates will fix it.
         </div>
@@ -302,7 +302,7 @@ function ExistingJob({ id }: { id: string }) {
           <section className="card p-4 flex flex-col gap-2 text-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-500">Warehouse</h2>
-              <Link to={`/projects/${job.id}/scan`} className="text-xs text-[#167cfb] hover:text-[#0f6ae0]">
+              <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
                 Scan →
               </Link>
             </div>
@@ -311,7 +311,7 @@ function ExistingJob({ id }: { id: string }) {
             ) : (
               <>
                 <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                  <div className="h-full bg-[#167cfb]" style={{ width: `${Math.min(100, (outUnits / neededUnits) * 100)}%` }} />
+                  <div className="h-full bg-data" style={{ width: `${Math.min(100, (outUnits / neededUnits) * 100)}%` }} />
                 </div>
                 <p className="text-xs text-gray-600">
                   {outUnits} of {neededUnits} units out

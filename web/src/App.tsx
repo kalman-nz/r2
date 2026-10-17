@@ -22,6 +22,7 @@ import RequireAuth from "./components/RequireAuth";
 import RequireRole from "./components/RequireRole";
 import GlobalSearch from "./components/GlobalSearch";
 import { OrgSwitcher, UserMenu } from "./components/HeaderMenus";
+import { R2Lockup } from "./components/Brand";
 import { useRole } from "./lib/roles";
 import { PROJECT_VIEWS } from "./lib/statuses";
 import { useOrg } from "./lib/org";
@@ -118,7 +119,9 @@ const icons = {
 // Icons only on phones (the scan page needs the width), labels from md up.
 function sidebarLinkClass(isActive: boolean) {
   return `flex items-center gap-3 mx-2 px-2.5 h-9 rounded-md text-sm font-medium ${
-    isActive ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+    isActive
+      ? "bg-graphite text-white shadow-[inset_2px_0_0_var(--color-signal)]"
+      : "text-steel hover:bg-graphite/60 hover:text-white"
   }`;
 }
 
@@ -134,9 +137,9 @@ function NavItem({ to, icon, label, end }: { to: string; icon: ReactNode; label:
 function NavSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="group flex flex-col gap-0.5 pt-2 md:pt-4 first:pt-0">
-      <div className="hidden md:block px-[1.125rem] pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{title}</div>
+      <div className="hidden md:block px-[1.125rem] pb-1.5 eyebrow text-steel/70">{title}</div>
       {/* A thin rule stands in for the heading on phones. */}
-      <div className="md:hidden mx-3.5 mb-2 border-t border-white/10 group-first:hidden" />
+      <div className="md:hidden mx-3.5 mb-2 border-t border-graphite group-first:hidden" />
       {children}
     </div>
   );
@@ -164,13 +167,20 @@ function NavGroup({
   return (
     <div className="flex flex-col gap-0.5">
       <div className="relative">
-        <NavLink to={to} className={() => sidebarLinkClass(inSection)} title={label}>
+        <NavLink
+          to={to}
+          className={() =>
+            // A highlighted view below already says where you are.
+            inSection && children.some((c) => c.active) ? `${sidebarLinkClass(false)} !text-white` : sidebarLinkClass(inSection)
+          }
+          title={label}
+        >
           {icon}
           <span className="hidden md:inline truncate">{label}</span>
         </NavLink>
         <button
           onClick={() => setOpen((o) => !o)}
-          className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/10"
+          className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 items-center justify-center rounded text-steel/70 hover:text-white hover:bg-white/10"
           aria-label={open ? `Collapse ${label}` : `Expand ${label}`}
           aria-expanded={open}
         >
@@ -180,13 +190,13 @@ function NavGroup({
         </button>
       </div>
       {open && (
-        <div className="hidden md:flex flex-col gap-0.5 ml-[1.6rem] mr-2 pl-3 border-l border-white/10">
+        <div className="hidden md:flex flex-col gap-0.5 ml-[1.6rem] mr-2 pl-3 border-l border-graphite">
           {children.map((c) => (
             <Link
               key={c.to}
               to={c.to}
               className={`flex items-center px-2.5 h-8 rounded-md text-[13px] ${
-                c.active ? "text-white bg-white/10 font-medium" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                c.active ? "text-white bg-graphite font-medium" : "text-steel hover:text-white hover:bg-graphite/60"
               }`}
             >
               {c.label}
@@ -222,11 +232,11 @@ function usePageViewLogging() {
   }, [location.pathname]);
 }
 
-// The browser tab shows "R2", plus the business's short name when set.
+// The browser tab shows "R2", plus the business's short name when set (just "R2 by Kalman" before then).
 function useTabTitle(enabled: boolean) {
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings, enabled });
   const shortOrFull = enabled ? settings?.businessShortName || settings?.businessName : "";
-  const tabTitle = shortOrFull ? `R2 | ${shortOrFull}` : "R2";
+  const tabTitle = shortOrFull ? `R2 | ${shortOrFull}` : "R2 by Kalman";
   useEffect(() => {
     document.title = tabTitle;
   }, [tabTitle]);
@@ -256,11 +266,11 @@ function AppShell() {
   usePageViewLogging();
   return (
     <div className="h-screen flex overflow-hidden">
-      <aside className="w-14 md:w-52 shrink-0 flex flex-col h-screen sticky top-0 py-3" style={{ background: "#2b2d31" }}>
-        <div className="flex items-center gap-2.5 px-3.5 md:px-4 h-9 mb-3 shrink-0">
-          <div className="w-7 h-7 rounded-md bg-white/10 flex items-center justify-center text-white font-bold text-xs shrink-0">R2</div>
-          <span className="hidden md:inline text-white font-semibold text-sm tracking-tight truncate">R2</span>
-        </div>
+      <aside className="w-14 md:w-56 shrink-0 flex flex-col h-screen sticky top-0 py-3 bg-carbon">
+        <Link to="/" className="flex items-center px-3.5 md:px-[1.125rem] h-10 mb-4 shrink-0 text-white" aria-label="R2 by Kalman, home">
+          <img src="/favicon.svg" alt="" className="w-7 h-7 rounded-md md:hidden" />
+          <R2Lockup className="hidden md:flex" />
+        </Link>
 
         <nav className="flex-1 overflow-y-auto flex flex-col">
           {org ? (
@@ -290,7 +300,7 @@ function AppShell() {
           )}
         </nav>
 
-        <div className="flex flex-col gap-0.5 pt-3 mt-2 border-t border-white/10">
+        <div className="flex flex-col gap-0.5 pt-3 mt-2 border-t border-graphite">
           {org && settingsOpen && <NavItem to="/settings" icon={icons.settings} label="Settings" />}
           {isPlatformAdmin && <NavItem to="/admin" icon={icons.admin} label="Platform admin" />}
         </div>
@@ -302,7 +312,7 @@ function AppShell() {
             {memberships.length > 0 ? <OrgSwitcher /> : <span className="text-sm font-medium text-gray-700">R2</span>}
             {!online && (
               <span
-                className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 whitespace-nowrap"
+                className="eyebrow px-2 py-0.5 rounded-full bg-warn/20 text-[#7a4f00] whitespace-nowrap"
                 title="Showing what was last loaded. Changes and scans need a connection."
               >
                 Offline

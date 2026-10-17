@@ -30,7 +30,7 @@ export default function LabelSizeControls({
                 type="button"
                 onClick={() => onChange(p.widthMm, p.heightMm)}
                 className={`px-2 py-1 rounded border text-xs ${
-                  active ? "border-[#167cfb] bg-blue-50 text-[#167cfb]" : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  active ? "border-signal bg-signal-soft text-signal-ink" : "border-gray-300 text-gray-700 hover:bg-gray-50"
                 }`}
               >
                 {p.name}

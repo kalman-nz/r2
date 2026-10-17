@@ -128,7 +128,7 @@ export default function ItemPicker({
                     .join(" · ")}
                 </div>
               </div>
-              <div className={`text-xs tabular-nums text-right w-28 shrink-0 ${short ? "text-[#fc3465] font-medium" : "text-gray-600"}`}>
+              <div className={`text-xs tabular-nums text-right w-28 shrink-0 ${short ? "text-fault-ink font-medium" : "text-gray-600"}`}>
                 {a ? (
                   <>
                     {a.free} free

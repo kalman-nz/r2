@@ -4,7 +4,7 @@ import { JOB_STATUSES, SERIAL_STATUS_LABELS } from "../lib/statuses";
 const JOB_STYLES: Record<JobStatus, string> = {
   enquiry: "bg-gray-100 text-gray-600",
   provisional: "bg-amber-50 text-amber-700",
-  confirmed: "bg-blue-50 text-blue-700",
+  confirmed: "bg-data-soft text-data-ink",
   out: "bg-violet-50 text-violet-700",
   returned: "bg-emerald-50 text-emerald-700",
   cancelled: "bg-gray-100 text-gray-400 line-through",
@@ -18,7 +18,7 @@ const SERIAL_STYLES: Record<SerialStatus, string> = {
 };
 
 const QUOTE_STYLES: Record<QuoteStatus, string> = {
-  issued: "bg-blue-50 text-blue-700",
+  issued: "bg-data-soft text-data-ink",
   accepted: "bg-emerald-50 text-emerald-700",
   declined: "bg-red-50 text-red-700",
   void: "bg-gray-100 text-gray-400",

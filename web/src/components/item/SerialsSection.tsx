@@ -198,7 +198,7 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
                   <td className="px-3 py-2">
                     <SerialStatusBadge status={s.status} />
                   </td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${overdue ? "text-[#fc3465] font-medium" : "text-gray-600"}`}>
+                  <td className={`px-3 py-2 whitespace-nowrap ${overdue ? "text-fault-ink font-medium" : "text-gray-600"}`}>
                     {s.nextInspection ? formatDate(s.nextInspection) : "—"}
                   </td>
                 </tr>

@@ -30,7 +30,7 @@ export default function RolesSettings() {
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-gray-900">Roles</h2>
           <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
-            What each role can do in {org?.name}. Everyone can look up inventory, jobs, contacts and venues; everything else depends on
+            What each role can do in {org?.name}. Everyone can look up inventory, projects, contacts and locations; everything else depends on
             their role. Give people roles under Team.
           </p>
         </div>
@@ -197,7 +197,7 @@ function RoleEditor({
     <Modal title={title} onClose={onClose} wide>
       <form onSubmit={save} className="flex flex-col gap-4">
         {role?.locked && (
-          <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          <p className="rounded-md border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-gray-900">
             Admin always has every permission, including ones added to R2 later, and can't be changed. Every organisation keeps at least
             one admin.
           </p>
@@ -228,7 +228,7 @@ function RoleEditor({
                 <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-1">
                   <legend className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.name}</legend>
                   {!readOnly && (
-                    <button type="button" onClick={() => toggleGroup(keys, !all)} className="text-xs text-[#167cfb] hover:underline">
+                    <button type="button" onClick={() => toggleGroup(keys, !all)} className="text-xs text-signal-ink hover:underline">
                       {all ? "None" : "All"}
                     </button>
                   )}

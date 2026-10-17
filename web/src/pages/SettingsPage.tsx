@@ -185,7 +185,7 @@ export function useSettingsAccess() {
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap ${
-    isActive ? "bg-blue-50 text-[#167cfb]" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+    isActive ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200 [&>svg]:text-signal" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
   }`;
 }
 
@@ -210,7 +210,7 @@ export default function SettingsPage() {
             if (inGroup.length === 0) return null;
             return (
               <div key={group} className="flex md:flex-col gap-0.5 shrink-0">
-                <div className="hidden md:block px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{group}</div>
+                <div className="hidden md:block px-3 pb-1.5 eyebrow text-gray-500">{group}</div>
                 {inGroup.map((item) => (
                   <NavLink key={item.to} to={`/settings/${item.to}`} className={navLinkClass}>
                     {item.icon}

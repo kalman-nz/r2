@@ -45,7 +45,7 @@ export default function LoginPage() {
       footer={
         <>
           New to R2?{" "}
-          <Link to="/signup" state={location.state} className="text-[#167cfb] hover:underline">
+          <Link to="/signup" state={location.state} className="text-signal-ink hover:underline">
             Create an account
           </Link>
         </>
@@ -104,7 +104,7 @@ function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack
   }
 
   const back = (
-    <button type="button" onClick={onBack} className="text-[#167cfb] hover:underline">
+    <button type="button" onClick={onBack} className="text-signal-ink hover:underline">
       Back to sign in
     </button>
   );

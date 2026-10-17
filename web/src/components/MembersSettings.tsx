@@ -87,7 +87,7 @@ export default function MembersSettings() {
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Team</h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          Who can work in {org?.name}. Planners and admins run jobs and quotes; techs scan, flag and print.
+          Who can work in {org?.name}. Planners and admins run projects and quotes; techs scan, flag and print.
         </p>
       </div>
 
