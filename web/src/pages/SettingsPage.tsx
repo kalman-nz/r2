@@ -75,9 +75,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "inventory",
-    label: "Categories & storage",
+    label: "Storage locations",
     group: "Inventory",
-    permissions: ["categories.create", "categories.edit", "categories.delete", "locations.create", "locations.edit", "locations.delete"],
+    permissions: ["locations.create", "locations.edit", "locations.delete"],
     icon: (
       <Icon>
         <path d="M21 8l-9-5-9 5 9 5 9-5z" />

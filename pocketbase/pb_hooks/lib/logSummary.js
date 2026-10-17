@@ -70,6 +70,10 @@ function summarizeLogs(rows, opts) {
       summary = 'Edited user "' + (details.name || details.id) + '"';
     } else if (entry.type === "user_deleted") {
       summary = 'Deleted user "' + (details.name || details.id) + '"';
+    } else if (entry.type === "folder_deleted") {
+      summary = details.contents
+        ? 'Deleted folder "' + details.folder + '" and its contents (' + details.deleted + " items deleted, " + details.archived + " archived)"
+        : 'Deleted folder "' + details.folder + '" (' + details.moved + " items moved up)";
     } else if (entry.type === "quote_issued") {
       summary = "Issued quote v" + details.version + " for " + jobLabel(details.job);
     } else if (entry.type === "quote_status") {

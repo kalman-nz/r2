@@ -717,6 +717,10 @@ export const api = {
     request<{ message: string; summary: JobSummary }>(`/api/jobs/${jobId}/scan`, json("POST", body)),
   setSerialStatus: (id: string, status: SerialStatus, note?: string) =>
     request<Serial>(`/api/serials/${id}/status`, json("POST", { status, note })),
+  // Delete an inventory folder, with everything in it or keeping it (moved
+  // up a level). See pb_hooks/routes_folders.pb.js.
+  deleteFolder: (id: string, contents: boolean) =>
+    request<{ deleted: number; archived: number; moved: number }>(`/api/folders/${id}/delete`, json("POST", { contents })),
   setOutOfService: (itemId: string, quantity: number, note?: string) =>
     request<Item>(`/api/items/${itemId}/out-of-service`, json("POST", { quantity, note })),
 

@@ -29,11 +29,11 @@ interface ItemDraft {
   archived: boolean;
 }
 
-function draftFrom(item: Item | null): ItemDraft {
+function draftFrom(item: Item | null, defaultFolder = ""): ItemDraft {
   return {
     name: item?.name ?? "",
     code: item?.code ?? "",
-    category: item?.category ?? "",
+    category: item?.category ?? defaultFolder,
     kind: item?.kind ?? "item",
     tracking: item?.tracking === "serial" ? "serial" : "bulk",
     stockQty: item?.stockQty ?? 0,
@@ -59,18 +59,21 @@ function draftFrom(item: Item | null): ItemDraft {
 // it's never a scroll away. footer goes next to Save.
 export default function ItemForm({
   item,
+  defaultFolder = "",
   readOnly,
   hasSerials,
   onSaved,
   footer,
 }: {
   item: Item | null;
+  // A new item starts in the folder it was created from.
+  defaultFolder?: string;
   readOnly: boolean;
   hasSerials: boolean;
   onSaved: (item: Item) => void;
   footer?: ReactNode;
 }) {
-  const [draft, setDraft] = useState<ItemDraft>(() => draftFrom(item));
+  const [draft, setDraft] = useState<ItemDraft>(() => draftFrom(item, defaultFolder));
   const [photo, setPhoto] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const { showToast } = useToast();
@@ -78,9 +81,9 @@ export default function ItemForm({
   const paths = useCategoryPaths();
   const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
-  useEffect(() => setDraft(draftFrom(item)), [item]);
+  useEffect(() => setDraft(draftFrom(item, defaultFolder)), [item, defaultFolder]);
 
-  const dirty = photo !== null || JSON.stringify(draft) !== JSON.stringify(draftFrom(item));
+  const dirty = photo !== null || JSON.stringify(draft) !== JSON.stringify(draftFrom(item, defaultFolder));
   const isKit = draft.kind === "kit";
 
   async function save() {
@@ -122,9 +125,9 @@ export default function ItemForm({
         <Field label="Name" className="sm:col-span-2">
           <input value={draft.name} onChange={(e) => set("name", e.target.value)} disabled={readOnly} className="input py-2" placeholder="e.g. Shure SM58" />
         </Field>
-        <Field label="Category">
+        <Field label="Folder">
           <select value={draft.category} onChange={(e) => set("category", e.target.value)} disabled={readOnly} className="input py-2">
-            <option value="">Uncategorised</option>
+            <option value="">Inventory (top level)</option>
             {sortedCategories.map((c) => (
               <option key={c.id} value={c.id}>
                 {displayPath(c.path)}

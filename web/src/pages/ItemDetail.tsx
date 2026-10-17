@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type Item } from "../lib/api";
-import { displayPath, useCategoryPaths } from "../lib/catalog";
+import { useCategories, useCategoryPaths } from "../lib/catalog";
+import { indexFolders, trail } from "../lib/folders";
 import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
 import { priceLabel } from "../lib/format";
@@ -37,6 +38,10 @@ export default function ItemDetail() {
   const queryClient = useQueryClient();
   const { can } = useRole();
   const paths = useCategoryPaths();
+  const { data: categories = [] } = useCategories();
+  const folders = useMemo(() => indexFolders(categories), [categories]);
+  const [searchParams] = useSearchParams();
+  const newInFolder = isNew ? (searchParams.get("folder") ?? "") : "";
 
   const { data: item, isLoading, error } = useQuery({
     queryKey: ["item", id],
@@ -96,12 +101,12 @@ export default function ItemDetail() {
   if (isNew) {
     return (
       <div className="max-w-3xl mx-auto flex flex-col gap-4">
-        <Link to="/inventory" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-          ← Inventory
+        <Link to={newInFolder ? `/inventory?folder=${newInFolder}` : "/inventory"} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
+          ← {folders.byId.get(newInFolder)?.name ?? "Inventory"}
         </Link>
         <h1 className="text-xl font-semibold text-gray-900">New item</h1>
         <section className="card p-4">
-          <ItemForm item={null} readOnly={false} hasSerials={false} onSaved={saved} />
+          <ItemForm item={null} defaultFolder={newInFolder} readOnly={false} hasSerials={false} onSaved={saved} />
         </section>
       </div>
     );
@@ -123,8 +128,8 @@ export default function ItemDetail() {
 
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
-      <Link to="/inventory" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Inventory
+      <Link to={item.category ? `/inventory?folder=${item.category}` : "/inventory"} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
+        ← {folders.byId.get(item.category)?.name ?? "Inventory"}
       </Link>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -136,7 +141,19 @@ export default function ItemDetail() {
               <h1 className="text-xl font-semibold text-gray-900">{item.name}</h1>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{type}</span>
             </div>
-            <p className="text-sm text-gray-500">{displayPath(categoryPath) || "Uncategorised"}</p>
+            <nav className="flex items-center gap-1 text-sm text-gray-500 flex-wrap" aria-label="Folder">
+              <Link to="/inventory" className="hover:text-gray-900">
+                Inventory
+              </Link>
+              {trail(folders, item.category).map((f) => (
+                <span key={f.id} className="flex items-center gap-1">
+                  <span className="text-gray-300">›</span>
+                  <Link to={`/inventory?folder=${f.id}`} className="hover:text-gray-900">
+                    {f.name}
+                  </Link>
+                </span>
+              ))}
+            </nav>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
