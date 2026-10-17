@@ -8,6 +8,8 @@ import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
 import { useRole } from "../lib/roles";
 import ItemForm from "../components/item/ItemForm";
+import ItemOverview from "../components/item/ItemOverview";
+import { useConfirm } from "../components/ConfirmProvider";
 import SerialsSection from "../components/item/SerialsSection";
 import LinksSection, { UsedIn } from "../components/item/LinksSection";
 import AvailabilityStrip from "../components/AvailabilityStrip";
@@ -53,6 +55,10 @@ export default function ItemDetail() {
     enabled: !isNew,
   });
   const [requestedTab, openTab] = useTab(ALL_TABS);
+  const [editing, setEditing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const { showToast } = useToast();
+  const confirm = useConfirm();
 
   async function saved(next: Item) {
     queryClient.setQueryData(["item", next.id], next);
@@ -61,6 +67,30 @@ export default function ItemDetail() {
       queryClient.invalidateQueries({ queryKey: ["availability"] }),
     ]);
     if (isNew) navigate(`/inventory/${next.id}`, { replace: true });
+    setEditing(false);
+  }
+
+  // Archived items are hidden and can't go on new projects; restoring puts
+  // them straight back. History and units are untouched either way.
+  async function setArchived(archived: boolean) {
+    if (!item) return;
+    if (archived) {
+      const ok = await confirm({
+        title: "Archive item",
+        message: `Archive ${item.name}? It's hidden from lists and can't be added to projects. Anything already booked keeps it, and you can restore it any time.`,
+        confirmLabel: "Archive",
+      });
+      if (!ok) return;
+    }
+    setArchiving(true);
+    try {
+      await saved(await pb.collection("items").update<Item>(item.id, { archived }));
+      showToast("success", archived ? "Archived" : "Restored");
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setArchiving(false);
+    }
   }
 
   if (isNew) {
@@ -104,15 +134,26 @@ export default function ItemDetail() {
           )}
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
+              {item.code && <span className="text-xl text-gray-400 font-mono">{item.code}</span>}
               <h1 className="text-xl font-semibold text-gray-900">{item.name}</h1>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{type}</span>
-              {item.archived && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">Archived</span>}
             </div>
-            <p className="text-sm text-gray-500">{[item.code, displayPath(categoryPath)].filter(Boolean).join(" · ") || "Uncategorised"}</p>
+            <p className="text-sm text-gray-500">{displayPath(categoryPath) || "Uncategorised"}</p>
           </div>
         </div>
         <PrintButton context={buildItemLabelContext(item, categoryPath)} label={item.tracking === "serial" ? "Print item label" : "Print label"} />
       </div>
+
+      {item.archived && (
+        <div className="card bg-gray-50 px-4 py-2.5 text-sm text-gray-700 flex items-center justify-between gap-3 flex-wrap">
+          <span>Archived: hidden from lists and can't be added to projects.</span>
+          {can("items.edit") && (
+            <button onClick={() => setArchived(false)} disabled={archiving} className="btn-secondary py-1">
+              Restore
+            </button>
+          )}
+        </div>
+      )}
 
       <TabBar label="Item sections" tabs={tabs} current={tab} onOpen={openTab} />
 
@@ -120,9 +161,37 @@ export default function ItemDetail() {
         <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
           {tab === "general" && (
             <>
-              <section className="card p-4">
-                <h2 className="text-sm font-semibold text-gray-500 mb-3">Details</h2>
-                <ItemForm item={item} readOnly={!can("items.edit")} hasSerials={serialCount > 0} onSaved={saved} />
+              <section className="card p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-semibold text-gray-500">Details</h2>
+                  {can("items.edit") && !editing && (
+                    <button onClick={() => setEditing(true)} className="btn-secondary py-1">
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {editing ? (
+                  <ItemForm
+                    item={item}
+                    readOnly={false}
+                    hasSerials={serialCount > 0}
+                    onSaved={saved}
+                    footer={
+                      <>
+                        <button onClick={() => setEditing(false)} className="btn-secondary py-2">
+                          Cancel
+                        </button>
+                        {!item.archived && (
+                          <button onClick={() => setArchived(true)} disabled={archiving} className="ml-auto text-sm text-gray-500 hover:text-gray-900">
+                            Archive item
+                          </button>
+                        )}
+                      </>
+                    }
+                  />
+                ) : (
+                  <ItemOverview item={item} categoryPath={categoryPath} />
+                )}
               </section>
               <section className="card p-4">
                 <h2 className="text-sm font-semibold text-gray-500 mb-3">Availability, next 60 days</h2>
