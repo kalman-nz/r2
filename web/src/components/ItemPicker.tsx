@@ -57,7 +57,7 @@ export default function ItemPicker({
         if (path !== categoryPath && !path.startsWith(categoryPath + "/")) return false;
       }
       if (!term) return true;
-      return [item.name, item.code, item.barcode, item.tags, paths.get(item.category)]
+      return [item.name, item.code, item.barcode, paths.get(item.category)]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(term));
     });

@@ -6,13 +6,15 @@ import { api, type Item } from "../lib/api";
 import { displayPath, useCategoryPaths } from "../lib/catalog";
 import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
+import { nzd } from "../lib/format";
 import { useRole } from "../lib/roles";
 import ItemForm from "../components/item/ItemForm";
-import ItemOverview from "../components/item/ItemOverview";
+import ItemDetails from "../components/item/ItemDetails";
 import { useConfirm } from "../components/ConfirmProvider";
 import SerialsSection from "../components/item/SerialsSection";
 import LinksSection, { UsedIn } from "../components/item/LinksSection";
-import AvailabilityStrip from "../components/AvailabilityStrip";
+import AvailabilityStrip, { freeNow, useItemTimeline } from "../components/AvailabilityStrip";
+import ItemPhoto from "../components/item/ItemPhoto";
 import PrintButton from "../components/PrintButton";
 import NumberInput from "../components/NumberInput";
 import { useToast } from "../components/ToastProvider";
@@ -55,7 +57,6 @@ export default function ItemDetail() {
     enabled: !isNew,
   });
   const [requestedTab, openTab] = useTab(ALL_TABS);
-  const [editing, setEditing] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -67,7 +68,6 @@ export default function ItemDetail() {
       queryClient.invalidateQueries({ queryKey: ["availability"] }),
     ]);
     if (isNew) navigate(`/inventory/${next.id}`, { replace: true });
-    setEditing(false);
   }
 
   // Archived items are hidden and can't go on new projects; restoring puts
@@ -122,16 +122,14 @@ export default function ItemDetail() {
   const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : "general";
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-4">
+    <div className="max-w-7xl mx-auto flex flex-col gap-4">
       <Link to="/inventory" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
         ← Inventory
       </Link>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          {item.photo && (
-            <img src={pb.files.getURL(item, item.photo, { thumb: "100x100" })} alt="" className="w-12 h-12 rounded-md object-cover border border-gray-200" />
-          )}
+        <div className="flex items-center gap-4 min-w-0">
+          <ItemPhoto item={item} canEdit={can("items.edit")} onSaved={saved} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {item.code && <span className="text-xl text-gray-400 font-mono">{item.code}</span>}
@@ -141,7 +139,14 @@ export default function ItemDetail() {
             <p className="text-sm text-gray-500">{displayPath(categoryPath) || "Uncategorised"}</p>
           </div>
         </div>
-        <PrintButton context={buildItemLabelContext(item, categoryPath)} label={item.tracking === "serial" ? "Print item label" : "Print label"} />
+        <div className="flex items-center gap-1.5">
+          {can("items.edit") && !item.archived && (
+            <button onClick={() => setArchived(true)} disabled={archiving} className="btn-secondary">
+              Archive
+            </button>
+          )}
+          <PrintButton context={buildItemLabelContext(item, categoryPath)} label={item.tracking === "serial" ? "Print item label" : "Print label"} />
+        </div>
       </div>
 
       {item.archived && (
@@ -157,63 +162,68 @@ export default function ItemDetail() {
 
       <TabBar label="Item sections" tabs={tabs} current={tab} onOpen={openTab} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
-          {tab === "general" && (
-            <>
-              <section className="card p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-semibold text-gray-500">Details</h2>
-                  {can("items.edit") && !editing && (
-                    <button onClick={() => setEditing(true)} className="btn-secondary py-1">
-                      Edit
-                    </button>
-                  )}
-                </div>
-                {editing ? (
-                  <ItemForm
-                    item={item}
-                    readOnly={false}
-                    hasSerials={serialCount > 0}
-                    onSaved={saved}
-                    footer={
-                      <>
-                        <button onClick={() => setEditing(false)} className="btn-secondary py-2">
-                          Cancel
-                        </button>
-                        {!item.archived && (
-                          <button onClick={() => setArchived(true)} disabled={archiving} className="ml-auto text-sm text-gray-500 hover:text-gray-900">
-                            Archive item
-                          </button>
-                        )}
-                      </>
-                    }
-                  />
-                ) : (
-                  <ItemOverview item={item} categoryPath={categoryPath} />
-                )}
-              </section>
-              <section className="card p-4">
-                <h2 className="text-sm font-semibold text-gray-500 mb-3">Availability, next 60 days</h2>
-                <AvailabilityStrip itemId={item.id} />
-              </section>
-            </>
-          )}
-          {tab === "units" && <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />}
-          {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
-          {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
-        </div>
-
+      {tab === "general" ? (
+        // What people look for first across the top, then two stacked
+        // columns (no gaps between cards of different heights). Each card
+        // edits in place.
         <div className="flex flex-col gap-4">
-          {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
-          <UsedIn item={item} />
-          {item.kind === "item" && item.tracking === "serial" && (
-            <section className="card p-4 text-xs text-gray-500">
-              Flag a unit as broken or lost from its own page — open it from the list, or scan its barcode in the search box.
-            </section>
-          )}
+          <KeyFacts item={item} />
+          <ItemDetails item={item} categoryPath={categoryPath} canEdit={can("items.edit")} hasSerials={serialCount > 0} onSaved={saved}>
+            {(cards) => (
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 items-start">
+                <div className="flex flex-col gap-4 min-w-0">
+                  <section className="card p-4">
+                    <h2 className="eyebrow text-gray-500 mb-3">Availability, next 60 days</h2>
+                    <AvailabilityStrip itemId={item.id} />
+                  </section>
+                  {cards.identification}
+                </div>
+                <div className="flex flex-col gap-4 min-w-0">
+                  {cards.pricing}
+                  {cards.warehouse}
+                  {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
+                  {cards.notes}
+                  <UsedIn item={item} />
+                </div>
+              </div>
+            )}
+          </ItemDetails>
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+          <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
+            {tab === "units" && <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />}
+            {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
+            {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
+          </div>
+          <div className="flex flex-col gap-4">
+            {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
+            <UsedIn item={item} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The four things people open an item to check, before anything else.
+function KeyFacts({ item }: { item: Item }) {
+  const { data } = useItemTimeline(item.id);
+  const free = freeNow(data);
+  const stock = data?.stock ?? null;
+  const booked = data?.bookings.length ?? null;
+  const tile = (label: string, value: string, tone = "text-gray-900") => (
+    <div className="card px-4 py-3 flex flex-col gap-0.5 min-w-0">
+      <span className="eyebrow text-gray-500">{label}</span>
+      <span className={`text-lg font-semibold truncate ${tone}`}>{value}</span>
+    </div>
+  );
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {tile("Day rate", item.dayRate > 0 ? nzd(item.dayRate) : "—")}
+      {tile("Free now", free === null ? "…" : stock !== null ? `${free} of ${stock}` : String(free), free !== null && free <= 0 ? "text-fault-ink" : "text-gray-900")}
+      {tile("Booked, next 60 days", booked === null ? "…" : booked === 0 ? "Nothing" : `${booked} project${booked === 1 ? "" : "s"}`)}
+      {tile("Location", item.kind === "kit" ? "Kit" : item.locationInWarehouse || "—")}
     </div>
   );
 }

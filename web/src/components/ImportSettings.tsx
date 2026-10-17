@@ -24,7 +24,6 @@ const TARGETS: Record<CsvKind, { key: string; label: string; required?: boolean;
     { key: "weightKg", label: "Weight (kg)", aliases: ["weight", "weightkg", "kg"] },
     { key: "powerW", label: "Power (W)", aliases: ["power", "powerw", "watts", "wattage"] },
     { key: "locationInWarehouse", label: "Location in warehouse", aliases: ["location", "shelf", "bin", "bay", "warehouselocation"] },
-    { key: "tags", label: "Tags", aliases: ["tags", "keywords"] },
     { key: "description", label: "Description (on quotes)", aliases: ["description", "externalnote", "externalremark"] },
     { key: "notes", label: "Internal notes", aliases: ["notes", "note", "comments", "internalnote", "internalremark"] },
   ],

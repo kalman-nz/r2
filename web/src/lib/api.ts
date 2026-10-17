@@ -104,7 +104,6 @@ export interface Item extends RecordModel {
   bufferHours: number;
   barcode: string;
   locationInWarehouse: string;
-  tags: string;
   description: string;
   notes: string;
   photo: string;
