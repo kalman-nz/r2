@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { pb } from "../../lib/pocketbase";
 import type { Item } from "../../lib/api";
 import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog";
@@ -52,17 +52,21 @@ function draftFrom(item: Item | null): ItemDraft {
 
 // Create or edit an item. hasSerials locks the bulk/serial choice: the
 // server refuses to switch an item with units to bulk, so the form doesn't
-// offer it.
+// offer it. The item code is never edited here: the server assigns it.
+// Archiving is its own action on the item page. footer goes next to Save
+// (Cancel, Archive).
 export default function ItemForm({
   item,
   readOnly,
   hasSerials,
   onSaved,
+  footer,
 }: {
   item: Item | null;
   readOnly: boolean;
   hasSerials: boolean;
   onSaved: (item: Item) => void;
+  footer?: ReactNode;
 }) {
   const [draft, setDraft] = useState<ItemDraft>(() => draftFrom(item));
   const [photo, setPhoto] = useState<File | null>(null);
@@ -111,13 +115,10 @@ export default function ItemForm({
     .sort((a, b) => a.path.localeCompare(b.path));
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+    <div className="flex flex-col gap-5">
+      <Group title="Identification">
         <Field label="Name" className="sm:col-span-2">
           <input value={draft.name} onChange={(e) => set("name", e.target.value)} disabled={readOnly} className="input py-2" placeholder="e.g. Shure SM58" />
-        </Field>
-        <Field label="Item code" hint={item ? "Set automatically" : "Assigned when you save: the next 5-digit number"}>
-          <input value={draft.code} disabled placeholder="Automatic" className="input py-2 font-mono" />
         </Field>
         <Field label="Category" hint={readOnly ? undefined : "Manage categories in Settings > Inventory"}>
           <select value={draft.category} onChange={(e) => set("category", e.target.value)} disabled={readOnly} className="input py-2">
@@ -153,39 +154,6 @@ export default function ItemForm({
             </select>
           </Field>
         )}
-        {!isKit && draft.tracking === "bulk" && (
-          <Field label="Quantity owned">
-            <NumberInput value={draft.stockQty} min={0} onChange={(n) => set("stockQty", Math.round(n))} disabled={readOnly} className="input py-2" />
-          </Field>
-        )}
-        <Field label="Day rate (ex GST)">
-          <NumberInput value={draft.dayRate} min={0} onChange={(n) => set("dayRate", n)} disabled={readOnly} className="input py-2" />
-        </Field>
-        <Field label="Replacement value">
-          <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} disabled={readOnly} className="input py-2" />
-        </Field>
-        {!isKit && (
-          <>
-            <Field label="Weight (kg)">
-              <NumberInput value={draft.weightKg} min={0} onChange={(n) => set("weightKg", n)} disabled={readOnly} className="input py-2" />
-            </Field>
-            <Field label="Power (W)">
-              <NumberInput value={draft.powerW} min={0} onChange={(n) => set("powerW", n)} disabled={readOnly} className="input py-2" />
-            </Field>
-            <Field label="Extra turnaround (hours)" hint="On top of the global buffer, e.g. time to test after a hire">
-              <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} disabled={readOnly} className="input py-2" />
-            </Field>
-            <Field label="Location in warehouse">
-              <input
-                value={draft.locationInWarehouse}
-                onChange={(e) => set("locationInWarehouse", e.target.value)}
-                disabled={readOnly}
-                className="input py-2"
-                placeholder="e.g. Bay 3, top shelf"
-              />
-            </Field>
-          </>
-        )}
         <Field label="Barcode" hint={draft.tracking === "serial" && !isKit ? "For the item type; each unit has its own too" : "What gets scanned for this item"}>
           <input
             value={draft.barcode}
@@ -195,56 +163,99 @@ export default function ItemForm({
             className="input py-2 font-mono"
           />
         </Field>
-        <Field label="Tags">
+        <Field label="Tags" hint="Separate with commas">
           <input value={draft.tags} onChange={(e) => set("tags", e.target.value)} disabled={readOnly} className="input py-2" />
         </Field>
+      </Group>
+
+      <Group title="Pricing">
+        <Field label="Day rate (ex GST)">
+          <NumberInput value={draft.dayRate} min={0} onChange={(n) => set("dayRate", n)} disabled={readOnly} className="input py-2" />
+        </Field>
+        <Field label="Replacement value">
+          <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} disabled={readOnly} className="input py-2" />
+        </Field>
+      </Group>
+
+      {!isKit && (
+        <Group title="Warehouse">
+          {draft.tracking === "bulk" && (
+            <Field label="Quantity owned">
+              <NumberInput value={draft.stockQty} min={0} onChange={(n) => set("stockQty", Math.round(n))} disabled={readOnly} className="input py-2" />
+            </Field>
+          )}
+          <Field label="Location in warehouse">
+            <input
+              value={draft.locationInWarehouse}
+              onChange={(e) => set("locationInWarehouse", e.target.value)}
+              disabled={readOnly}
+              className="input py-2"
+              placeholder="e.g. Bay 3, top shelf"
+            />
+          </Field>
+          <Field label="Extra turnaround (hours)" hint="On top of the global buffer, e.g. time to test after a hire">
+            <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} disabled={readOnly} className="input py-2" />
+          </Field>
+          <Field label="Weight (kg)">
+            <NumberInput value={draft.weightKg} min={0} onChange={(n) => set("weightKg", n)} disabled={readOnly} className="input py-2" />
+          </Field>
+          <Field label="Power (W)">
+            <NumberInput value={draft.powerW} min={0} onChange={(n) => set("powerW", n)} disabled={readOnly} className="input py-2" />
+          </Field>
+        </Group>
+      )}
+
+      <Group title="Quote & notes">
         <Field label="Description" hint="Printed on quotes under the item" className="sm:col-span-2">
           <textarea value={draft.description} onChange={(e) => set("description", e.target.value)} disabled={readOnly} rows={2} className="input py-2" />
         </Field>
         <Field label="Internal notes" className="sm:col-span-2">
           <textarea value={draft.notes} onChange={(e) => set("notes", e.target.value)} disabled={readOnly} rows={2} className="input py-2" />
         </Field>
-        <div className="flex flex-col gap-1 sm:col-span-2">
-          <span className="text-sm text-gray-500">Photo</span>
-          <div className="flex items-center gap-3 flex-wrap">
-            {item?.photo && (
-              <img
-                src={pb.files.getURL(item, item.photo, { thumb: "100x100" })}
-                alt=""
-                className="w-16 h-16 rounded-md object-cover border border-gray-200"
+      </Group>
+
+      <Group title="Photo">
+        <div className="flex items-center gap-3 flex-wrap sm:col-span-2">
+          {item?.photo && (
+            <img src={pb.files.getURL(item, item.photo, { thumb: "100x100" })} alt="" className="w-16 h-16 rounded-md object-cover border border-gray-200" />
+          )}
+          {!readOnly && (
+            <>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                className="text-sm text-gray-600"
               />
-            )}
-            {!readOnly && (
-              <>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-                  className="text-sm text-gray-600"
-                />
-                {item?.photo && (
-                  <button type="button" onClick={removePhoto} className="text-sm text-red-600 hover:text-red-700">
-                    Remove photo
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+              {item?.photo && (
+                <button type="button" onClick={removePhoto} className="text-sm text-red-600 hover:text-red-700">
+                  Remove photo
+                </button>
+              )}
+            </>
+          )}
         </div>
-        {item && !readOnly && (
-          <label className="flex items-center gap-2 text-sm text-gray-600 sm:col-span-2">
-            <input type="checkbox" checked={draft.archived} onChange={(e) => set("archived", e.target.checked)} />
-            Archived — hidden from lists and can't be added to projects, history kept
-          </label>
-        )}
-      </div>
+      </Group>
       {!readOnly && (
         <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
           <button onClick={save} disabled={saving || !dirty || !draft.name.trim()} className="btn-primary py-2">
             {saving ? "Saving…" : item ? "Save changes" : "Create item"}
           </button>
+          {!item && <span className="text-xs text-gray-500">The item code, and a barcode if you leave it blank, are assigned when you save.</span>}
+          {footer}
         </div>
       )}
     </div>
+  );
+}
+
+// The same groups as ItemOverview, so a field is in the same place whether
+// you're reading or editing.
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="eyebrow text-gray-500 pb-1.5 border-b border-gray-100">{title}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">{children}</div>
+    </section>
   );
 }
