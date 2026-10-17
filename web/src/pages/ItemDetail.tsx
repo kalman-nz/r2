@@ -15,6 +15,16 @@ import PrintButton from "../components/PrintButton";
 import NumberInput from "../components/NumberInput";
 import { useToast } from "../components/ToastProvider";
 import { useFollowOrg } from "../lib/org";
+import { TabBar, useTab, type TabDef } from "../components/Tabs";
+
+type Tab = "general" | "units" | "contents" | "accessories";
+// Every tab any item can have; each item shows the ones that fit it.
+const ALL_TABS: TabDef<Tab>[] = [
+  { key: "general", label: "General" },
+  { key: "units", label: "Units" },
+  { key: "contents", label: "Contents" },
+  { key: "accessories", label: "Accessories" },
+];
 
 export default function ItemDetail() {
   const { id = "" } = useParams();
@@ -36,6 +46,13 @@ export default function ItemDetail() {
       (await pb.collection("serials").getList(1, 1, { filter: pb.filter("item = {:item}", { item: id }), skipTotal: false })).totalItems,
     enabled: !isNew,
   });
+  // For the tab counts. Same key prefix LinksSection refreshes.
+  const { data: links = [] } = useQuery({
+    queryKey: ["item_components", id, "counts"],
+    queryFn: () => pb.collection("item_components").getFullList<{ kind: string }>({ filter: pb.filter("parent = {:id}", { id }), fields: "kind" }),
+    enabled: !isNew,
+  });
+  const [requestedTab, openTab] = useTab(ALL_TABS);
 
   async function saved(next: Item) {
     queryClient.setQueryData(["item", next.id], next);
@@ -65,6 +82,14 @@ export default function ItemDetail() {
 
   const categoryPath = paths.get(item.category) ?? "";
   const type = item.kind === "kit" ? "Kit" : item.tracking === "serial" ? "Serialised" : "Bulk";
+  const serialised = item.kind === "item" && item.tracking === "serial";
+  const tabs = ALL_TABS.filter((t) => t.key === "general" || t.key === "accessories" || (t.key === "units" ? serialised : item.kind === "kit")).map((t) => ({
+    ...t,
+    count:
+      t.key === "units" ? serialCount : t.key === "contents" ? links.filter((l) => l.kind === "component").length : t.key === "accessories" ? links.filter((l) => l.kind === "accessory").length : undefined,
+  }));
+  // A kit's link from when it was a serialised item, say: back to General.
+  const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : "general";
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-4">
@@ -89,23 +114,25 @@ export default function ItemDetail() {
         <PrintButton context={buildItemLabelContext(item, categoryPath)} label={item.tracking === "serial" ? "Print item label" : "Print label"} />
       </div>
 
+      <TabBar label="Item sections" tabs={tabs} current={tab} onOpen={openTab} />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
-          <section className="card p-4">
-            <h2 className="text-sm font-semibold text-gray-500 mb-3">Availability, next 60 days</h2>
-            <AvailabilityStrip itemId={item.id} />
-          </section>
-
-          {item.kind === "item" && item.tracking === "serial" && (
-            <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />
+          {tab === "general" && (
+            <>
+              <section className="card p-4">
+                <h2 className="text-sm font-semibold text-gray-500 mb-3">Details</h2>
+                <ItemForm item={item} readOnly={!can("items.edit")} hasSerials={serialCount > 0} onSaved={saved} />
+              </section>
+              <section className="card p-4">
+                <h2 className="text-sm font-semibold text-gray-500 mb-3">Availability, next 60 days</h2>
+                <AvailabilityStrip itemId={item.id} />
+              </section>
+            </>
           )}
-          {item.kind === "kit" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
-          <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />
-
-          <section className="card p-4">
-            <h2 className="text-sm font-semibold text-gray-500 mb-3">Details</h2>
-            <ItemForm item={item} readOnly={!can("items.edit")} hasSerials={serialCount > 0} onSaved={saved} />
-          </section>
+          {tab === "units" && <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />}
+          {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
+          {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
         </div>
 
         <div className="flex flex-col gap-4">

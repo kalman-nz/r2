@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type JobPricing, type JobSummary } from "../lib/api";
@@ -10,6 +10,7 @@ import JobFields from "../components/job/JobFields";
 import { draftFromJob, draftToPayload, draftToUpdate, newJobDraft, type JobDraft } from "../lib/jobDraft";
 import JobLines from "../components/job/JobLines";
 import JobSchedule from "../components/job/JobSchedule";
+import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import { PERIOD_KINDS } from "../lib/statuses";
 import { JobStatusBadge, QuoteStatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
@@ -93,7 +94,7 @@ function TotalsCard({ pricing }: { pricing: JobPricing }) {
 }
 
 type Tab = "general" | "schedule" | "equipment";
-const TABS: { key: Tab; label: string }[] = [
+const TABS: TabDef<Tab>[] = [
   { key: "general", label: "General" },
   { key: "schedule", label: "Schedule" },
   { key: "equipment", label: "Equipment" },
@@ -138,9 +139,7 @@ function ExistingJob({ id }: { id: string }) {
   const [draft, setDraft] = useState<JobDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [quoting, setQuoting] = useState(false);
-  const [params, setParams] = useSearchParams();
-  const tab = TABS.some((t) => t.key === params.get("tab")) ? (params.get("tab") as Tab) : "general";
-  const openTab = (t: Tab) => setParams(t === "general" ? {} : { tab: t }, { replace: true });
+  const [tab, openTab] = useTab(TABS);
 
   const { data: summary, isLoading, error } = useQuery({
     queryKey: ["job-summary", id],
@@ -275,21 +274,12 @@ function ExistingJob({ id }: { id: string }) {
         </div>
       )}
 
-      <nav className="flex items-center gap-6 border-b border-gray-200" aria-label="Project sections">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => openTab(t.key)}
-            className={tab === t.key ? "tab-underline-active" : "tab-underline-inactive"}
-            aria-current={tab === t.key ? "page" : undefined}
-          >
-            {t.label}
-            <span className="ml-1.5 font-mono text-xs text-gray-400">
-              {t.key === "schedule" ? summary.periods.length : t.key === "equipment" ? summary.lines.length : ""}
-            </span>
-          </button>
-        ))}
-      </nav>
+      <TabBar
+        label="Project sections"
+        current={tab}
+        onOpen={openTab}
+        tabs={TABS.map((t) => ({ ...t, count: t.key === "schedule" ? summary.periods.length : t.key === "equipment" ? summary.lines.length : undefined }))}
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_19rem] gap-4 items-start">
         <div className="flex flex-col gap-4 min-w-0">
