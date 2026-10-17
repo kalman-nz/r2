@@ -53,6 +53,16 @@ function validateItem(app, record) {
     throw new BadRequestError("Barcode " + barcode + " is already used by a serialised unit");
   }
 
+  // Codes are unique from here on. Some imported ones aren't, and they're
+  // left as they are until someone changes them.
+  const code = record.getString("code").trim();
+  record.set("code", code);
+  const codeChanged = record.isNew() || record.original().getString("code") !== code;
+  if (code && codeChanged) {
+    const others = app.findRecordsByFilter("items", "org = {:org} && code = {:code} && id != {:id}", "", 1, 0, { org: org, code: code, id: record.id });
+    if (others.length > 0) throw new BadRequestError("Item code " + code + " is already used by " + others[0].getString("name"));
+  }
+
   if (record.isNew()) return;
   if (record.original().getString("org") !== org) throw new BadRequestError("Items can't move between organisations");
   const id = record.id;

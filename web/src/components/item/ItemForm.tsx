@@ -116,8 +116,8 @@ export default function ItemForm({
         <Field label="Name" className="sm:col-span-2">
           <input value={draft.name} onChange={(e) => set("name", e.target.value)} disabled={readOnly} className="input py-2" placeholder="e.g. Shure SM58" />
         </Field>
-        <Field label="Code" hint="Short internal code, optional">
-          <input value={draft.code} onChange={(e) => set("code", e.target.value)} disabled={readOnly} className="input py-2 font-mono" />
+        <Field label="Item code" hint={item ? "Set automatically" : "Assigned when you save: the next 5-digit number"}>
+          <input value={draft.code} disabled placeholder="Automatic" className="input py-2 font-mono" />
         </Field>
         <Field label="Category" hint={readOnly ? undefined : "Manage categories in Settings > Inventory"}>
           <select value={draft.category} onChange={(e) => set("category", e.target.value)} disabled={readOnly} className="input py-2">
@@ -187,7 +187,13 @@ export default function ItemForm({
           </>
         )}
         <Field label="Barcode" hint={draft.tracking === "serial" && !isKit ? "For the item type; each unit has its own too" : "What gets scanned for this item"}>
-          <input value={draft.barcode} onChange={(e) => set("barcode", e.target.value)} disabled={readOnly} className="input py-2 font-mono" />
+          <input
+            value={draft.barcode}
+            onChange={(e) => set("barcode", e.target.value)}
+            disabled={readOnly}
+            placeholder={item ? "" : "Generated when you save, or scan an existing tag"}
+            className="input py-2 font-mono"
+          />
         </Field>
         <Field label="Tags">
           <input value={draft.tags} onChange={(e) => set("tags", e.target.value)} disabled={readOnly} className="input py-2" />
