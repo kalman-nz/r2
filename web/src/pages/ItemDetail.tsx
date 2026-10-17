@@ -14,6 +14,7 @@ import ItemDetails from "../components/item/ItemDetails";
 import { useConfirm } from "../components/ConfirmProvider";
 import SerialsSection from "../components/item/SerialsSection";
 import LinksSection, { UsedIn } from "../components/item/LinksSection";
+import HistorySection, { useItemHistory } from "../components/item/HistorySection";
 import AvailabilityStrip, { freeNow, useItemTimeline } from "../components/AvailabilityStrip";
 import ItemPhoto from "../components/item/ItemPhoto";
 import PrintButton from "../components/PrintButton";
@@ -22,13 +23,14 @@ import { useToast } from "../components/ToastProvider";
 import { useFollowOrg } from "../lib/org";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 
-type Tab = "general" | "units" | "contents" | "accessories";
+type Tab = "general" | "units" | "contents" | "accessories" | "history";
 // Every tab any item can have; each item shows the ones that fit it.
 const ALL_TABS: TabDef<Tab>[] = [
   { key: "general", label: "General" },
   { key: "units", label: "Units" },
   { key: "contents", label: "Contents" },
   { key: "accessories", label: "Accessories" },
+  { key: "history", label: "History" },
 ];
 
 export default function ItemDetail() {
@@ -61,6 +63,7 @@ export default function ItemDetail() {
     queryFn: () => pb.collection("item_components").getFullList<{ kind: string }>({ filter: pb.filter("parent = {:id}", { id }), fields: "kind" }),
     enabled: !isNew,
   });
+  const { data: projects } = useItemHistory(isNew ? "" : id);
   const [requestedTab, openTab] = useTab(ALL_TABS);
   const [archiving, setArchiving] = useState(false);
   const { showToast } = useToast();
@@ -157,10 +160,14 @@ export default function ItemDetail() {
   const categoryPath = paths.get(item.category) ?? "";
   const type = item.kind === "kit" ? "Kit" : item.tracking === "serial" ? "Serialised" : "Bulk";
   const serialised = item.kind === "item" && item.tracking === "serial";
-  const tabs = ALL_TABS.filter((t) => t.key === "general" || t.key === "accessories" || (t.key === "units" ? serialised : item.kind === "kit")).map((t) => ({
+  const tabs = ALL_TABS.filter((t) => t.key === "general" || t.key === "accessories" || t.key === "history" || (t.key === "units" ? serialised : item.kind === "kit")).map((t) => ({
     ...t,
     count:
-      t.key === "units" ? serialCount : t.key === "contents" ? links.filter((l) => l.kind === "component").length : t.key === "accessories" ? links.filter((l) => l.kind === "accessory").length : undefined,
+      t.key === "units" ? serialCount : t.key === "contents" ? links.filter((l) => l.kind === "component").length : t.key === "accessories"
+            ? links.filter((l) => l.kind === "accessory").length
+            : t.key === "history"
+              ? projects?.length
+              : undefined,
   }));
   // A kit's link from when it was a serialised item, say: back to General.
   const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : "general";
@@ -264,6 +271,7 @@ export default function ItemDetail() {
             {tab === "units" && <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />}
             {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
             {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
+            {tab === "history" && <HistorySection item={item} />}
           </div>
           <div className="flex flex-col gap-4">
             {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
