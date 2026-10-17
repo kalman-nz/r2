@@ -94,7 +94,7 @@ export default function ExportsPage() {
             Account {settings.xeroAccountCode} · {settings.xeroTaxType} · due in {settings.xeroDueDays} days · numbered{" "}
             {settings.invoicePrefix}1001…{" "}
             {can("settings.edit") ? (
-              <Link to="/settings/accounting" className="text-[#167cfb] hover:text-[#0f6ae0]">
+              <Link to="/settings/accounting" className="text-signal-ink hover:text-signal-ink-hover">
                 Change
               </Link>
             ) : (

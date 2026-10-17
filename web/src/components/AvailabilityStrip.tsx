@@ -56,7 +56,7 @@ export default function AvailabilityStrip({ itemId }: { itemId: string }) {
               className="flex-1 flex flex-col justify-end h-full"
               title={`${d.date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}: ${d.free} free`}
             >
-              <div className={`w-full rounded-sm ${short ? "bg-[#fc3465]/80" : "bg-[#16d590]/70"}`} style={{ height: `${height}%` }} />
+              <div className={`w-full rounded-sm ${short ? "bg-fault/80" : "bg-lock/70"}`} style={{ height: `${height}%` }} />
             </div>
           );
         })}

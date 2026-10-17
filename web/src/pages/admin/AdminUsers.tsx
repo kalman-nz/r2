@@ -171,7 +171,7 @@ function UserModal({ user, onClose }: { user: AdminUser; onClose: () => void }) 
           ) : (
             <>
               <span className="text-xs font-medium text-amber-700">Not verified</span>
-              <button onClick={markVerified} className="text-xs text-[#167cfb] hover:underline">
+              <button onClick={markVerified} className="text-xs text-signal-ink hover:underline">
                 Mark as verified
               </button>
             </>
@@ -187,7 +187,7 @@ function UserModal({ user, onClose }: { user: AdminUser; onClose: () => void }) 
           <ul className="flex flex-col gap-1">
             {user.memberships.map((m) => (
               <li key={m.orgId}>
-                <Link to={`/admin/orgs/${m.orgId}`} onClick={onClose} className="text-gray-900 hover:text-[#167cfb]">
+                <Link to={`/admin/orgs/${m.orgId}`} onClick={onClose} className="text-gray-900 hover:text-signal-ink">
                   {m.orgName}
                 </Link>{" "}
                 <span className="text-gray-500">· {m.roleName}</span>

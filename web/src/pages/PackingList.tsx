@@ -47,7 +47,7 @@ export default function PackingList() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f6fb] print:bg-white">
+    <div className="min-h-screen bg-paper print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3">
         <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900">
           ← Project #{job.number}

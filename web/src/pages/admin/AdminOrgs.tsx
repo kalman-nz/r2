@@ -60,7 +60,7 @@ export default function AdminOrgs() {
               {filtered.map((o) => (
                 <tr key={o.id} onClick={() => navigate(`/admin/orgs/${o.id}`)} className="cursor-pointer hover:bg-gray-50">
                   <td className="px-4 py-2.5">
-                    <Link to={`/admin/orgs/${o.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-gray-900 hover:text-[#167cfb]">
+                    <Link to={`/admin/orgs/${o.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-gray-900 hover:text-signal-ink">
                       {o.name}
                     </Link>
                     {o.admins === 0 && (

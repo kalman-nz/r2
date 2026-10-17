@@ -106,7 +106,7 @@ function Categories() {
                       setAddingUnder(category.id);
                       setChildName("");
                     }}
-                    className="text-xs text-[#167cfb] hover:text-[#0f6ae0]"
+                    className="text-xs text-signal-ink hover:text-signal-ink-hover"
                   >
                     + Sub-category
                   </button>

@@ -82,13 +82,13 @@ export function SignupLinkNotice({ email }: { email: string }) {
     );
   }
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-900 flex flex-col gap-2">
+    <div className="rounded-md border border-signal/30 bg-signal-soft px-3 py-2.5 text-sm text-gray-900 flex flex-col gap-2">
       <span>
         Invitation saved for <strong>{email}</strong>, but this server can't send email yet. Send them this link to sign up and
         accept it:
       </span>
       <div className="flex items-center gap-2 min-w-0">
-        <code className="flex-1 min-w-0 truncate bg-white border border-blue-200 rounded px-2 py-1 text-xs">{link}</code>
+        <code className="flex-1 min-w-0 truncate bg-white border border-signal/30 rounded px-2 py-1 text-xs">{link}</code>
         <button type="button" onClick={copy} className="btn-secondary shrink-0">
           Copy
         </button>

@@ -101,8 +101,8 @@ const COLUMNS: Column[] = [
       const none = i.freeNow <= 0;
       return (
         <span className="inline-flex items-center justify-end gap-1.5 tabular-nums">
-          <span className={`status-dot ${none ? "bg-[#fc3465]" : "bg-[#16d590]"}`} />
-          <span className={none ? "text-[#fc3465] font-medium" : "text-gray-700"}>{i.freeNow}</span>
+          <span className={`status-dot ${none ? "bg-fault" : "bg-lock"}`} />
+          <span className={none ? "text-fault-ink font-medium" : "text-gray-700"}>{i.freeNow}</span>
         </span>
       );
     },
@@ -247,7 +247,7 @@ function ViewRow({
   }
 
   return (
-    <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${active ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+    <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${active ? "bg-signal-soft" : "hover:bg-gray-50"}`}>
       {editing ? (
         <input
           autoFocus
@@ -266,7 +266,7 @@ function ViewRow({
       ) : (
         <button
           onClick={() => onApply(view)}
-          className={`flex-1 text-left text-sm truncate ${active ? "text-[#167cfb] font-medium" : "text-gray-700"}`}
+          className={`flex-1 text-left text-sm truncate ${active ? "text-signal-ink font-medium" : "text-gray-700"}`}
         >
           {view.name}
         </button>
@@ -419,12 +419,12 @@ function ManageViewsModal({
           <div className="flex flex-col gap-2">
             <button
               onClick={() => onApply(null)}
-              className={`text-left text-sm ${!activeView ? "text-[#167cfb] font-medium" : "text-gray-500 hover:text-gray-700"}`}
+              className={`text-left text-sm ${!activeView ? "text-signal-ink font-medium" : "text-gray-500 hover:text-gray-700"}`}
             >
               Reset to default
             </button>
             {activeView?.isOwner && (
-              <button onClick={updateActive} disabled={busy} className="text-left text-xs text-[#167cfb] hover:text-[#0f6ae0]">
+              <button onClick={updateActive} disabled={busy} className="text-left text-xs text-signal-ink hover:text-signal-ink-hover">
                 Save changes to "{activeView.name}"
               </button>
             )}
@@ -474,7 +474,7 @@ function ManageViewsModal({
                   key={v.id}
                   onClick={() => onApply(v)}
                   className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left text-sm ${
-                    activeView?.id === v.id ? "bg-blue-50 text-[#167cfb] font-medium" : "hover:bg-gray-50 text-gray-700"
+                    activeView?.id === v.id ? "bg-signal-soft text-signal-ink font-medium" : "hover:bg-gray-50 text-gray-700"
                   }`}
                 >
                   <span className="truncate">{v.name}</span>
@@ -754,7 +754,7 @@ export default function ItemsList() {
               setShowArchived(false);
               setUnavailableOnly(false);
             }}
-            className="text-xs text-[#167cfb] hover:text-[#0f6ae0] px-1.5"
+            className="text-xs text-signal-ink hover:text-signal-ink-hover px-1.5"
           >
             Clear filters
           </button>
@@ -832,7 +832,7 @@ export default function ItemsList() {
                     <div
                       onMouseDown={(e) => startResize(e, c)}
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none hover:bg-[#167cfb]/30 active:bg-[#167cfb]/50"
+                      className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none hover:bg-signal/30 active:bg-signal/50"
                     />
                   </th>
                 ))}

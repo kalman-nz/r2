@@ -1,31 +1,86 @@
 @import "tailwindcss";
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+/* R2 by Kalman. Colours and type from the Kalman brand guidelines (v1.0):
+   Carbon/Graphite carry the dark surfaces, Paper is the page, Signal Orange
+   is a signal, not a fill. Orange on white is only 3.1:1, so small orange
+   text uses signal-ink (5.2:1). Grays are retuned to sit between Carbon and
+   Paper; gray-500 is the lightest that's still readable as text. */
+@theme {
+  --font-sans: "Archivo Variable", Arial, Helvetica, sans-serif;
+  --font-mono: "IBM Plex Mono", Menlo, Consolas, monospace;
+
+  --color-carbon: #0e1114;
+  --color-graphite: #22272e;
+  --color-steel: #8a939e;
+  --color-paper: #f2f2ee;
+  --color-signal: #ff5b14;
+  --color-signal-ink: #c43f05;
+  --color-signal-ink-hover: #a33503;
+  --color-signal-soft: #fff1e8;
+  --color-data: #19c3e6;
+  --color-data-ink: #0b7a93;
+  --color-data-soft: #e8f8fc;
+  --color-lock: #2fd27a;
+  --color-warn: #ffb020;
+  --color-fault: #e5322d;
+  --color-fault-ink: #c42520;
+
+  --color-gray-50: #f7f7f4;
+  --color-gray-100: #ededea;
+  --color-gray-200: #e0e1dd;
+  --color-gray-300: #c9cccb;
+  --color-gray-400: #8a939e;
+  --color-gray-500: #5f6773;
+  --color-gray-600: #4b525c;
+  --color-gray-700: #363c44;
+  --color-gray-800: #22272e;
+  --color-gray-900: #0e1114;
+}
 
 body {
-  @apply text-gray-900;
-  background: #f3f6fb;
+  @apply text-gray-900 bg-paper font-sans antialiased;
+}
+
+/* Headings in Archivo SemiExpanded Bold, like the guide. */
+h1 {
+  font-stretch: 112.5%;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 @layer components {
   .input {
-    @apply bg-white border border-gray-300 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#167cfb]/20 focus:border-[#167cfb];
+    @apply bg-white border border-gray-300 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-signal/20 focus:border-signal;
   }
   .btn-primary {
-    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-[#167cfb] text-white hover:bg-[#0f6ae0];
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-carbon text-white hover:bg-graphite;
   }
   .btn-secondary {
     @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
   }
   .btn-danger {
-    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-[#fc3465] text-white hover:bg-[#e11d48];
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-fault-ink text-white hover:bg-[#a51e1a];
   }
   .card {
     @apply bg-white border border-gray-200 rounded-md;
   }
   .tab-underline-active {
-    @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-[#167cfb] border-[#167cfb];
+    @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-gray-900 border-signal;
   }
   .tab-underline-inactive {
     @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300;
+  }
+  /* Kalman data/label style: IBM Plex Mono caps, +12% tracking. */
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.12em];
+  }
+  .font-display {
+    font-stretch: 125%;
+    font-weight: 700;
   }
   .status-dot {
     @apply inline-block w-1.5 h-1.5 rounded-full shrink-0;

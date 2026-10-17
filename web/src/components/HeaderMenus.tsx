@@ -68,7 +68,7 @@ export function OrgSwitcher() {
         aria-expanded={open}
       >
         <span className="truncate">{org?.name ?? "No organisation"}</span>
-        {invitations.length > 0 && <span className="w-2 h-2 rounded-full bg-[#167cfb] shrink-0" title="You have invitations" />}
+        {invitations.length > 0 && <span className="w-2 h-2 rounded-full bg-signal shrink-0" title="You have invitations" />}
         <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-400 shrink-0">
           <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -92,7 +92,7 @@ export function OrgSwitcher() {
           <MenuLink to="/orgs" onClick={() => setOpen(false)}>
             <span>All organisations</span>
             {invitations.length > 0 && (
-              <span className="text-xs font-semibold text-white bg-[#167cfb] rounded-full px-2 py-0.5">
+              <span className="text-xs font-semibold text-white bg-signal-ink rounded-full px-2 py-0.5">
                 {invitations.length} invitation{invitations.length === 1 ? "" : "s"}
               </span>
             )}
@@ -119,7 +119,7 @@ export function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="w-7 h-7 rounded-full bg-[#167cfb]/10 text-[#167cfb] text-xs font-semibold flex items-center justify-center shrink-0">
+        <span className="w-7 h-7 rounded-full bg-carbon text-white text-xs font-semibold flex items-center justify-center shrink-0">
           {(label || "?").slice(0, 1).toUpperCase()}
         </span>
         <span className="text-sm text-gray-600 max-w-32 truncate hidden lg:inline">{label}</span>

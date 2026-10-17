@@ -6,7 +6,7 @@
 //
 // Registered from main.tsx in production builds only.
 
-const CACHE = "r2-shell-v1";
+const CACHE = "r2-shell-v2";
 const MAX_ASSETS = 40;
 
 self.addEventListener("install", (event) => {
