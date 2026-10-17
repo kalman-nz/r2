@@ -296,16 +296,16 @@ const speakers = await planner.create("categories", { name: "Speakers", parent: 
 await planner.fails("PATCH", `/api/collections/categories/records/${audio.id}`, { parent: speakers.id }, 400, /inside itself/);
 await tech.fails("POST", "/api/collections/categories/records", { org: orgA, name: "nope" }, 400);
 
-const k12 = await planner.create("items", { name: `QSC K12 ${run}`, kind: "item", tracking: "serial", dayRate: 80, category: speakers.id });
-const stand = await planner.create("items", { name: `Speaker stand ${run}`, kind: "item", tracking: "bulk", stockQty: 4, dayRate: 10 });
-const xlr = await planner.create("items", { name: `XLR 10m ${run}`, kind: "item", tracking: "bulk", stockQty: 20, dayRate: 2, barcode: `XLR-${run}` });
+const k12 = await planner.create("items", { name: `QSC K12 ${run}`, kind: "item", tracking: "serial", price: 80, category: speakers.id });
+const stand = await planner.create("items", { name: `Speaker stand ${run}`, kind: "item", tracking: "bulk", stockQty: 4, price: 10 });
+const xlr = await planner.create("items", { name: `XLR 10m ${run}`, kind: "item", tracking: "bulk", stockQty: 20, price: 2, barcode: `XLR-${run}` });
 const k12Serials = [];
 for (const n of [1, 2]) {
   k12Serials.push(await planner.create("serials", { item: k12.id, barcode: `K12-${run}-${n}`, status: "active" }));
 }
 await planner.fails("POST", "/api/collections/serials/records", { org: orgA, item: xlr.id, barcode: `X-${run}`, status: "active" }, 400, /isn't tracked by serial/);
 await planner.fails("POST", "/api/collections/serials/records", { org: orgA, item: k12.id, barcode: `XLR-${run}`, status: "active" }, 400, /already used/);
-const pa = await planner.create("items", { name: `PA pair ${run}`, kind: "kit", dayRate: 200 });
+const pa = await planner.create("items", { name: `PA pair ${run}`, kind: "kit", price: 200 });
 await planner.create("item_components", { parent: pa.id, child: k12.id, kind: "component", quantity: 2 });
 await planner.create("item_components", { parent: k12.id, child: stand.id, kind: "accessory", quantity: 1 });
 await planner.fails("POST", "/api/collections/item_components/records", { org: orgA, parent: xlr.id, child: stand.id, kind: "component", quantity: 1 }, 400, /isn't a kit/);
@@ -329,7 +329,7 @@ const client = await planner.create("contacts", { name: `Client ${run}`, email: 
 const venue = await planner.create("venues", { name: `Venue ${run}` });
 
 // --- the other organisation, with clashing codes ---
-const xlrB = await bossB.create("items", { name: `B's XLR ${run}`, kind: "item", tracking: "bulk", stockQty: 3, dayRate: 9, barcode: `XLR-${run}` });
+const xlrB = await bossB.create("items", { name: `B's XLR ${run}`, kind: "item", tracking: "bulk", stockQty: 3, price: 9, barcode: `XLR-${run}` });
 const secretB = await bossB.create("items", { name: `B only ${run}`, kind: "item", tracking: "bulk", stockQty: 1, barcode: `BONLY-${run}` });
 const jobInB = await bossB.create("jobs", { name: `B's job ${run}`, status: "confirmed", prepAt: "2030-03-01 08:00:00Z", returnAt: "2030-03-04 12:00:00Z" });
 assert.equal(jobInB.number, 1001, "job numbers are per organisation");
@@ -386,6 +386,26 @@ derived = await jobRecord(jobA);
 assert.equal(derived.startAt, "2030-03-01 08:00:00.000Z", "removing periods shrinks the project back");
 assert.equal(derived.billingEnd, "2030-03-03 20:00:00.000Z");
 log("the schedule: usage books the kit, billing sets the charge, both always kept, only the project's own planners can change it");
+
+// --- price per hour / week / each ---
+// jobB is booked (and billed) 2030-03-03 08:00 → 03-05 12:00: 52 hours,
+// 3 charged days, 1 week.
+const priced = async (priceUnit, price) => {
+  const item = await planner.create("items", { name: `Per ${priceUnit} ${run}`, kind: "item", tracking: "bulk", stockQty: 30, price, priceUnit });
+  const lines = (await planner.ok("POST", `/api/jobs/${jobB.id}/lines`, { itemId: item.id, quantity: 2 })).lines;
+  const line = lines.find((l) => l.item && l.item.id === item.id);
+  await planner.ok("DELETE", `/api/job-lines/${line.id}`);
+  return line;
+};
+const each = await priced("each", 18.5);
+assert.equal(each.priceMode, "fixed", "sold items are charged once");
+assert.equal(each.amount.net, 37, "2 × $18.50");
+const hourly = await priced("hour", 10);
+assert.equal(hourly.priceMode, "per_hour");
+assert.equal(hourly.amount.net, 1040, "2 × $10/hr × 52 hours");
+const weekly = await priced("week", 100);
+assert.equal(weekly.amount.net, 200, "2 × $100/week × 1 week");
+log("prices per hour, day, week or each charge the right way");
 
 // --- isolation ---
 const listed = await planner.ok("GET", `/api/collections/items/records?perPage=200&filter=${encodeURIComponent(`name ~ "${run}"`)}`);
@@ -574,8 +594,8 @@ const look = await tech.ok("GET", `/api/lookup?code=${k12Serials[0].barcode}`);
 assert.deepEqual(look, { kind: "serial", id: k12Serials[0].id, itemId: k12.id });
 
 const csvRows = [
-  { name: `Desk ${run}`, code: `DESK-${run}`, category: `Audio ${run} / Desks`, quantity: "", dayRate: "$1,200.50", serials: `D-${run}-1; D-${run}-2` },
-  { name: `Gaffa ${run}`, quantity: "48", dayRate: "0" },
+  { name: `Desk ${run}`, code: `DESK-${run}`, category: `Audio ${run} / Desks`, quantity: "", price: "$1,200.50", serials: `D-${run}-1; D-${run}-2` },
+  { name: `Gaffa ${run}`, quantity: "48", price: "0" },
 ];
 let csv = await planner.ok("POST", "/api/import/csv", { kind: "items", rows: csvRows, dryRun: true });
 assert.deepEqual(csv.counts, { items: 2, serials: 2 });

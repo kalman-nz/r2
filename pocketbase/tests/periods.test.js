@@ -38,3 +38,10 @@ test("broken periods are ignored", () => {
   assert.equal(s.returnAt, 2 * H);
   assert.ok(Number.isNaN(s.billingStart));
 });
+
+test("hours charged are the billing periods' total, every started hour", () => {
+  const { chargedHours } = require("../pb_hooks/lib/periods.js");
+  assert.equal(chargedHours([p("billing", 8, 12), p("other", 12, 20), p("billing", 30, 32.5)]), 7, "4 h + 2.5 h, rounded up");
+  assert.equal(chargedHours([p("billing", 0, 5), p("billing", 3, 6)]), 6, "overlaps count once");
+  assert.equal(chargedHours([p("usage", 0, 5)]), null);
+});

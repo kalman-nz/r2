@@ -6,7 +6,7 @@ import { api, type Item } from "../lib/api";
 import { displayPath, useCategoryPaths } from "../lib/catalog";
 import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
-import { nzd } from "../lib/format";
+import { priceLabel } from "../lib/format";
 import { useRole } from "../lib/roles";
 import ItemForm from "../components/item/ItemForm";
 import ItemDetails from "../components/item/ItemDetails";
@@ -220,7 +220,7 @@ function KeyFacts({ item }: { item: Item }) {
   );
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {tile("Day rate", item.dayRate > 0 ? nzd(item.dayRate) : "—")}
+      {tile("Price", item.price > 0 ? priceLabel(item) : "—")}
       {tile("Free now", free === null ? "…" : stock !== null ? `${free} of ${stock}` : String(free), free !== null && free <= 0 ? "text-fault-ink" : "text-gray-900")}
       {tile("Booked, next 60 days", booked === null ? "…" : booked === 0 ? "Nothing" : `${booked} project${booked === 1 ? "" : "s"}`)}
       {tile("Location", item.kind === "kit" ? "Kit" : item.locationInWarehouse || "—")}

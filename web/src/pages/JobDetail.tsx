@@ -68,7 +68,9 @@ const BASIS_TEXT: Record<JobPricing["basis"], string> = {
   hire: "for the whole booking",
 };
 
-function TotalsCard({ pricing }: { pricing: JobPricing }) {
+function TotalsCard({ pricing, lines }: { pricing: JobPricing; lines: JobSummary["lines"] }) {
+  // Hours and weeks only matter when a line is priced by them.
+  const uses = (mode: string) => lines.some((l) => l.priceMode === mode && l.unitPrice);
   const t = pricing.totals;
   const row = (label: string, value: string, strong = false) => (
     <div className={`flex items-center justify-between gap-3 ${strong ? "font-semibold text-gray-900" : "text-gray-600"}`}>
@@ -81,6 +83,8 @@ function TotalsCard({ pricing }: { pricing: JobPricing }) {
       <h2 className="text-sm font-semibold text-gray-500 mb-1">Totals</h2>
       <p className="text-xs text-gray-500 mb-1">
         Charged as {pricing.days} day{pricing.days === 1 ? "" : "s"}, {BASIS_TEXT[pricing.basis]}: day rates × {pricing.factor}
+        {uses("per_hour") && `; hourly × ${pricing.hours} h`}
+        {uses("per_week") && `; weekly × ${pricing.weeks} week${pricing.weeks === 1 ? "" : "s"}`}
       </p>
       {row("Equipment & services", nzd(t.gross))}
       {t.lineDiscount !== 0 && row("Line discounts", `−${nzd(t.lineDiscount)}`)}
@@ -331,7 +335,7 @@ function ExistingJob({ id }: { id: string }) {
         </div>
 
         <div className="flex flex-col gap-4">
-          {pricing && <TotalsCard pricing={pricing} />}
+          {pricing && <TotalsCard pricing={pricing} lines={summary.lines} />}
 
           {summary.quotes && (
             <section className="card p-4 flex flex-col gap-2 text-sm">

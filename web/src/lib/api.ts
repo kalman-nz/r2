@@ -97,7 +97,9 @@ export interface Item extends RecordModel {
   tracking: "bulk" | "serial" | "";
   stockQty: number;
   outOfServiceQty: number;
-  dayRate: number;
+  // What price is per (migration 0026); empty means day.
+  price: number;
+  priceUnit: PriceUnit | "";
   replacementValue: number;
   weightKg: number;
   powerW: number;
@@ -204,13 +206,19 @@ export interface LineAvailability {
   shortFirm: number;
 }
 
+export type PriceUnit = "hour" | "day" | "week" | "each";
+// How a project line is charged: by the project's hours, day factor or
+// weeks, or once (pb_hooks/lib/pricing.js).
+export type PriceMode = "per_hour" | "per_day" | "per_week" | "fixed";
+
 export interface ItemInfo {
   id: string;
   name: string;
   code: string;
   kind: "item" | "kit";
   tracking: "bulk" | "serial" | "";
-  dayRate: number;
+  price: number;
+  priceUnit: PriceUnit;
   barcode: string;
   description: string;
   locationInWarehouse: string;
@@ -251,7 +259,7 @@ export interface JobLineView {
   description: string;
   quantity: number;
   perParent: number;
-  priceMode: "per_day" | "fixed";
+  priceMode: PriceMode;
   group: string;
   sortOrder: number;
   notes: string;
@@ -313,6 +321,8 @@ export interface JobTotals {
 
 export interface JobPricing {
   days: number;
+  hours: number;
+  weeks: number;
   basis: "override" | "billing" | "hire";
   factor: number;
   gstRate: number;
@@ -363,7 +373,7 @@ export interface QuoteLine {
   description: string;
   quantity: number;
   unitPrice: number;
-  priceMode: "per_day" | "fixed";
+  priceMode: PriceMode;
   discountPct: number;
   group: string;
   amount: LineAmount;
@@ -410,7 +420,7 @@ export interface NewLine {
   description?: string;
   quantity: number;
   unitPrice?: number;
-  priceMode?: "per_day" | "fixed";
+  priceMode?: PriceMode;
   group?: string;
   discountPct?: number;
 }
@@ -421,7 +431,7 @@ export type LinePatch = Partial<{
   discountPct: number;
   description: string;
   group: string;
-  priceMode: "per_day" | "fixed";
+  priceMode: PriceMode;
   notes: string;
   sortOrder: number;
 }>;

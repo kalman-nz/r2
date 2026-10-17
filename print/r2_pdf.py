@@ -312,7 +312,7 @@ def render_quote(data, tz):
     doc.set_y(max(yl, yr) + 8)
 
     # Lines.
-    table = Table(doc, [("desc", "Description", 98, "L"), ("qty", "Qty", 14, "R"), ("rate", "Rate", 26, "R"), ("disc", "Disc", 14, "R"), ("amount", "Amount", 28, "R")])
+    table = Table(doc, [("desc", "Description", 88, "L"), ("qty", "Qty", 14, "R"), ("rate", "Rate", 36, "R"), ("disc", "Disc", 14, "R"), ("amount", "Amount", 28, "R")])
     table.header()
     for group in group_lines(s.get("lines") or []):
         if group["name"]:
@@ -329,8 +329,8 @@ def render_quote(data, tz):
             child = bool(line.get("parentLine"))
             free_child = child and not line.get("unitPrice")
             unit = "incl." if free_child else money(line.get("unitPrice"))
-            if line.get("priceMode") == "per_day" and line.get("lineType") == "custom" and not free_child:
-                unit += "/day"
+            if not free_child:
+                unit += MODE_SUFFIX.get(line.get("priceMode"), "")
             amount = (line.get("amount") or {}).get("net") or 0
             table.row(
                 {
@@ -401,6 +401,11 @@ def render_quote(data, tz):
 
 
 # --- packing list ---
+
+# What a line's price is per (web/src/lib/format.ts MODE_SUFFIX). Quotes
+# from before per-hour/week pricing only marked custom per-day lines, so
+# an item's day rate now reads "/day" too.
+MODE_SUFFIX = {"per_hour": "/hr", "per_day": "/day", "per_week": "/week", "fixed": ""}
 
 # What the required periods do (web/src/lib/statuses.ts PERIOD_KINDS).
 PERIOD_TAGS = {"usage": "Kit booked", "billing": "Billed"}

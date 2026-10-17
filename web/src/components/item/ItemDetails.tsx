@@ -1,9 +1,9 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { pb } from "../../lib/pocketbase";
-import type { Item } from "../../lib/api";
+import type { Item, PriceUnit } from "../../lib/api";
 import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
-import { nzd } from "../../lib/format";
+import { nzd, priceLabel } from "../../lib/format";
 import NumberInput from "../NumberInput";
 import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
@@ -22,7 +22,8 @@ interface Draft {
   category: string;
   kind: "item" | "kit";
   tracking: "bulk" | "serial";
-  dayRate: number;
+  price: number;
+  priceUnit: PriceUnit;
   replacementValue: number;
   stockQty: number;
   locationInWarehouse: string;
@@ -36,7 +37,7 @@ interface Draft {
 // The fields each section saves.
 const FIELDS: Record<Section, (keyof Draft)[]> = {
   identification: ["name", "barcode", "category", "kind", "tracking"],
-  pricing: ["dayRate", "replacementValue"],
+  pricing: ["price", "priceUnit", "replacementValue"],
   warehouse: ["stockQty", "locationInWarehouse", "bufferHours", "weightKg", "powerW"],
   notes: ["description", "notes"],
 };
@@ -50,6 +51,13 @@ const TRACKING_OPTIONS: { value: Draft["tracking"]; label: string }[] = [
   { value: "bulk", label: "Bulk" },
   { value: "serial", label: "Serialised" },
 ];
+// What a price is per: each (sold), hour, day or week.
+const PER_OPTIONS: { value: PriceUnit; label: string }[] = [
+  { value: "each", label: "/ea" },
+  { value: "hour", label: "/hr" },
+  { value: "day", label: "/day" },
+  { value: "week", label: "/week" },
+];
 const labelOf = <T extends string>(options: { value: T; label: string }[], value: T) => options.find((o) => o.value === value)?.label ?? value;
 
 function draftOf(item: Item): Draft {
@@ -59,7 +67,8 @@ function draftOf(item: Item): Draft {
     category: item.category,
     kind: item.kind,
     tracking: item.tracking === "serial" ? "serial" : "bulk",
-    dayRate: item.dayRate,
+    price: item.price,
+    priceUnit: item.priceUnit || "day",
     replacementValue: item.replacementValue,
     stockQty: item.stockQty,
     locationInWarehouse: item.locationInWarehouse,
@@ -170,10 +179,13 @@ export default function ItemDetails({
     ),
     pricing: (
       <Card title="Pricing" {...card("pricing")}>
-        <Row label="Day rate" value={item.dayRate > 0 ? `${nzd(item.dayRate)} ex GST` : null} empty="No rate set">
-          <NumberInput value={draft.dayRate} min={0} onChange={(n) => set("dayRate", n)} className="input py-1.5 w-full" />
+        <Row label="Price" value={item.price > 0 ? `${priceLabel(item)} ex GST` : null} empty="No price set">
+          <div className="flex items-center gap-2 flex-wrap">
+            <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-24" />
+            <Segmented compact label="Price per" value={draft.priceUnit} onChange={(v) => set("priceUnit", v)} options={PER_OPTIONS} />
+          </div>
         </Row>
-        <Row label="Replacement" value={item.replacementValue > 0 ? nzd(item.replacementValue) : null}>
+        <Row label="Replacement cost" value={item.replacementValue > 0 ? nzd(item.replacementValue) : null}>
           <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} className="input py-1.5 w-full" />
         </Row>
       </Card>

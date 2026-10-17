@@ -103,3 +103,22 @@ test("an empty job totals zero", () => {
   const t = quoteTotals([], { factor: 1, discountPct: 0, gstRate: 15 });
   assert.equal(t.total, 0);
 });
+
+const pricing = require("../pb_hooks/lib/pricing.js");
+
+test("lines charge per hour, day, week or once, by their price mode", () => {
+  const charge = { factor: 2, hours: 10, weeks: 3 };
+  const line = (priceMode) => pricing.lineAmounts({ unitPrice: 10, quantity: 2, discountPct: 0, priceMode }, charge).net;
+  assert.equal(line("per_hour"), 20000, "$10/hr × 2 × 10 hours");
+  assert.equal(line("per_day"), 4000, "$10/day × 2 × factor 2");
+  assert.equal(line("per_week"), 6000, "$10/week × 2 × 3 weeks");
+  assert.equal(line("fixed"), 2000, "$10 each × 2");
+  assert.equal(pricing.lineAmounts({ unitPrice: 10, quantity: 1, priceMode: "per_day" }, 1.5).net, 1500, "a bare day factor still works");
+});
+
+test("weeks are every started 7 days, minimum one", () => {
+  assert.equal(pricing.chargeableWeeks(1), 1);
+  assert.equal(pricing.chargeableWeeks(7), 1);
+  assert.equal(pricing.chargeableWeeks(8), 2);
+  assert.equal(pricing.chargeableWeeks(0), 1);
+});

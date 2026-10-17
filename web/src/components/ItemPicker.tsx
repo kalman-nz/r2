@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type Item } from "../lib/api";
 import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
-import { nzd } from "../lib/format";
+import { priceLabel } from "../lib/format";
 import { errorText } from "../lib/errors";
 import Modal from "./Modal";
 import NumberInput from "./NumberInput";
@@ -123,7 +123,7 @@ export default function ItemPicker({
                   )}
                 </div>
                 <div className="text-xs text-gray-500 truncate">
-                  {[item.code, displayPath(paths.get(item.category)), item.dayRate ? `${nzd(item.dayRate)}/day` : ""]
+                  {[item.code, displayPath(paths.get(item.category)), priceLabel(item)]
                     .filter(Boolean)
                     .join(" · ")}
                 </div>

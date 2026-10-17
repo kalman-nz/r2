@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine } from "../../lib/api";
-import { nzd } from "../../lib/format";
+import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine, type PriceMode } from "../../lib/api";
+import { nzd, MODE_SUFFIX } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { InlineNumber, InlineText } from "../InlineInput";
 import ItemPicker from "../ItemPicker";
@@ -66,7 +66,7 @@ function CustomLineModal({
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(0);
-  const [priceMode, setPriceMode] = useState<"fixed" | "per_day">("fixed");
+  const [priceMode, setPriceMode] = useState<PriceMode>("fixed");
   const [group, setGroup] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -104,9 +104,11 @@ function CustomLineModal({
               />
             </Field>
             <Field label="Charged">
-              <select value={priceMode} onChange={(e) => setPriceMode(e.target.value as "fixed" | "per_day")} className="input py-2">
-                <option value="fixed">Once (flat)</option>
-                <option value="per_day">Per hire day, like equipment</option>
+              <select value={priceMode} onChange={(e) => setPriceMode(e.target.value as PriceMode)} className="input py-2">
+                <option value="fixed">Once (each)</option>
+                <option value="per_hour">Per hour</option>
+                <option value="per_day">Per day</option>
+                <option value="per_week">Per week</option>
               </select>
             </Field>
           </>
@@ -386,7 +388,7 @@ function LineRow({
           )}
           {line.lineType === "accessory" && <span className="text-[11px] text-gray-400 shrink-0">accessory</span>}
           {line.item?.code && <span className="text-[11px] text-gray-400 font-mono shrink-0">{line.item.code}</span>}
-          {isCustom && line.priceMode === "per_day" && <span className="text-[11px] text-gray-400 shrink-0">per day</span>}
+
         </div>
       </td>
       <td className="px-2 py-1.5 text-right">
@@ -415,6 +417,7 @@ function LineRow({
             ) : (
               <span className="tabular-nums text-gray-400">{line.unitPrice ? nzd(line.unitPrice) : "incl."}</span>
             )}
+            {line.unitPrice ? <span className="ml-0.5 text-[11px] text-gray-400">{MODE_SUFFIX[line.priceMode]}</span> : null}
           </td>
           <td className="px-2 py-1.5 text-right">
             {canEdit && line.lineType !== "component" ? (

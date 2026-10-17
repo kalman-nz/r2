@@ -142,7 +142,7 @@ function itemFields(item: Item | null, categoryPath: string): LabelDataContext {
     equipmentName: item?.name ?? "",
     equipmentCode: item?.code ?? "",
     equipmentFolder: categoryPath,
-    equipmentPrice: numberText(item?.dayRate),
+    equipmentPrice: numberText(item?.price),
     equipmentWeight: numberText(item?.weightKg),
     equipmentPower: numberText(item?.powerW),
     equipmentExternalRemark: item?.description ?? "",
