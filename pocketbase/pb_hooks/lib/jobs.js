@@ -27,6 +27,20 @@ function requireLine(app, id) {
   return line;
 }
 
+// What an item's price is per (migration 0026): hour, day, week or each.
+// Empty is the old default, day.
+const PRICE_UNITS = ["hour", "day", "week", "each"];
+function priceUnitOf(item) {
+  const unit = item.getString("priceUnit");
+  return PRICE_UNITS.indexOf(unit) === -1 ? "day" : unit;
+}
+
+// The line price mode an item's price per gives (lib/pricing.js).
+const PRICE_MODES = ["per_hour", "per_day", "per_week", "fixed"];
+function priceModeFor(item) {
+  return { hour: "per_hour", day: "per_day", week: "per_week", each: "fixed" }[priceUnitOf(item)];
+}
+
 function itemInfo(item) {
   if (!item) return null;
   return {
@@ -35,7 +49,8 @@ function itemInfo(item) {
     code: item.getString("code"),
     kind: item.getString("kind"),
     tracking: item.getString("tracking"),
-    dayRate: item.getFloat("dayRate"),
+    price: item.getFloat("price"),
+    priceUnit: priceUnitOf(item),
     barcode: item.getString("barcode"),
     description: item.getString("description"),
     locationInWarehouse: item.getString("locationInWarehouse"),
@@ -95,16 +110,22 @@ function jobInfo(app, job) {
   };
 }
 
-// Charged days: an explicit override wins, then the billing periods, each
-// counted on its own (lib/periods.js chargedDays), then, if a project has
-// somehow lost them all, the whole time the kit is booked.
+// What the project charges for: days (an explicit override wins, then the
+// billing periods, each counted on its own, then, if a project has somehow
+// lost them all, the whole time the kit is booked), hours (the billing
+// periods' total time, or the booked window) and weeks (from the days).
 function chargeDaysFor(app, job) {
+  const { chargedDays, chargedHours, plainPeriods } = require(`${__hooks}/lib/periods.js`);
+  const periods = plainPeriods(app, job.id);
+  const bookedMs = toMs(job.getString("returnAt")) - toMs(job.getString("prepAt"));
+  const billedHours = chargedHours(periods);
+  const hours = billedHours !== null ? billedHours : Math.max(1, Math.ceil(bookedMs / 3600000 - 1e-9) || 1);
   const override = job.getInt("chargeDays");
-  if (override > 0) return { days: override, basis: "override" };
-  const { chargedDays, plainPeriods } = require(`${__hooks}/lib/periods.js`);
-  const billed = chargedDays(plainPeriods(app, job.id));
-  if (billed !== null) return { days: billed, basis: "billing" };
-  return { days: pricing.chargeableDays(toMs(job.getString("prepAt")), toMs(job.getString("returnAt"))), basis: "hire" };
+  const billed = chargedDays(periods);
+  const days =
+    override > 0 ? override : billed !== null ? billed : pricing.chargeableDays(toMs(job.getString("prepAt")), toMs(job.getString("returnAt")));
+  const basis = override > 0 ? "override" : billed !== null ? "billing" : "hire";
+  return { days: days, hours: hours, weeks: pricing.chargeableWeeks(days), basis: basis };
 }
 
 // Parents in sortOrder, each followed by its own auto-added lines.
@@ -246,6 +267,8 @@ function buildSummary(app, jobId, show) {
   }));
   const totals = pricing.quoteTotals(priced, {
     factor: factor,
+    hours: charge.hours,
+    weeks: charge.weeks,
     discountPct: job.getFloat("discountPct"),
     gstRate: settings.gstRate,
   });
@@ -304,6 +327,8 @@ function buildSummary(app, jobId, show) {
   if (includePrices) {
     summary.pricing = {
       days: charge.days,
+      hours: charge.hours,
+      weeks: charge.weeks,
       basis: charge.basis,
       factor: factor,
       gstRate: settings.gstRate,
@@ -396,8 +421,8 @@ function expandChildren(app, parentLine, item, qty) {
         lineType: kind,
         quantity: qty * perParent,
         perParent: perParent,
-        unitPrice: chargeable ? child.getFloat("dayRate") : 0,
-        priceMode: "per_day",
+        unitPrice: chargeable ? child.getFloat("price") : 0,
+        priceMode: priceModeFor(child),
         discountPct: 0,
         group: parentLine.getString("group"),
         sortOrder: (order += 10),
@@ -451,8 +476,8 @@ function addLine(jobId, body) {
         item: item.id,
         lineType: "item",
         quantity: qty,
-        unitPrice: unitPrice === undefined ? item.getFloat("dayRate") : unitPrice,
-        priceMode: "per_day",
+        unitPrice: unitPrice === undefined ? item.getFloat("price") : unitPrice,
+        priceMode: priceModeFor(item),
         discountPct: discountPct || 0,
         group: typeof body.group === "string" ? body.group.trim() : topCategoryName(tx, item.getString("category")),
         sortOrder: nextSortOrder(tx, job.id),
@@ -466,7 +491,7 @@ function addLine(jobId, body) {
     if (!description) throw new BadRequestError("Pick an item or describe the line");
     const quantity = optionalNumber(body.quantity, "Quantity");
     if (quantity === undefined || quantity <= 0) throw new BadRequestError("Quantity must be more than 0");
-    const priceMode = body.priceMode === "per_day" ? "per_day" : "fixed";
+    const priceMode = PRICE_MODES.indexOf(body.priceMode) === -1 ? "fixed" : body.priceMode;
     tx.save(
       new Record(collection, {
         org: job.getString("org"),
@@ -504,7 +529,7 @@ function updateLine(lineId, body) {
     if (typeof body.notes === "string") line.set("notes", body.notes);
     if (body.priceMode !== undefined) {
       if (lineType !== "custom") throw new BadRequestError("Only custom lines can change how they're priced");
-      if (body.priceMode !== "fixed" && body.priceMode !== "per_day") throw new BadRequestError("Invalid price mode");
+      if (PRICE_MODES.indexOf(body.priceMode) === -1) throw new BadRequestError("Invalid price mode");
       line.set("priceMode", body.priceMode);
     }
     const sortOrder = optionalNumber(body.sortOrder, "Sort order");

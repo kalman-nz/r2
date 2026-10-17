@@ -192,7 +192,7 @@ function runRentmanImport(org, token, who) {
           kind: "item",
           tracking: serialised ? "serial" : "bulk",
           stockQty: serialised ? 0 : Math.max(0, Math.round(bulkQuantity(eq))),
-          dayRate: Number(eq.price) || 0,
+          price: Number(eq.price) || 0,
           weightKg: Number(eq.weight) || 0,
           powerW: Number(eq.power) || 0,
           barcode: eq.qrcodes || "",
@@ -282,6 +282,18 @@ function categoryForPath(app, org, path, cache) {
   return parentId;
 }
 
+// "per hour", "hr", "/day", "weekly", "ea", "each"… → hour | day | week |
+// each. Blank is day, like every item before prices had a unit.
+function csvPriceUnit(value) {
+  const v = String(value || "").trim().toLowerCase().replace(/^(per\s*|\/)/, "");
+  if (!v) return "day";
+  if (/^(h|hr|hrs|hour|hours|hourly)$/.test(v)) return "hour";
+  if (/^(d|day|days|daily)$/.test(v)) return "day";
+  if (/^(w|wk|wks|week|weeks|weekly)$/.test(v)) return "week";
+  if (/^(ea|each|unit|sale|sold|item)$/.test(v)) return "each";
+  throw new Error("price unit should be hour, day, week or each, not " + value);
+}
+
 function importItemRow(app, org, row, counts, cache) {
   const name = String(row.name || "").trim();
   if (!name) throw new Error("name is required");
@@ -302,7 +314,8 @@ function importItemRow(app, org, row, counts, cache) {
     kind: "item",
     tracking: serialised ? "serial" : "bulk",
     stockQty: serialised ? 0 : Math.max(0, Math.round(csvNumber(row.quantity, "quantity") || 0)),
-    dayRate: csvNumber(row.dayRate, "day rate") || 0,
+    price: csvNumber(row.price, "price") || 0,
+    priceUnit: csvPriceUnit(row.priceUnit),
     replacementValue: csvNumber(row.replacementValue, "replacement value") || 0,
     weightKg: csvNumber(row.weightKg, "weight") || 0,
     powerW: csvNumber(row.powerW, "power") || 0,

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type QuoteLine, type QuoteStatus } from "../lib/api";
-import { formatDate, formatRange, nzd } from "../lib/format";
+import { formatDate, formatRange, nzd, MODE_SUFFIX } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { QuoteStatusBadge } from "../components/StatusBadge";
@@ -238,7 +238,7 @@ function QuoteGroup({ name, lines }: { name: string; lines: QuoteLine[] }) {
               {line.description && <span className="block text-[11px] text-gray-500">{line.description}</span>}
             </td>
             <td className="py-1 text-right tabular-nums">{line.quantity}</td>
-            <td className="py-1 text-right tabular-nums">{free ? "incl." : nzd(line.unitPrice)}</td>
+            <td className="py-1 text-right tabular-nums whitespace-nowrap">{free ? "incl." : `${nzd(line.unitPrice)}${MODE_SUFFIX[line.priceMode] ?? ""}`}</td>
             <td className="py-1 text-right tabular-nums">{line.discountPct ? `${line.discountPct}%` : ""}</td>
             <td className="py-1 text-right tabular-nums">{free ? "" : nzd(line.amount.net)}</td>
           </tr>

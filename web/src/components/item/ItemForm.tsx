@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { pb } from "../../lib/pocketbase";
-import type { Item } from "../../lib/api";
+import type { Item, PriceUnit } from "../../lib/api";
 import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import Field from "../Field";
@@ -16,7 +16,8 @@ interface ItemDraft {
   kind: "item" | "kit";
   tracking: "bulk" | "serial";
   stockQty: number;
-  dayRate: number;
+  price: number;
+  priceUnit: PriceUnit;
   replacementValue: number;
   weightKg: number;
   powerW: number;
@@ -36,7 +37,8 @@ function draftFrom(item: Item | null): ItemDraft {
     kind: item?.kind ?? "item",
     tracking: item?.tracking === "serial" ? "serial" : "bulk",
     stockQty: item?.stockQty ?? 0,
-    dayRate: item?.dayRate ?? 0,
+    price: item?.price ?? 0,
+    priceUnit: item?.priceUnit || "day",
     replacementValue: item?.replacementValue ?? 0,
     weightKg: item?.weightKg ?? 0,
     powerW: item?.powerW ?? 0,
@@ -168,10 +170,25 @@ export default function ItemForm({
       </Group>
 
       <Group title="Pricing">
-        <Field label="Day rate (ex GST)">
-          <NumberInput value={draft.dayRate} min={0} onChange={(n) => set("dayRate", n)} disabled={readOnly} className="input py-2" />
+        <Field label="Price (ex GST)" className="sm:col-span-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} disabled={readOnly} className="input py-2 w-36" />
+            <Segmented
+              compact
+              label="Price per"
+              value={draft.priceUnit}
+              onChange={(v) => set("priceUnit", v)}
+              disabled={readOnly}
+              options={[
+                { value: "each", label: "/ea" },
+                { value: "hour", label: "/hr" },
+                { value: "day", label: "/day" },
+                { value: "week", label: "/week" },
+              ]}
+            />
+          </div>
         </Field>
-        <Field label="Replacement value">
+        <Field label="Replacement cost">
           <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} disabled={readOnly} className="input py-2" />
         </Field>
       </Group>

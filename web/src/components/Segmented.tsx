@@ -7,12 +7,15 @@ export default function Segmented<T extends string>({
   onChange,
   disabled = false,
   label,
+  compact = false,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   disabled?: boolean;
   label: string;
+  // Tighter buttons, for short options like /hr /day.
+  compact?: boolean;
 }) {
   return (
     <div role="radiogroup" aria-label={label} className={`inline-flex w-fit self-start rounded-md border border-gray-300 bg-gray-50 p-0.5 ${disabled ? "opacity-60" : ""}`}>
@@ -26,7 +29,7 @@ export default function Segmented<T extends string>({
             aria-checked={on}
             disabled={disabled}
             onClick={() => onChange(o.value)}
-            className={`px-3 py-1 text-sm rounded transition-colors disabled:cursor-not-allowed ${
+            className={`${compact ? "px-2" : "px-3"} py-1 text-sm rounded transition-colors disabled:cursor-not-allowed ${
               on ? "bg-white text-gray-900 font-medium shadow-sm ring-1 ring-gray-200" : "text-gray-600 hover:text-gray-900"
             }`}
           >

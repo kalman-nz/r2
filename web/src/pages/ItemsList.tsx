@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type EquipmentView, type Item } from "../lib/api";
 import { renderItemLabelImage, sendRenderedLabel } from "../lib/print";
-import { money, num } from "../lib/format";
+import { money, num, PRICE_SUFFIX } from "../lib/format";
 import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
 import { useRole } from "../lib/roles";
 import BatchPrintBar from "../components/BatchPrintBar";
@@ -118,14 +118,20 @@ const COLUMNS: Column[] = [
     render: (i) => <span className="text-gray-600 tabular-nums">{i.tracking === "bulk" ? num(i.outOfServiceQty) : "—"}</span>,
   },
   {
+    // Was the day rate; the key stays so saved column choices still apply.
     key: "dayRate",
-    label: "Day rate",
+    label: "Price",
     align: "right",
     toggleable: true,
     defaultVisible: true,
     defaultWidth: 100,
-    sortValue: (i) => i.dayRate,
-    render: (i) => <span className="text-gray-700 tabular-nums">{money(i.dayRate)}</span>,
+    sortValue: (i) => i.price,
+    render: (i) => (
+      <span className="text-gray-700 tabular-nums">
+        {money(i.price)}
+        <span className="text-gray-400 text-xs">{PRICE_SUFFIX[i.priceUnit] ?? "/day"}</span>
+      </span>
+    ),
   },
   {
     key: "location",

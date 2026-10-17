@@ -62,20 +62,37 @@ function parseFactors(text) {
   return factors;
 }
 
+// What a line's price is multiplied by, from its priceMode:
+//   per_day   the job's day factor (from charged days and the factor table)
+//   per_hour  the job's charged hours
+//   per_week  the job's charged weeks
+//   fixed     1: delivery, a flat labour call, a sold item
+// charge is { factor, hours, weeks }, or just the day factor as a number.
+function multiplierFor(priceMode, charge) {
+  const c = typeof charge === "number" ? { factor: charge } : charge || {};
+  if (priceMode === "fixed") return 1;
+  if (priceMode === "per_hour") return Number(c.hours) || 1;
+  if (priceMode === "per_week") return Number(c.weeks) || 1;
+  return Number(c.factor) || 1;
+}
+
+// Weeks charged for a number of charged days: every started week, min 1.
+function chargeableWeeks(days) {
+  return Math.max(1, Math.ceil((Number(days) || 0) / 7 - 1e-9));
+}
+
 // line: { unitPrice (dollars), quantity, discountPct, priceMode }
-// priceMode "per_day" multiplies by the job's day factor (rental kit);
-// "fixed" doesn't (delivery, a flat labour call, a sale item).
-function lineAmounts(line, factor) {
+function lineAmounts(line, charge) {
   const unitCents = toCents(line.unitPrice);
   const qty = Number(line.quantity) || 0;
-  const multiplier = line.priceMode === "fixed" ? 1 : factor;
+  const multiplier = multiplierFor(line.priceMode, charge);
   const gross = roundHalfAway(unitCents * qty * multiplier);
   const discount = roundHalfAway((gross * clampPct(line.discountPct)) / 100);
   return { gross: gross, discount: discount, net: gross - discount };
 }
 
-// opts: { factor, discountPct (whole-job, applied after line discounts),
-// gstRate (percent, e.g. 15) }. Every amount returned is in cents.
+// opts: { factor, hours, weeks, discountPct (whole-job, applied after line
+// discounts), gstRate (percent, e.g. 15) }. Every amount returned is in cents.
 // GST is worked out once on the job total rather than per line, which is
 // how IRD expects a tax invoice to add up.
 function quoteTotals(lines, opts) {
@@ -83,7 +100,7 @@ function quoteTotals(lines, opts) {
   let lineDiscount = 0;
   let net = 0;
   const amounts = lines.map((line) => {
-    const a = lineAmounts(line, opts.factor);
+    const a = lineAmounts(line, opts);
     gross += a.gross;
     lineDiscount += a.discount;
     net += a.net;
@@ -109,6 +126,8 @@ module.exports = {
   roundHalfAway,
   chargeableDays,
   dayFactor,
+  chargeableWeeks,
+  multiplierFor,
   parseFactors,
   lineAmounts,
   quoteTotals,

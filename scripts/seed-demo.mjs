@@ -130,7 +130,7 @@ const catalogue = [
 ];
 
 const items = {};
-for (const [name, code, category, tracking, quantity, dayRate, extra] of catalogue) {
+for (const [name, code, category, tracking, quantity, price, extra] of catalogue) {
   const item = await create("items", {
     name,
     code,
@@ -138,7 +138,7 @@ for (const [name, code, category, tracking, quantity, dayRate, extra] of catalog
     kind: "item",
     tracking,
     stockQty: tracking === "bulk" ? quantity : 0,
-    dayRate,
+    price,
     barcode: tracking === "bulk" ? `DEMO-${code}` : "",
     locationInWarehouse: category,
     ...extra,
@@ -163,7 +163,7 @@ const smallPa = await create("items", {
   code: "PA-S",
   category: cat.Audio,
   kind: "kit",
-  dayRate: 300,
+  price: 300,
   description: "Two powered speakers on stands, 16-channel mixer, cabling",
 });
 for (const [index, [code, quantity]] of [

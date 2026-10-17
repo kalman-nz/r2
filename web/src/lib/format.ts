@@ -44,6 +44,17 @@ export function formatRange(start: string | null | undefined, end: string | null
   return `${formatDateTime(start)} → ${formatDateTime(end)}`;
 }
 
+// "$85.00/day", "$10.00/hr", "$300.00/week", "$18.50/ea": an item's price
+// with what it's per.
+export function priceLabel(item: { price: number; priceUnit: string }): string {
+  if (!(item.price > 0)) return "";
+  return `${nzd(item.price)}${PRICE_SUFFIX[item.priceUnit] ?? "/day"}`;
+}
+
+export const PRICE_SUFFIX: Record<string, string> = { hour: "/hr", day: "/day", week: "/week", each: "/ea" };
+// The same, for a project line's price mode.
+export const MODE_SUFFIX: Record<string, string> = { per_hour: "/hr", per_day: "/day", per_week: "/week", fixed: "" };
+
 // A schedule period: "Fri 16 Oct, 8:00 am – 12:00 pm" on one day, the full
 // range across days.
 export function formatPeriod(start: string | null | undefined, end: string | null | undefined): string {

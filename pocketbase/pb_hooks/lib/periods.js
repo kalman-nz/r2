@@ -46,6 +46,13 @@ function summarise(periods) {
 // Overlapping billing periods are merged first so no time counts twice.
 // null when there are no billing periods.
 function chargedDays(periods) {
+  const merged = mergedBilling(periods);
+  if (merged === null) return null;
+  return merged.reduce((sum, p) => sum + chargeableDays(p.start, p.end), 0);
+}
+
+// The billing periods in time order with overlaps merged, or null if none.
+function mergedBilling(periods) {
   const billing = valid(periods)
     .filter((p) => p.kind === "billing")
     .sort((a, b) => a.start - b.start);
@@ -56,7 +63,14 @@ function chargedDays(periods) {
     if (last && p.start <= last.end) last.end = Math.max(last.end, p.end);
     else merged.push({ start: p.start, end: p.end });
   }
-  return merged.reduce((sum, p) => sum + chargeableDays(p.start, p.end), 0);
+  return merged;
+}
+
+function chargedHours(periods) {
+  const merged = mergedBilling(periods);
+  if (merged === null) return null;
+  const ms = merged.reduce((sum, p) => sum + (p.end - p.start), 0);
+  return Math.max(1, Math.ceil(ms / 3600000 - 1e-9));
 }
 
 function periodsOf(app, jobId) {
@@ -113,4 +127,4 @@ function guardRequired(app, period, newKind) {
   }
 }
 
-module.exports = { KINDS, REQUIRED, summarise, chargedDays, periodsOf, plainPeriods, syncJobDates, seedPeriods, guardRequired };
+module.exports = { KINDS, REQUIRED, summarise, chargedDays, chargedHours, periodsOf, plainPeriods, syncJobDates, seedPeriods, guardRequired };
