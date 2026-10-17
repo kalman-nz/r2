@@ -47,6 +47,12 @@ onRecordValidate((e) => {
 }, "roles");
 
 onRecordValidate((e) => {
+  const { validateCustomField } = require(`${__hooks}/lib/validation.js`);
+  validateCustomField(e.app, e.record);
+  e.next();
+}, "custom_fields");
+
+onRecordValidate((e) => {
   const { validateInvitation } = require(`${__hooks}/lib/validation.js`);
   validateInvitation(e.app, e.record);
   e.next();

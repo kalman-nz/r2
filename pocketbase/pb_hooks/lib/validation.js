@@ -176,6 +176,45 @@ function validateInvitation(app, record) {
   sameOrg(app, record, "role", "roles", "role");
 }
 
+// Custom fields: a name, a type and (for a dropdown) its choices. New ones
+// get a key nobody picks; a field's key never changes, since items keep
+// their values under it.
+function validateCustomField(app, record) {
+  const { decodeJson } = require("./records.js");
+  const label = record.getString("label").trim();
+  record.set("label", label);
+  if (!label) throw new BadRequestError("The field needs a name");
+  if (!record.getString("appliesTo")) record.set("appliesTo", "item");
+  if (!record.getString("type")) record.set("type", "text");
+  if (record.isNew()) {
+    if (!record.getString("key")) record.set("key", "field_" + $security.randomStringWithAlphabet(10, "abcdefghijklmnopqrstuvwxyz0123456789"));
+  } else if (record.original().getString("key") !== record.getString("key")) {
+    throw new BadRequestError("A field's key can't be changed");
+  }
+  const others = app.findRecordsByFilter("custom_fields", "org = {:org} && appliesTo = {:to} && label = {:label} && id != {:id}", "", 1, 0, {
+    org: record.getString("org"),
+    to: record.getString("appliesTo"),
+    label: label,
+    id: record.id,
+  });
+  if (others.length > 0) throw new BadRequestError("There's already a field called " + label);
+  if (record.getString("type") === "select") {
+    const seen = {};
+    const options = [];
+    for (const o of decodeJson(record.get("options"), [])) {
+      const text = String(o).trim();
+      if (text && !seen[text]) {
+        seen[text] = true;
+        options.push(text);
+      }
+    }
+    if (options.length === 0) throw new BadRequestError("A dropdown needs at least one choice");
+    record.set("options", options);
+  } else {
+    record.set("options", []);
+  }
+}
+
 // Roles hold known permissions only (plus what those need, see
 // lib/permissions.js), and the locked Admin role always holds all of them.
 function validateRole(record) {
@@ -206,6 +245,7 @@ module.exports = {
   validatePeriod,
   validateMembership,
   validateRole,
+  validateCustomField,
   validateInvitation,
   guardReferenced,
 };

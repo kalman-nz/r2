@@ -259,6 +259,7 @@ export default function ItemDetail() {
                   {cards.warehouse}
                   {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
                   {cards.notes}
+                  {cards.custom}
                   <UsedIn item={item} />
                 </div>
               </div>
