@@ -15,3 +15,16 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   lost: "Lost",
   retired: "Retired",
 };
+
+// "Active" is what a warehouse cares about day to day: anything not yet
+// finished. These are the views under Projects in the sidebar; the status
+// dropdown on the list reaches the rest.
+export type ProjectView = "active" | "all" | JobStatus;
+
+export const PROJECT_VIEWS: { value: ProjectView; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "enquiry", label: "Enquiries" },
+  { value: "out", label: "Out on hire" },
+  { value: "returned", label: "Completed" },
+  { value: "all", label: "All projects" },
+];

@@ -74,9 +74,9 @@ const CONTACTS: DirectoryConfig = {
 
 const VENUES: DirectoryConfig = {
   collection: "venues",
-  title: "Venues",
-  singular: "venue",
-  path: "/venues",
+  title: "Locations",
+  singular: "location",
+  path: "/locations",
   jobField: "venue",
   fields: [
     { key: "name", label: "Name", wide: true },
@@ -277,7 +277,7 @@ function DirectoryDetail({ config }: { config: DirectoryConfig }) {
           {!isNew && !readOnly && (
             <label className="flex items-center gap-2 text-sm text-gray-600 sm:col-span-2">
               <input type="checkbox" checked={draft.archived === true} onChange={(e) => setDraft((d) => ({ ...d, archived: e.target.checked }))} />
-              Archived — hidden from lists and dropdowns, kept on past jobs
+              Archived — hidden from lists and dropdowns, kept on past projects
             </label>
           )}
         </div>
@@ -297,10 +297,10 @@ function DirectoryDetail({ config }: { config: DirectoryConfig }) {
 
       {!isNew && (
         <section className="card overflow-hidden">
-          <h2 className="text-sm font-semibold text-gray-500 px-4 pt-3 pb-2">Jobs ({jobs.length})</h2>
+          <h2 className="text-sm font-semibold text-gray-500 px-4 pt-3 pb-2">Projects ({jobs.length})</h2>
           <div className="divide-y divide-gray-100">
             {jobs.map((j) => (
-              <Link key={j.id} to={`/jobs/${j.id}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
+              <Link key={j.id} to={`/projects/${j.id}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
                 <span className="truncate">
                   <span className="text-gray-400 tabular-nums">#{j.number}</span> {j.name}
                 </span>
@@ -310,7 +310,7 @@ function DirectoryDetail({ config }: { config: DirectoryConfig }) {
                 </span>
               </Link>
             ))}
-            {jobs.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No jobs yet.</p>}
+            {jobs.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No projects yet.</p>}
           </div>
         </section>
       )}

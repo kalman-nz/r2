@@ -87,6 +87,6 @@ onRecordDelete((e) => {
 
 onRecordDelete((e) => {
   const { guardReferenced } = require(`${__hooks}/lib/validation.js`);
-  guardReferenced(e.app, "jobs", "venue = {:id}", e.record.id, "venue");
+  guardReferenced(e.app, "jobs", "venue = {:id}", e.record.id, "location");
   e.next();
 }, "venues");

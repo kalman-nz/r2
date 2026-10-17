@@ -62,7 +62,7 @@ export default function QuickCreateSelect({
             }
             if (e.key === "Escape") setCreating(false);
           }}
-          placeholder={collection === "contacts" ? "New client name" : "New venue name"}
+          placeholder={collection === "contacts" ? "New client name" : "New location name"}
           className="input flex-1 min-w-0"
         />
         <button type="button" onClick={create} disabled={saving || !name.trim()} className="btn-primary py-1.5">

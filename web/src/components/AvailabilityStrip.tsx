@@ -74,7 +74,7 @@ export default function AvailabilityStrip({ itemId }: { itemId: string }) {
       ) : (
         <div className="flex flex-col divide-y divide-gray-100 -mx-4">
           {data.bookings.map((b) => (
-            <Link key={b.jobId} to={`/jobs/${b.jobId}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
+            <Link key={b.jobId} to={`/projects/${b.jobId}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
               <span className="flex flex-col min-w-0">
                 <span className="text-gray-900 truncate">
                   #{b.number} {b.name}

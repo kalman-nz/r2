@@ -36,7 +36,7 @@ function summarizeLogs(rows, opts) {
       if (j) jobName[j.id] = "#" + j.getInt("number") + " " + j.get("name");
     }
   }
-  const jobLabel = (id) => jobName[id] || "job " + id;
+  const jobLabel = (id) => jobName[id] || "project " + id;
 
   return rows.map((entry, i) => {
     const details = decoded[i];

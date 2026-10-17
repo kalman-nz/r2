@@ -44,7 +44,7 @@ function buildIcs(jobs, calendarName, nowMs) {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//R2//Jobs//EN",
+    "PRODID:-//R2//Projects//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "X-WR-CALNAME:" + escapeText(calendarName),

@@ -48,9 +48,9 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
       client: clients[j.getString("client")] || "",
       venue: venues[j.getString("venue")] || "",
       updated: toMs(j.getString("updated")),
-      url: base + "/jobs/" + j.id,
+      url: base + "/projects/" + j.id,
     })),
-    (settings.businessShortName || settings.businessName || "R2") + " jobs",
+    (settings.businessShortName || settings.businessName || "R2") + " projects",
     now,
   );
   return e.blob(200, "text/calendar; charset=utf-8", toBytes(ics));

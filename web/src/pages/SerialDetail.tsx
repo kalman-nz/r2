@@ -100,7 +100,7 @@ export default function SerialDetail() {
           {outOn && (
             <p className="text-sm text-violet-700 mt-0.5">
               Out on{" "}
-              <Link to={`/jobs/${outOn.id}`} className="underline">
+              <Link to={`/projects/${outOn.id}`} className="underline">
                 #{outOn.number} {outOn.name}
               </Link>
             </p>
@@ -133,11 +133,11 @@ export default function SerialDetail() {
                       {s.direction === "out" ? "Out" : "In"}
                     </span>{" "}
                     {s.expand?.job ? (
-                      <Link to={`/jobs/${s.job}`} className="hover:underline">
+                      <Link to={`/projects/${s.job}`} className="hover:underline">
                         #{s.expand.job.number} {s.expand.job.name}
                       </Link>
                     ) : (
-                      "(deleted job)"
+                      "(deleted project)"
                     )}
                     {s.expand?.who && <span className="text-gray-400"> · {s.expand.who.name || s.expand.who.email}</span>}
                   </span>

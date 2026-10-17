@@ -43,7 +43,7 @@ function scan(jobId, body, auth) {
   $app.runInTransaction((tx) => {
     const job = jobs.requireJob(tx, jobId);
     if (direction === "out" && NO_SCAN_OUT_STATUSES.indexOf(job.getString("status")) !== -1) {
-      throw new BadRequestError("This job is " + job.getString("status") + ", so nothing can go out on it");
+      throw new BadRequestError("This project is " + job.getString("status") + ", so nothing can go out on it");
     }
     const found = lookupCode(tx, job.getString("org"), body.code);
     if (!found) throw new NotFoundError("Nothing has the code " + String(body.code || "").trim());
@@ -73,11 +73,11 @@ function scan(jobId, body, auth) {
           throw new BadRequestError(name + " is flagged " + serial.getString("status") + " and can't go out");
         }
         if (latest && latest.getString("direction") === "out") {
-          if (latest.getString("job") === job.id) throw new BadRequestError(name + " is already out on this job");
+          if (latest.getString("job") === job.id) throw new BadRequestError(name + " is already out on this project");
           const other = findOrNull(tx, "jobs", latest.getString("job"));
-          throw new BadRequestError(name + " is still out on job " + (other ? "#" + other.getInt("number") : "(deleted)") + " — scan it back in first");
+          throw new BadRequestError(name + " is still out on project " + (other ? "#" + other.getInt("number") : "(deleted)") + " — scan it back in first");
         }
-        if (!state.needed) throw new BadRequestError(item.getString("name") + " isn't on this job");
+        if (!state.needed) throw new BadRequestError(item.getString("name") + " isn't on this project");
         if (state.out >= state.needed) throw new BadRequestError("All " + state.needed + " × " + item.getString("name") + " are already out");
         record.serial = serial.id;
         record.quantity = 1;
@@ -85,7 +85,7 @@ function scan(jobId, body, auth) {
         message = name + " out (" + (state.out + 1) + " of " + state.needed + ")";
       } else {
         if (!latest || latest.getString("direction") !== "out" || latest.getString("job") !== job.id) {
-          throw new BadRequestError(name + " isn't out on this job");
+          throw new BadRequestError(name + " isn't out on this project");
         }
         record.serial = serial.id;
         record.quantity = 1;
@@ -100,7 +100,7 @@ function scan(jobId, body, auth) {
       const qty = body.quantity === undefined || body.quantity === null || body.quantity === "" ? 1 : Number(body.quantity);
       if (!Number.isInteger(qty) || qty < 1) throw new BadRequestError("Quantity must be a whole number, 1 or more");
       if (direction === "out") {
-        if (!state.needed) throw new BadRequestError(item.getString("name") + " isn't on this job");
+        if (!state.needed) throw new BadRequestError(item.getString("name") + " isn't on this project");
         if (state.out + qty > state.needed) {
           throw new BadRequestError("Only " + Math.max(0, state.needed - state.out) + " more " + item.getString("name") + " needed");
         }

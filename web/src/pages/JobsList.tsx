@@ -1,34 +1,38 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import type { Contact, Job, JobStatus, Venue } from "../lib/api";
+import type { Contact, Job, Venue } from "../lib/api";
 import { formatDateTime, parseDate } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge } from "../components/StatusBadge";
-import { JOB_STATUSES } from "../lib/statuses";
+import { JOB_STATUSES, type ProjectView } from "../lib/statuses";
 import { orgFilter } from "../lib/currentOrg";
 
 type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
 
-// "Current" is what a warehouse cares about day to day: anything not yet
-// finished. Past/finished jobs are one filter away.
-type Filter = "current" | "all" | JobStatus;
+// The view lives in the URL (?view=), so the sidebar can link to it.
+type Filter = ProjectView;
+
+const FILTERS = new Set<string>(["active", "all", ...JOB_STATUSES.map((s) => s.value)]);
 
 export default function JobsList() {
   const navigate = useNavigate();
   const { can } = useRole();
-  const [filter, setFilter] = useState<Filter>("current");
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") ?? "active";
+  const filter = (FILTERS.has(view) ? view : "active") as Filter;
+  const setFilter = (f: Filter) => setParams(f === "active" ? {} : { view: f }, { replace: true });
   const [search, setSearch] = useState("");
 
   const { data: jobs = [], isLoading, error } = useQuery({
     queryKey: ["jobs", filter],
     queryFn: () =>
       pb.collection("jobs").getFullList<JobWithExpand>({
-        sort: filter === "current" ? "prepAt" : "-prepAt",
+        sort: filter === "active" ? "prepAt" : "-prepAt",
         expand: "client,venue",
         filter: orgFilter(
-          filter === "current"
+          filter === "active"
             ? "status != 'returned' && status != 'cancelled'"
             : filter === "all"
               ? undefined
@@ -53,12 +57,12 @@ export default function JobsList() {
     <div className="max-w-6xl mx-auto flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">Jobs</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Projects</h1>
           <p className="text-xs text-gray-500">{filtered.length.toLocaleString()} shown</p>
         </div>
         {can("jobs.create") && (
-          <Link to="/jobs/new" className="btn-primary">
-            New job
+          <Link to="/projects/new" className="btn-primary">
+            New project
           </Link>
         )}
       </div>
@@ -67,12 +71,12 @@ export default function JobsList() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search number, name, client, venue…"
+          placeholder="Search number, name, client, location…"
           className="input w-72"
         />
         <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)} className="input w-auto">
-          <option value="current">Current (not returned or cancelled)</option>
-          <option value="all">All jobs</option>
+          <option value="active">Active (not returned or cancelled)</option>
+          <option value="all">All projects</option>
           {JOB_STATUSES.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
@@ -82,15 +86,15 @@ export default function JobsList() {
       </div>
 
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
-      {error && <p className="text-red-600 text-sm">Couldn't load jobs: {(error as Error).message}</p>}
+      {error && <p className="text-red-600 text-sm">Couldn't load projects: {(error as Error).message}</p>}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-[13px] border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-left text-gray-500">
               <th className="px-3 py-2 font-medium w-16">#</th>
-              <th className="px-3 py-2 font-medium">Job</th>
-              <th className="px-3 py-2 font-medium hidden md:table-cell">Venue</th>
+              <th className="px-3 py-2 font-medium">Project</th>
+              <th className="px-3 py-2 font-medium hidden md:table-cell">Location</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap">Prep</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap hidden sm:table-cell">Return</th>
               <th className="px-3 py-2 font-medium">Status</th>
@@ -101,7 +105,7 @@ export default function JobsList() {
               const overdue =
                 job.status === "out" && (parseDate(job.returnAt)?.getTime() ?? Infinity) < now;
               return (
-                <tr key={job.id} onClick={() => navigate(`/jobs/${job.id}`)} className="hover:bg-gray-50 cursor-pointer">
+                <tr key={job.id} onClick={() => navigate(`/projects/${job.id}`)} className="hover:bg-gray-50 cursor-pointer">
                   <td className="px-3 py-2 text-gray-500 tabular-nums">{job.number}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col min-w-0">
@@ -127,7 +131,7 @@ export default function JobsList() {
         </table>
         {!isLoading && filtered.length === 0 && (
           <p className="px-4 py-6 text-gray-500 text-sm text-center">
-            {jobs.length === 0 ? "No jobs here yet." : "No jobs match your search."}
+            {jobs.length === 0 ? "No projects here yet." : "No projects match your search."}
           </p>
         )}
       </div>

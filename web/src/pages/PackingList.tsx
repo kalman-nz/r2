@@ -30,7 +30,7 @@ export default function PackingList() {
   }
 
   if (isLoading) return <p className="p-6 text-gray-500 text-sm">Loading…</p>;
-  if (error || !summary) return <p className="p-6 text-red-600 text-sm">Couldn't load this job: {error ? errorText(error) : "not found"}</p>;
+  if (error || !summary) return <p className="p-6 text-red-600 text-sm">Couldn't load this project: {error ? errorText(error) : "not found"}</p>;
 
   const { job, packing } = summary;
   const lines = summary.lines.filter((l) => l.lineType !== "custom");
@@ -49,8 +49,8 @@ export default function PackingList() {
   return (
     <div className="min-h-screen bg-[#f3f6fb] print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3">
-        <Link to={`/jobs/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900">
-          ← Job #{job.number}
+        <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900">
+          ← Project #{job.number}
         </Link>
         <div className="flex items-center gap-1.5">
           <button onClick={() => window.print()} className="btn-secondary">
@@ -106,7 +106,7 @@ export default function PackingList() {
             ))}
           </tbody>
         </table>
-        {lines.length === 0 && <p className="text-gray-500">Nothing to pack on this job.</p>}
+        {lines.length === 0 && <p className="text-gray-500">Nothing to pack on this project.</p>}
 
         {job.notes && (
           <section className="break-inside-avoid">

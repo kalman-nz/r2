@@ -198,7 +198,7 @@ function Locations() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="text-sm font-semibold text-gray-900">Stock locations</h2>
+        <h2 className="text-sm font-semibold text-gray-900">Storage locations</h2>
         <p className="text-xs text-gray-500 mt-0.5">Warehouses or stores where units live. With only one, new units go there automatically.</p>
       </div>
       <div className="card p-4 flex flex-col gap-2">

@@ -17,7 +17,7 @@ const NO_AVAILABILITY_STATUSES = ["returned", "cancelled"];
 
 function requireJob(app, id) {
   const job = findOrNull(app, "jobs", id);
-  if (!job) throw new NotFoundError("Job not found");
+  if (!job) throw new NotFoundError("Project not found");
   return job;
 }
 
@@ -538,7 +538,7 @@ function deleteLine(lineId) {
 function issueQuote(jobId, authRecord) {
   const { publicSettings } = require(`${__hooks}/lib/settings.js`);
   const summary = buildSummary($app, jobId, true);
-  if (summary.lines.length === 0) throw new BadRequestError("Add something to the job before quoting it");
+  if (summary.lines.length === 0) throw new BadRequestError("Add something to the project before quoting it");
   const org = requireJob($app, jobId).getString("org");
   const settings = publicSettings(org);
 

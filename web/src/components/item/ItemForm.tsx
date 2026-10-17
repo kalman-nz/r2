@@ -228,7 +228,7 @@ export default function ItemForm({
         {item && !readOnly && (
           <label className="flex items-center gap-2 text-sm text-gray-600 sm:col-span-2">
             <input type="checkbox" checked={draft.archived} onChange={(e) => set("archived", e.target.checked)} />
-            Archived — hidden from lists and can't be added to jobs, history kept
+            Archived — hidden from lists and can't be added to projects, history kept
           </label>
         )}
       </div>

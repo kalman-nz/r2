@@ -14,7 +14,7 @@ const job = {
   client: "Kōwhai Events",
   venue: "Town Hall\nStage door",
   updated: Date.UTC(2026, 9, 16, 1, 2, 3),
-  url: "https://r2.example.com/jobs/abc123",
+  url: "https://r2.example.com/projects/abc123",
 };
 
 test("dates are UTC basic format", () => {

@@ -23,7 +23,7 @@ export default function JobFields({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-      <Field label="Job name" className="sm:col-span-2">
+      <Field label="Project name" className="sm:col-span-2">
         <input
           value={draft.name}
           onChange={(e) => set("name", e.target.value)}
@@ -43,7 +43,7 @@ export default function JobFields({
           placeholder="No client"
         />
       </Field>
-      <Field label="Venue">
+      <Field label="Location">
         <QuickCreateSelect
           collection="venues"
           value={draft.venue}
@@ -51,7 +51,7 @@ export default function JobFields({
           options={venues}
           disabled={readOnly}
           canCreate={can("venues.create")}
-          placeholder="No venue"
+          placeholder="No location"
         />
       </Field>
       <Field label="Status" hint={JOB_STATUSES.find((s) => s.value === draft.status)?.hint}>
@@ -97,7 +97,7 @@ export default function JobFields({
       </Field>
       {!readOnly && (
         <>
-          <Field label="Job discount (%)" hint="Applied after any line discounts">
+          <Field label="Project discount (%)" hint="Applied after any line discounts">
             <NumberInput value={draft.discountPct} min={0} max={100} onChange={(n) => set("discountPct", n)} className="input py-2" />
           </Field>
           <Field label="Charge for days" hint="0 = work it out from the show dates (or prep → return)">

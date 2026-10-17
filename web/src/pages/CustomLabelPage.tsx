@@ -53,7 +53,7 @@ export default function CustomLabelPage() {
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-gray-900">Custom label</h1>
+      <h1 className="text-lg font-semibold text-gray-900">Label printing</h1>
 
       <div className="flex items-center gap-5 border-b border-gray-200 w-fit">
         <button className={tabClass(mode === "text")} onClick={() => setMode("text")}>

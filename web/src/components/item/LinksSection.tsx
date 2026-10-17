@@ -14,12 +14,12 @@ type LinkRecord = ItemComponent & { expand?: { child?: Item; parent?: Item } };
 const COPY = {
   component: {
     title: "Kit contents",
-    hint: "Adding this kit to a job adds these lines with it. The kit is only as available as its scarcest part.",
+    hint: "Adding this kit to a project adds these lines with it. The kit is only as available as its scarcest part.",
     empty: "No contents yet — a kit with nothing in it can't go out.",
   },
   accessory: {
     title: "Accessories",
-    hint: "Added automatically, per unit, whenever this goes on a job (e.g. a stand and cable with each speaker). Free unless marked chargeable.",
+    hint: "Added automatically, per unit, whenever this goes on a project (e.g. a stand and cable with each speaker). Free unless marked chargeable.",
     empty: "No accessories.",
   },
 };

@@ -51,7 +51,7 @@ export default function AdminOrgs() {
                 <th className="px-4 py-2 font-medium">Organisation</th>
                 <th className="px-3 py-2 font-medium text-right">Members</th>
                 <th className="px-3 py-2 font-medium text-right">Items</th>
-                <th className="px-3 py-2 font-medium text-right">Jobs</th>
+                <th className="px-3 py-2 font-medium text-right">Projects</th>
                 <th className="px-3 py-2 font-medium">Created</th>
                 <th className="px-4 py-2 font-medium">Status</th>
               </tr>

@@ -293,7 +293,7 @@ def render_quote(data, tz):
         yl = doc.text_block(MARGIN, yl, col - 5, "—", color=FAINT)
 
     jx = MARGIN + col
-    yr = doc.label(jx, y, "Job")
+    yr = doc.label(jx, y, "Project")
     yr = doc.text_block(jx, yr, col, job.get("name", ""), semibold=True)
     if job.get("reference"):
         yr = doc.text_block(jx, yr, col, f"Your ref: {job['reference']}")
@@ -446,7 +446,7 @@ def render_packing(data, tz):
                 }
             )
     if not lines:
-        doc.text_block(MARGIN, doc.get_y() + 2, CONTENT_W, "Nothing to pack on this job.", color=MUTED)
+        doc.text_block(MARGIN, doc.get_y() + 2, CONTENT_W, "Nothing to pack on this project.", color=MUTED)
 
     doc.set_auto_page_break(True, margin=18)
     if job.get("notes"):

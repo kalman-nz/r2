@@ -85,8 +85,8 @@ routerAdd(
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    if (ids.length === 0) throw new BadRequestError("Pick at least one job");
-    if (ids.length > 500) throw new BadRequestError("Export 500 jobs or fewer at a time");
+    if (ids.length === 0) throw new BadRequestError("Pick at least one project");
+    if (ids.length > 500) throw new BadRequestError("Export 500 projects or fewer at a time");
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(query.invoiceDate || "");
     if (!m) throw new BadRequestError("invoiceDate must be a date like 2026-10-31");
 
@@ -117,7 +117,7 @@ routerAdd(
         snapshot: snapshot,
       });
     }
-    if (invoices.length === 0) throw new BadRequestError("None of those jobs has an issued quote to invoice from");
+    if (invoices.length === 0) throw new BadRequestError("None of those projects has an issued quote to invoice from");
 
     const csv = buildXeroCsv(invoices, { accountCode: settings.xeroAccountCode, taxType: settings.xeroTaxType });
     logEvent(ctx.orgId, "export_xero", whoName(e.auth), { invoices: invoices.map((i) => i.invoiceNumber), skipped: skipped });

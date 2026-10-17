@@ -69,7 +69,7 @@ export default function AccountPage() {
             <span className={`text-xs font-medium ${verified ? "text-green-700" : "text-amber-700"}`}>{verified ? "Verified" : "Not verified"}</span>
           </div>
         </Field>
-        <Field label="Name" hint="What your team sees on jobs, scans and the activity log.">
+        <Field label="Name" hint="What your team sees on projects, scans and the activity log.">
           <input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" className="input py-2" />
         </Field>
         <div>
