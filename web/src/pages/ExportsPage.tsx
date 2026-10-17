@@ -70,15 +70,15 @@ export default function ExportsPage() {
       <div>
         <h1 className="text-lg font-semibold text-gray-900">Export invoices to Xero</h1>
         <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
-          Makes a file for Xero's invoice import (Business → Invoices → Import). Each job is invoiced from the quote the client
-          saw. Xero brings them in as drafts to check and approve, and refuses an invoice number it already has, so a job can't
+          Makes a file for Xero's invoice import (Business → Invoices → Import). Each project is invoiced from the quote the client
+          saw. Xero brings them in as drafts to check and approve, and refuses an invoice number it already has, so a project can't
           be invoiced twice by accident.
         </p>
       </div>
 
       <div className="card p-4 flex flex-wrap items-end gap-4 text-sm">
         <label className="flex flex-col gap-1">
-          <span className="text-gray-500">Jobs back from</span>
+          <span className="text-gray-500">Projects back from</span>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input py-1.5" />
         </label>
         <label className="flex flex-col gap-1">
@@ -105,7 +105,7 @@ export default function ExportsPage() {
       </div>
 
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
-      {error && <p className="text-red-600 text-sm">Couldn't load jobs: {errorText(error)}</p>}
+      {error && <p className="text-red-600 text-sm">Couldn't load projects: {errorText(error)}</p>}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-[13px] border-collapse">
@@ -113,7 +113,7 @@ export default function ExportsPage() {
             <tr className="border-b border-gray-200 text-left text-gray-500">
               <th className="px-3 py-2 w-8" />
               <th className="px-3 py-2 font-medium w-16">#</th>
-              <th className="px-3 py-2 font-medium">Job</th>
+              <th className="px-3 py-2 font-medium">Project</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap">Back</th>
               <th className="px-3 py-2 font-medium">Quote</th>
               <th className="px-3 py-2 font-medium text-right">Incl GST</th>
@@ -127,7 +127,7 @@ export default function ExportsPage() {
                 </td>
                 <td className="px-3 py-2 tabular-nums">{j.number}</td>
                 <td className="px-3 py-2">
-                  <Link to={`/jobs/${j.jobId}`} className="font-medium text-gray-900 hover:underline">
+                  <Link to={`/projects/${j.jobId}`} className="font-medium text-gray-900 hover:underline">
                     {j.name}
                   </Link>
                   <span className="ml-2">
@@ -146,7 +146,7 @@ export default function ExportsPage() {
                         <QuoteStatusBadge status={j.quote.status} />
                       </span>
                       {j.changedSinceQuote && (
-                        <span className="text-xs text-amber-700">Job changed since this quote — issue a new one to invoice the changes</span>
+                        <span className="text-xs text-amber-700">Project changed since this quote — issue a new one to invoice the changes</span>
                       )}
                     </span>
                   ) : (
@@ -158,7 +158,7 @@ export default function ExportsPage() {
             ))}
           </tbody>
         </table>
-        {!isLoading && jobs.length === 0 && <p className="px-4 py-6 text-gray-500 text-sm text-center">No jobs back in those dates.</p>}
+        {!isLoading && jobs.length === 0 && <p className="px-4 py-6 text-gray-500 text-sm text-center">No projects back in those dates.</p>}
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">

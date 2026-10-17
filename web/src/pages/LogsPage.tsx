@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type LogEntry, type Stats } from "../lib/api";
 
 const TILES: { key: keyof Stats; label: string }[] = [
-  { key: "upcomingJobs", label: "Current jobs" },
+  { key: "upcomingJobs", label: "Active projects" },
   { key: "items", label: "Inventory items" },
   { key: "stockUnits", label: "Units in stock" },
   { key: "kits", label: "Kits" },
@@ -11,16 +11,23 @@ const TILES: { key: keyof Stats; label: string }[] = [
   { key: "labelsPrinted", label: "Labels printed" },
 ];
 
+// "quote_issued" → "Quote issued"
+function eventName(type: string): string {
+  const words = type.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 function exportLogs(logs: LogEntry[]) {
   const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+  a.download = `activity-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
+// Settings → Activity log: who did what, with a usage summary on top.
 export default function LogsPage() {
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ["stats"],
@@ -51,9 +58,12 @@ export default function LogsPage() {
   }, [logs, typeFilter, search]);
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-6">
-      <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold text-gray-900">Logs</h1>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Usage</h2>
+          <p className="text-xs text-gray-500">A snapshot of this organisation right now.</p>
+        </div>
 
         {statsLoading && <p className="text-gray-500 text-sm">Loading…</p>}
         {statsError && <p className="text-red-600 text-sm">Couldn't load stats: {(statsError as Error).message}</p>}
@@ -62,7 +72,7 @@ export default function LogsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {TILES.map(({ key, label }) => (
               <div key={key} className="card p-4 flex flex-col gap-1">
-                <span className="text-sm text-gray-500">{label}</span>
+                <span className="text-xs font-medium text-gray-500">{label}</span>
                 <span className="text-2xl font-semibold text-gray-900">{stats[key].toLocaleString()}</span>
               </div>
             ))}
@@ -72,46 +82,49 @@ export default function LogsPage() {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-gray-500">
-            System logs {logs && `(${filteredLogs.length}/${logs.length})`}
-          </h2>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Activity log</h2>
+            <p className="text-xs text-gray-500">
+              {logs ? `${filteredLogs.length.toLocaleString()} of ${logs.length.toLocaleString()} events` : "Every change, scan and print in this organisation."}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input py-1.5 text-xs font-mono">
-              <option value="all">all types</option>
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input py-1.5 text-xs">
+              <option value="all">All events</option>
               {types.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {eventName(t)}
                 </option>
               ))}
             </select>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="search who / summary / details"
-              className="input py-1.5 text-xs font-mono w-64"
+              placeholder="Search person, summary or details…"
+              className="input py-1.5 text-xs w-64"
             />
             <button
               onClick={() => exportLogs(filteredLogs)}
               disabled={!logs || filteredLogs.length === 0}
               className="btn-secondary text-xs py-1.5"
             >
-              Export JSON
+              Download JSON
             </button>
           </div>
         </div>
 
         {logsLoading && <p className="text-gray-500 text-sm">Loading…</p>}
-        {logsError && <p className="text-red-600 text-sm">Couldn't load logs: {(logsError as Error).message}</p>}
+        {logsError && <p className="text-red-600 text-sm">Couldn't load the activity log: {(logsError as Error).message}</p>}
 
         {logs && (
           <div className="card overflow-hidden">
             <div className="max-h-[36rem] overflow-y-auto overflow-x-auto">
-              <table className="w-full text-xs font-mono border-collapse">
+              <table className="w-full text-xs border-collapse">
                 <thead className="sticky top-0 bg-gray-50">
                   <tr className="border-b border-gray-200 text-left text-gray-500">
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">Timestamp</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">Type</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">Who</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">When</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">Event</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">Person</th>
                     <th className="px-3 py-2 font-medium">Summary</th>
                     <th className="px-3 py-2 font-medium">Details</th>
                   </tr>
@@ -122,10 +135,10 @@ export default function LogsPage() {
                       <td className="px-3 py-2 whitespace-nowrap text-gray-500">
                         {new Date(entry.timestamp).toLocaleString()}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">{entry.type}</td>
+                      <td className="px-3 py-2 whitespace-nowrap font-medium">{eventName(entry.type)}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{entry.who || "—"}</td>
                       <td className="px-3 py-2">{entry.summary}</td>
-                      <td className="px-3 py-2 text-gray-500 break-all max-w-xs">
+                      <td className="px-3 py-2 text-gray-500 font-mono break-all max-w-xs">
                         {JSON.stringify(entry.details)}
                       </td>
                     </tr>
@@ -134,7 +147,7 @@ export default function LogsPage() {
               </table>
               {filteredLogs.length === 0 && (
                 <p className="px-3 py-6 text-gray-500 text-sm">
-                  {logs.length === 0 ? "No activity yet." : "No log entries match this filter."}
+                  {logs.length === 0 ? "No activity yet." : "No events match this filter."}
                 </p>
               )}
             </div>

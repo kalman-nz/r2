@@ -69,7 +69,7 @@ export const DATA_FIELDS: { key: DataFieldKey; label: string }[] = [
   { key: "purchaseDate", label: "Purchase date" },
   { key: "purchasePrice", label: "Purchase cost" },
   { key: "location", label: "Stock location" },
-  { key: "project", label: "Current job" },
+  { key: "project", label: "Current project" },
   { key: "equipmentName", label: "Item name" },
   { key: "equipmentCode", label: "Item code" },
   { key: "equipmentFolder", label: "Category" },

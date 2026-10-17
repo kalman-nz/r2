@@ -28,7 +28,7 @@ function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boole
   if (a.short > 0) {
     const title =
       a.shortFirm < a.short
-        ? `${a.free} free for these dates. ${a.shortFirm === 0 ? "Fine" : `Short ${a.shortFirm}`} if pencilled holds on other jobs are released.`
+        ? `${a.free} free for these dates. ${a.shortFirm === 0 ? "Fine" : `Short ${a.shortFirm}`} if pencilled holds on other projects are released.`
         : `${a.free} free for these dates.`;
     return (
       <span className="inline-flex flex-col leading-tight" title={title}>
@@ -43,7 +43,7 @@ function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boole
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 text-gray-600" title={`${a.free} free for these dates, ${a.needed} on this job`}>
+    <span className="inline-flex items-center gap-1.5 text-gray-600" title={`${a.free} free for these dates, ${a.needed} on this project`}>
       <span className="status-dot bg-[#16d590]" />
       {a.free - a.needed} spare
     </span>
@@ -278,7 +278,7 @@ export default function JobLines({
         </table>
         {lines.length === 0 && (
           <p className="px-4 py-8 text-gray-500 text-sm text-center">
-            Nothing on this job yet.{canEdit ? " Add equipment to see availability and pricing." : ""}
+            Nothing on this project yet.{canEdit ? " Add equipment to see availability and pricing." : ""}
           </p>
         )}
       </div>

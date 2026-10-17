@@ -32,12 +32,12 @@ const GROUPS = [
     ],
   },
   {
-    name: "Jobs",
+    name: "Projects",
     permissions: [
-      ["jobs.create", "Create jobs"],
-      ["jobs.edit", "Edit job details, dates and status"],
-      ["jobs.delete", "Delete jobs"],
-      ["jobs.lines", "Add and change a job's equipment and services"],
+      ["jobs.create", "Create projects"],
+      ["jobs.edit", "Edit project details, dates and status"],
+      ["jobs.delete", "Delete projects"],
+      ["jobs.lines", "Add and change a project's equipment and services"],
     ],
   },
   {
@@ -57,14 +57,14 @@ const GROUPS = [
     ],
   },
   {
-    name: "Contacts and venues",
+    name: "Contacts and locations",
     permissions: [
       ["contacts.create", "Add contacts"],
       ["contacts.edit", "Edit contacts"],
       ["contacts.delete", "Delete contacts"],
-      ["venues.create", "Add venues"],
-      ["venues.edit", "Edit venues"],
-      ["venues.delete", "Delete venues"],
+      ["venues.create", "Add locations"],
+      ["venues.edit", "Edit locations"],
+      ["venues.delete", "Delete locations"],
     ],
   },
   {
@@ -133,7 +133,7 @@ const TECH = ["units.flag", "scan.out", "scan.in", "labels.print"];
 
 const DEFAULT_ROLES = [
   { name: "Admin", description: "Everything, always. Every organisation keeps at least one.", locked: true, permissions: ALL },
-  { name: "Planner", description: "Runs jobs and quotes, and looks after inventory and contacts", locked: false, permissions: PLANNER },
+  { name: "Planner", description: "Runs projects and quotes, and looks after inventory and contacts", locked: false, permissions: PLANNER },
   { name: "Tech", description: "Looks things up, scans kit out and in, flags broken gear, prints labels", locked: false, permissions: TECH },
 ];
 

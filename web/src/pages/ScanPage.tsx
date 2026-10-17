@@ -43,15 +43,15 @@ function ChooseJob() {
 
   return (
     <div className="max-w-xl mx-auto flex flex-col gap-3">
-      <h1 className="text-lg font-semibold text-gray-900">Scan kit</h1>
-      <p className="text-sm text-gray-500">Pick the job you're packing or unpacking.</p>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Job number or name" className="input py-2" />
+      <h1 className="text-lg font-semibold text-gray-900">Check in & out</h1>
+      <p className="text-sm text-gray-500">Pick the project you're packing or unpacking.</p>
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Project number or name" className="input py-2" />
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
       <div className="card divide-y divide-gray-100 overflow-hidden">
         {filtered.map((job) => (
           <button
             key={job.id}
-            onClick={() => navigate(`/jobs/${job.id}/scan`)}
+            onClick={() => navigate(`/projects/${job.id}/scan`)}
             className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between gap-3"
           >
             <span className="flex flex-col min-w-0">
@@ -66,7 +66,7 @@ function ChooseJob() {
           </button>
         ))}
         {!isLoading && filtered.length === 0 && (
-          <p className="px-4 py-6 text-sm text-gray-500 text-center">No provisional, confirmed or out jobs.</p>
+          <p className="px-4 py-6 text-sm text-gray-500 text-center">No provisional, confirmed or out projects.</p>
         )}
       </div>
     </div>
@@ -143,7 +143,7 @@ function ScanJob({ jobId }: { jobId: string }) {
     }
   }
 
-  if (error) return <p className="text-red-600 text-sm">Couldn't load this job: {errorText(error)}</p>;
+  if (error) return <p className="text-red-600 text-sm">Couldn't load this project: {errorText(error)}</p>;
   if (!summary) return <p className="text-gray-500 text-sm">Loading…</p>;
   const { job, packing } = summary;
   if (directions.length === 0) {
@@ -152,7 +152,7 @@ function ScanJob({ jobId }: { jobId: string }) {
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <Link to={`/jobs/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
+      <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
         ← #{job.number} {job.name}
       </Link>
 
@@ -225,7 +225,7 @@ function ScanJob({ jobId }: { jobId: string }) {
 
       <section className="card overflow-hidden">
         <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-500">On this job</h2>
+          <h2 className="text-sm font-semibold text-gray-500">On this project</h2>
           <span className="text-xs text-gray-500">{packing.packed ? "Everything's out" : packing.allBack ? "" : "Some kit still out"}</span>
         </div>
         <table className="w-full text-[13px] border-collapse">
@@ -257,7 +257,7 @@ function ScanJob({ jobId }: { jobId: string }) {
             })}
           </tbody>
         </table>
-        {packing.items.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No physical kit on this job.</p>}
+        {packing.items.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No physical kit on this project.</p>}
       </section>
     </div>
   );

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import type { ReactNode, SVGProps } from "react";
 import JobsList from "./pages/JobsList";
 import JobDetail from "./pages/JobDetail";
@@ -13,7 +13,6 @@ import ItemDetail from "./pages/ItemDetail";
 import SerialDetail from "./pages/SerialDetail";
 import { ContactDetail, ContactsList, VenueDetail, VenuesList } from "./pages/Directory";
 import SettingsPage, { useSettingsAccess } from "./pages/SettingsPage";
-import LogsPage from "./pages/LogsPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import { ResetPasswordPage, VerifyEmailPage } from "./pages/AuthLinkPages";
@@ -24,6 +23,7 @@ import RequireRole from "./components/RequireRole";
 import GlobalSearch from "./components/GlobalSearch";
 import { OrgSwitcher, UserMenu } from "./components/HeaderMenus";
 import { useRole } from "./lib/roles";
+import { PROJECT_VIEWS } from "./lib/statuses";
 import { useOrg } from "./lib/org";
 import { api } from "./lib/api";
 
@@ -116,19 +116,103 @@ const icons = {
 };
 
 // Icons only on phones (the scan page needs the width), labels from md up.
-function sidebarLinkClass({ isActive }: { isActive: boolean }) {
-  return `flex items-center gap-3 mx-2 px-2.5 h-9 rounded-md text-sm font-medium border-l-2 ${
-    isActive ? "bg-white/10 text-white border-[#167cfb]" : "text-zinc-400 border-transparent hover:bg-white/5 hover:text-white"
+function sidebarLinkClass(isActive: boolean) {
+  return `flex items-center gap-3 mx-2 px-2.5 h-9 rounded-md text-sm font-medium ${
+    isActive ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
   }`;
 }
 
-function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+function NavItem({ to, icon, label, end }: { to: string; icon: ReactNode; label: string; end?: boolean }) {
   return (
-    <NavLink to={to} className={sidebarLinkClass} title={label}>
+    <NavLink to={to} end={end} className={({ isActive }) => sidebarLinkClass(isActive)} title={label}>
       {icon}
       <span className="hidden md:inline truncate">{label}</span>
     </NavLink>
   );
+}
+
+function NavSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="group flex flex-col gap-0.5 pt-2 md:pt-4 first:pt-0">
+      <div className="hidden md:block px-[1.125rem] pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{title}</div>
+      {/* A thin rule stands in for the heading on phones. */}
+      <div className="md:hidden mx-3.5 mb-2 border-t border-white/10 group-first:hidden" />
+      {children}
+    </div>
+  );
+}
+
+// A link with views under it (md up), open while you're in its section.
+// The chevron folds it away without leaving the page.
+function NavGroup({
+  to,
+  icon,
+  label,
+  children,
+}: {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  children: { to: string; label: string; active: boolean }[];
+}) {
+  const location = useLocation();
+  const inSection = location.pathname === to || location.pathname.startsWith(`${to}/`);
+  const [open, setOpen] = useState(inSection);
+  useEffect(() => {
+    if (inSection) setOpen(true);
+  }, [inSection]);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="relative">
+        <NavLink to={to} className={() => sidebarLinkClass(inSection)} title={label}>
+          {icon}
+          <span className="hidden md:inline truncate">{label}</span>
+        </NavLink>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/10"
+          aria-label={open ? `Collapse ${label}` : `Expand ${label}`}
+          aria-expanded={open}
+        >
+          <svg viewBox="0 0 20 20" className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 5l5 5-5 5" />
+          </svg>
+        </button>
+      </div>
+      {open && (
+        <div className="hidden md:flex flex-col gap-0.5 ml-[1.6rem] mr-2 pl-3 border-l border-white/10">
+          {children.map((c) => (
+            <Link
+              key={c.to}
+              to={c.to}
+              className={`flex items-center px-2.5 h-8 rounded-md text-[13px] ${
+                c.active ? "text-white bg-white/10 font-medium" : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useProjectViewLinks() {
+  const location = useLocation();
+  const onList = location.pathname === "/projects";
+  const current = new URLSearchParams(location.search).get("view") ?? "active";
+  return PROJECT_VIEWS.map((v) => ({
+    to: v.value === "active" ? "/projects" : `/projects?view=${v.value}`,
+    label: v.label,
+    active: onList && current === v.value,
+  }));
+}
+
+// Keeps the rest of the path (a record id, /scan) when a section is renamed.
+function RenamedPath({ from, to }: { from: string; to: string }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.pathname.slice(from.length)}${location.search}`} replace />;
 }
 
 function usePageViewLogging() {
@@ -166,6 +250,7 @@ function AppShell() {
   const { org, memberships } = useOrg();
   const { can, isPlatformAdmin } = useRole();
   const settingsOpen = useSettingsAccess().length > 0;
+  const projectViews = useProjectViewLinks();
   useTabTitle(!!org);
   const online = useOnline();
   usePageViewLogging();
@@ -177,25 +262,38 @@ function AppShell() {
           <span className="hidden md:inline text-white font-semibold text-sm tracking-tight truncate">R2</span>
         </div>
 
-        <nav className="flex-1 overflow-y-auto flex flex-col gap-0.5">
+        <nav className="flex-1 overflow-y-auto flex flex-col">
           {org ? (
             <>
-              <NavItem to="/jobs" icon={icons.jobs} label="Jobs" />
-              <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
-              {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Scan" />}
-              <NavItem to="/contacts" icon={icons.contacts} label="Contacts" />
-              <NavItem to="/venues" icon={icons.venues} label="Venues" />
-              {can("labels.print") && <NavItem to="/custom-label" icon={icons.label} label="Custom label" />}
-              {can("export.xero") && <NavItem to="/exports" icon={icons.exports} label="Exports" />}
-              {can("logs.view") && <NavItem to="/logs" icon={icons.logs} label="Logs" />}
+              <NavSection title="Planning">
+                <NavGroup to="/projects" icon={icons.jobs} label="Projects">
+                  {projectViews}
+                </NavGroup>
+              </NavSection>
+              <NavSection title="Warehouse">
+                <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
+                {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Check in & out" />}
+                {can("labels.print") && <NavItem to="/label-printing" icon={icons.label} label="Label printing" />}
+              </NavSection>
+              <NavSection title="Relations">
+                <NavItem to="/contacts" icon={icons.contacts} label="Contacts" />
+                <NavItem to="/locations" icon={icons.venues} label="Locations" />
+              </NavSection>
+              {can("export.xero") && (
+                <NavSection title="Finance">
+                  <NavItem to="/finance/xero-export" icon={icons.exports} label="Xero export" />
+                </NavSection>
+              )}
             </>
           ) : (
             <NavItem to="/orgs" icon={icons.orgs} label="Organisations" />
           )}
         </nav>
 
-        {isPlatformAdmin && <NavItem to="/admin" icon={icons.admin} label="Platform admin" />}
-        {org && settingsOpen && <NavItem to="/settings" icon={icons.settings} label="Settings" />}
+        <div className="flex flex-col gap-0.5 pt-3 mt-2 border-t border-white/10">
+          {org && settingsOpen && <NavItem to="/settings" icon={icons.settings} label="Settings" />}
+          {isPlatformAdmin && <NavItem to="/admin" icon={icons.admin} label="Platform admin" />}
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -232,20 +330,20 @@ function AppShell() {
               />
               {org ? (
                 <>
-                  <Route path="/" element={<Navigate to="/jobs" replace />} />
-                  <Route path="/jobs" element={<JobsList />} />
-                  <Route path="/jobs/:id" element={<JobDetail />} />
-                  <Route path="/jobs/:id/scan" element={<ScanPage />} />
+                  <Route path="/" element={<Navigate to="/projects" replace />} />
+                  <Route path="/projects" element={<JobsList />} />
+                  <Route path="/projects/:id" element={<JobDetail />} />
+                  <Route path="/projects/:id/scan" element={<ScanPage />} />
                   <Route path="/scan" element={<ScanPage />} />
                   <Route path="/inventory" element={<ItemsList />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />
                   <Route path="/assets/:id" element={<SerialDetail />} />
                   <Route path="/contacts" element={<ContactsList />} />
                   <Route path="/contacts/:id" element={<ContactDetail />} />
-                  <Route path="/venues" element={<VenuesList />} />
-                  <Route path="/venues/:id" element={<VenueDetail />} />
+                  <Route path="/locations" element={<VenuesList />} />
+                  <Route path="/locations/:id" element={<VenueDetail />} />
                   <Route
-                    path="/custom-label"
+                    path="/label-printing"
                     element={
                       <RequireRole permission="labels.print">
                         <CustomLabelPage />
@@ -253,23 +351,20 @@ function AppShell() {
                     }
                   />
                   <Route
-                    path="/exports"
+                    path="/finance/xero-export"
                     element={
                       <RequireRole permission="export.xero">
                         <ExportsPage />
                       </RequireRole>
                     }
                   />
-                  {/* Old Rentman+ bookmarks */}
+                  {/* Old bookmarks, calendar links and Rentman+ URLs */}
+                  <Route path="/jobs/*" element={<RenamedPath from="/jobs" to="/projects" />} />
+                  <Route path="/venues/*" element={<RenamedPath from="/venues" to="/locations" />} />
+                  <Route path="/custom-label" element={<Navigate to="/label-printing" replace />} />
+                  <Route path="/exports" element={<Navigate to="/finance/xero-export" replace />} />
+                  <Route path="/logs" element={<Navigate to="/settings/activity" replace />} />
                   <Route path="/equipment/*" element={<Navigate to="/inventory" replace />} />
-                  <Route
-                    path="/logs"
-                    element={
-                      <RequireRole permission="logs.view">
-                        <LogsPage />
-                      </RequireRole>
-                    }
-                  />
                   <Route
                     path="/labels/:id"
                     element={

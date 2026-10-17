@@ -70,7 +70,7 @@ export default function PricingSettings() {
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Pricing & availability</h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          Used for every job's totals and every new quote. Issued quotes keep the numbers they were issued with.
+          Used for every project's totals and every new quote. Issued quotes keep the numbers they were issued with.
         </p>
       </div>
       <div className="card p-4 flex flex-col gap-4">
@@ -96,7 +96,7 @@ export default function PricingSettings() {
           <Field label="Each extra day adds" hint="For hires longer than the list above">
             <input value={draft.extraDayFactor} onChange={(e) => set("extraDayFactor", e.target.value)} inputMode="decimal" className="input py-2" />
           </Field>
-          <Field label="Turnaround buffer (hours)" hint="Kit stays unavailable this long after every job returns, for checking and cleaning">
+          <Field label="Turnaround buffer (hours)" hint="Kit stays unavailable this long after every project returns, for checking and cleaning">
             <input value={draft.bufferHours} onChange={(e) => set("bufferHours", e.target.value)} inputMode="decimal" className="input py-2" />
           </Field>
         </div>

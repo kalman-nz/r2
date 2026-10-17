@@ -32,9 +32,9 @@ function NewJob() {
     try {
       const job = await pb.collection("jobs").create(withOrg(draftToPayload(draft)));
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      navigate(`/jobs/${job.id}`, { replace: true });
+      navigate(`/projects/${job.id}`, { replace: true });
     } catch (err) {
-      showToast("error", `Couldn't create the job: ${errorText(err)}`);
+      showToast("error", `Couldn't create the project: ${errorText(err)}`);
     } finally {
       setSaving(false);
     }
@@ -42,15 +42,15 @@ function NewJob() {
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <Link to="/jobs" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Jobs
+      <Link to="/projects" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
+        ← Projects
       </Link>
-      <h1 className="text-xl font-semibold text-gray-900">New job</h1>
+      <h1 className="text-xl font-semibold text-gray-900">New project</h1>
       <section className="card p-4 flex flex-col gap-4">
         <JobFields draft={draft} onChange={setDraft} readOnly={false} />
         <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
           <button onClick={create} disabled={saving || !draft.name.trim()} className="btn-primary py-2">
-            {saving ? "Creating…" : "Create job"}
+            {saving ? "Creating…" : "Create project"}
           </button>
           <span className="text-xs text-gray-500">Equipment gets added on the next screen.</span>
         </div>
@@ -60,7 +60,7 @@ function NewJob() {
 }
 
 const BASIS_TEXT: Record<JobPricing["basis"], string> = {
-  override: "set on the job",
+  override: "set on the project",
   show: "from the show dates",
   hire: "from prep to return",
 };
@@ -81,7 +81,7 @@ function TotalsCard({ pricing }: { pricing: JobPricing }) {
       </p>
       {row("Equipment & services", nzd(t.gross))}
       {t.lineDiscount !== 0 && row("Line discounts", `−${nzd(t.lineDiscount)}`)}
-      {t.jobDiscount !== 0 && row(`Job discount (${pricing.discountPct}%)`, `−${nzd(t.jobDiscount)}`)}
+      {t.jobDiscount !== 0 && row(`Project discount (${pricing.discountPct}%)`, `−${nzd(t.jobDiscount)}`)}
       <div className="border-t border-gray-100 my-1" />
       {row("Total ex GST", nzd(t.exGst), true)}
       {row(`GST ${pricing.gstRate}%`, nzd(t.gst))}
@@ -118,7 +118,7 @@ function ExistingJob({ id }: { id: string }) {
 
   if (isLoading) return <p className="text-gray-500 text-sm">Loading…</p>;
   if (error || !summary) {
-    return <p className="text-red-600 text-sm">Couldn't load this job: {error ? errorText(error) : "not found"}</p>;
+    return <p className="text-red-600 text-sm">Couldn't load this project: {error ? errorText(error) : "not found"}</p>;
   }
   const { job, pricing, quotes = [], packing } = summary;
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(draftFromJob(job));
@@ -145,7 +145,7 @@ function ExistingJob({ id }: { id: string }) {
   async function issueQuote() {
     const ok = await confirm({
       title: "Issue quote",
-      message: `Freeze the job as it stands into quote v${quotes.length + 1}? Later changes to the job won't alter it — issue another to update the client.`,
+      message: `Freeze the project as it stands into quote v${quotes.length + 1}? Later changes to the project won't alter it — issue another to update the client.`,
       confirmLabel: "Issue quote",
     });
     if (!ok) return;
@@ -163,8 +163,8 @@ function ExistingJob({ id }: { id: string }) {
 
   async function remove() {
     const ok = await confirm({
-      title: "Delete job",
-      message: `Delete job #${job.number} "${job.name}" and its lines? This can't be undone.`,
+      title: "Delete project",
+      message: `Delete project #${job.number} "${job.name}" and its lines? This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -172,7 +172,7 @@ function ExistingJob({ id }: { id: string }) {
     try {
       await pb.collection("jobs").delete(job.id);
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      navigate("/jobs", { replace: true });
+      navigate("/projects", { replace: true });
     } catch (err) {
       showToast("error", `Couldn't delete: ${errorText(err)}`);
     }
@@ -186,8 +186,8 @@ function ExistingJob({ id }: { id: string }) {
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-4">
-      <Link to="/jobs" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Jobs
+      <Link to="/projects" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
+        ← Projects
       </Link>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -198,7 +198,7 @@ function ExistingJob({ id }: { id: string }) {
             <JobStatusBadge status={job.status} />
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
-            {[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ") || "No client or venue yet"}
+            {[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ") || "No client or location yet"}
           </p>
           <p className="text-sm text-gray-500">
             Prep {formatDateTime(job.prepAt)} · Back {formatDateTime(job.returnAt)}
@@ -210,7 +210,7 @@ function ExistingJob({ id }: { id: string }) {
             Packing list
           </Link>
           {(can("scan.out") || can("scan.in")) && (
-            <Link to={`/jobs/${job.id}/scan`} className="btn-secondary">
+            <Link to={`/projects/${job.id}/scan`} className="btn-secondary">
               Scan kit
             </Link>
           )}
@@ -261,10 +261,10 @@ function ExistingJob({ id }: { id: string }) {
                 </div>
                 {!can("jobs.delete") ? null : deletable ? (
                   <button onClick={remove} className="text-sm text-red-600 hover:text-red-700">
-                    Delete job
+                    Delete project
                   </button>
                 ) : (
-                  <span className="text-xs text-gray-400">Quoted or scanned jobs can't be deleted — cancel instead</span>
+                  <span className="text-xs text-gray-400">Quoted or scanned projects can't be deleted — cancel instead</span>
                 )}
               </div>
             )}
@@ -302,12 +302,12 @@ function ExistingJob({ id }: { id: string }) {
           <section className="card p-4 flex flex-col gap-2 text-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-500">Warehouse</h2>
-              <Link to={`/jobs/${job.id}/scan`} className="text-xs text-[#167cfb] hover:text-[#0f6ae0]">
+              <Link to={`/projects/${job.id}/scan`} className="text-xs text-[#167cfb] hover:text-[#0f6ae0]">
                 Scan →
               </Link>
             </div>
             {neededUnits === 0 ? (
-              <p className="text-gray-500 text-xs">No physical kit on this job.</p>
+              <p className="text-gray-500 text-xs">No physical kit on this project.</p>
             ) : (
               <>
                 <div className="h-2 rounded-full bg-gray-100 overflow-hidden">

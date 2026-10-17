@@ -68,8 +68,8 @@ export default function QuoteView() {
     <div className="min-h-screen bg-[#f3f6fb] print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <Link to={`/jobs/${quote.job}`} className="text-sm text-gray-500 hover:text-gray-900">
-            ← Job #{s.job.number}
+          <Link to={`/projects/${quote.job}`} className="text-sm text-gray-500 hover:text-gray-900">
+            ← Project #{s.job.number}
           </Link>
           <QuoteStatusBadge status={quote.status} />
         </div>
@@ -132,7 +132,7 @@ export default function QuoteView() {
             )}
           </div>
           <div>
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job</h2>
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Project</h2>
             <p className="font-semibold text-gray-900">{s.job.name}</p>
             {s.job.reference && <p>Your ref: {s.job.reference}</p>}
             {s.venue && (

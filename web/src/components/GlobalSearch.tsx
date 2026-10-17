@@ -17,7 +17,7 @@ function flatten(results: SearchResults): FlatResult[] {
 }
 
 const PATHS: Record<Section, string> = {
-  jobs: "/jobs",
+  jobs: "/projects",
   items: "/inventory",
   assets: "/assets",
   contacts: "/contacts",
@@ -29,7 +29,7 @@ function path(item: FlatResult): string {
 }
 
 const SECTION_LABEL: Record<Section, string> = {
-  jobs: "Jobs",
+  jobs: "Projects",
   items: "Inventory",
   assets: "Units",
   contacts: "Contacts",

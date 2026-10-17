@@ -48,7 +48,7 @@ export default function AccountingSettings() {
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Accounting (Xero)</h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          Used for the invoice file on the Exports page. Find your account codes and tax rate names in Xero under Accounting →
+          Used for the invoice file on the Xero export page (Finance → Xero export). Find your account codes and tax rate names in Xero under Accounting →
           Chart of accounts and Accounting → Advanced → Tax rates.
         </p>
       </div>
@@ -63,7 +63,7 @@ export default function AccountingSettings() {
           <Field label="Payment terms (days)" hint="Due date = invoice date + this">
             <input value={draft.xeroDueDays} onChange={(e) => set("xeroDueDays", e.target.value)} inputMode="numeric" className="input py-2" />
           </Field>
-          <Field label="Invoice number prefix" hint={`Job #1001 becomes ${draft.invoicePrefix || ""}1001. Use one Xero isn't already using.`}>
+          <Field label="Invoice number prefix" hint={`Project #1001 becomes ${draft.invoicePrefix || ""}1001. Use one Xero isn't already using.`}>
             <input value={draft.invoicePrefix} onChange={(e) => set("invoicePrefix", e.target.value)} className="input py-2 font-mono" />
           </Field>
         </div>

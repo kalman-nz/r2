@@ -103,7 +103,7 @@ export default function ItemPicker({
         </select>
       </div>
       <p className="text-xs text-gray-500 -mt-2">
-        "Free" is for this job's dates, with this job's own kit left out. Enter adds the top result.
+        "Free" is for this project's dates, with this project's own kit left out. Enter adds the top result.
       </p>
 
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}

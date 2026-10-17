@@ -148,8 +148,8 @@ export function CalendarFeed() {
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Calendar feed</h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          Subscribe to jobs from Google, Apple or Outlook calendar (read-only, prep to return). Anyone with the address can see job
-          names, clients and venues, so share it like a password.
+          Subscribe to projects from Google, Apple or Outlook calendar (read-only, prep to return). Anyone with the address can see job
+          names, clients and locations, so share it like a password.
         </p>
       </div>
       <div className="card p-4 flex flex-col gap-3">

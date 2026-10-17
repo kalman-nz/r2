@@ -124,7 +124,7 @@ function validateCategory(app, record) {
 function validateJob(app, record) {
   if (!record.getString("org")) return;
   sameOrg(app, record, "client", "contacts", "client");
-  sameOrg(app, record, "venue", "venues", "venue");
+  sameOrg(app, record, "venue", "venues", "location");
   const prep = toMs(record.getString("prepAt"));
   const ret = toMs(record.getString("returnAt"));
   if (!(prep < ret)) throw new BadRequestError("Return has to be after prep");
@@ -176,7 +176,7 @@ function validateRole(record) {
 // at archiving instead.
 function guardReferenced(app, collection, filter, id, what) {
   const n = countWhere(app, collection, filter, { id: id });
-  if (n > 0) throw new BadRequestError("This " + what + " is used on " + n + " job" + (n === 1 ? "" : "s") + " — archive it instead");
+  if (n > 0) throw new BadRequestError("This " + what + " is used on " + n + " project" + (n === 1 ? "" : "s") + " — archive it instead");
 }
 
 module.exports = {
