@@ -2,15 +2,31 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { LabelTemplateData } from "../lib/labelSpec";
+import { downloadLabelsPdf } from "../lib/print";
+import { errorText } from "../lib/errors";
 import { useToast } from "./ToastProvider";
 import LabelPreviewModal from "./LabelPreviewModal";
+import { useCan } from "../lib/roles";
 
 type Template = LabelTemplateData & { id: string; isDefault: boolean };
 
-// Generic over what's being bulk-printed — a batch of individual serial
-// numbers (EquipmentDetail) or a batch of equipment *types* (Assets list) —
-// the caller supplies how to render and send each one.
-export default function BatchPrintBar<T>({
+// Generic over what's being bulk-printed — a batch of individual units
+// (ItemDetail) or a batch of item types (Inventory list) — the caller
+// supplies how to render and send each one.
+type BatchPrintBarProps<T> = {
+  items: T[];
+  getDisplayName: (item: T) => string;
+  renderImage: (item: T, template: Template) => Promise<string>;
+  sendPrint: (imageDataUrl: string, template: Template, item: T) => Promise<{ ok: boolean; message: string }>;
+  onDone: () => void;
+};
+
+// Hidden from roles without labels.print.
+export default function BatchPrintBar<T>(props: BatchPrintBarProps<T>) {
+  return useCan()("labels.print") ? <BatchPrintBarInner {...props} /> : null;
+}
+
+function BatchPrintBarInner<T>({
   items,
   getDisplayName,
   renderImage,
@@ -27,6 +43,7 @@ export default function BatchPrintBar<T>({
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number; failed: string[] } | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const { showToast } = useToast();
 
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
@@ -101,6 +118,27 @@ export default function BatchPrintBar<T>({
     }
   }
 
+  // Every item rendered at the template's size, sent as one PDF.
+  async function downloadPdf() {
+    const template = sortedTemplates.find((t) => t.id === templateId);
+    if (!template) return;
+    setDownloading(true);
+    try {
+      const labels = [];
+      for (const item of items) {
+        const imageDataUrl = item === items[0] && image ? image : await renderImage(item, template);
+        labels.push({ imageDataUrl, widthMm: template.widthMm, heightMm: template.heightMm, copies });
+      }
+      await downloadLabelsPdf(labels);
+      setTemplateId(null);
+      onDone();
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   if (progress) {
     return (
       <div className="flex items-center gap-3 card px-4 py-2 text-sm text-gray-700">
@@ -142,6 +180,8 @@ export default function BatchPrintBar<T>({
           onConfirm={confirmPrint}
           onCancel={() => setTemplateId(null)}
           printing={false}
+          onDownloadPdf={downloadPdf}
+          downloading={downloading}
         />
       )}
     </div>

@@ -1,9 +1,8 @@
-// Port of the old server/src/print.ts — instead of writing the PNG to a
-// temp file from Node and spawning python, the base64 PNG is passed straight
-// through as a CLI arg and print/print_label.py decodes it itself (JSVM has
-// no native base64 decoder, but Python's stdlib does — see that script).
-const PYTHON = "/pb/print/venv/bin/python";
-const SCRIPT = "/pb/print/print_label.py";
+// Instead of writing the PNG to a temp file, the base64 PNG is passed
+// straight through as a CLI arg and print/print_label.py decodes it itself
+// (JSVM has no native base64 decoder, but Python's stdlib does — see that
+// script). lib/python.js says where Python and the scripts live.
+const { pythonBin, printDir } = require("./python.js");
 
 // pngBase64 must already be rendered at the printer's native resolution
 // (696px wide for 62mm continuous media at 300dpi) — see web's label
@@ -20,7 +19,7 @@ function printLabelPng(pngBase64, label, printerHost) {
   }
 
   try {
-    $os.cmd(PYTHON, SCRIPT, "--image-base64", pngBase64, "--host", host, "--label", label || "62").run();
+    $os.cmd(pythonBin(), printDir() + "/print_label.py", "--image-base64", pngBase64, "--host", host, "--label", label || "62").run();
     return { ok: true, message: "Sent to printer" };
   } catch (err) {
     return { ok: false, message: String((err && err.message) || err) };
@@ -29,10 +28,10 @@ function printLabelPng(pngBase64, label, printerHost) {
 
 const PNG_PREFIX = "data:image/png;base64,";
 
-// Three shapes: a real asset's serial printed against a saved template; a
-// saved template printed with manually-typed field values instead of a real
-// asset (rentmanSerialNumberId omitted); or a one-off custom-text label
-// with no template at all.
+// Three shapes: a real unit (serialId) or item printed against a saved
+// template; a saved template printed with manually-typed field values
+// instead (serialId omitted); or a one-off custom-text label with no
+// template at all.
 function validatePrintBody(data) {
   if (!data || typeof data !== "object") throw new BadRequestError("Invalid body");
   if (typeof data.imageDataUrl !== "string" || data.imageDataUrl.indexOf(PNG_PREFIX) !== 0) {
@@ -44,7 +43,7 @@ function validatePrintBody(data) {
     return {
       kind: "template",
       templateId: data.templateId,
-      rentmanSerialNumberId: typeof data.rentmanSerialNumberId === "string" ? data.rentmanSerialNumberId : undefined,
+      serialId: typeof data.serialId === "string" ? data.serialId : undefined,
       imageDataUrl: data.imageDataUrl,
       label: data.label,
     };

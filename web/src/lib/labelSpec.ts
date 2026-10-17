@@ -1,4 +1,4 @@
-import type { SerialNumber, RentmanRecord, Equipment } from "./api";
+import type { Item, Serial } from "./api";
 
 export type ElementType = "text" | "barcode" | "qr" | "staticText" | "image";
 
@@ -9,7 +9,7 @@ export interface LabelElement {
   y: number; // mm from top
   width: number; // mm
   height: number; // mm
-  dataField?: string; // text/barcode/qr — a DataFieldKey, or a "custom_<id>" account custom field (see CustomFieldDef in lib/api.ts)
+  dataField?: string; // text/barcode/qr — a DataFieldKey, or a "custom_<id>" imported custom field (see CustomFieldDef in lib/api.ts)
   text?: string; // literal content, staticText only
   fontSize?: number; // mm-ish character height, text/staticText only
   bold?: boolean;
@@ -32,114 +32,63 @@ export interface LabelTemplateData {
   elements: LabelElement[];
 }
 
-// Keys and labels mirror Rentman's own field names as closely as possible
-// (confirmed against a live token — see server/src/routes/assets.ts) rather
-// than inventing our own names for them. "equipment*" / "location*" /
-// "project" are resolved from the serial number's reference fields
-// (equipment, asset_location, last_subproject) since Rentman doesn't embed
-// those records inline.
+// The keys are the ones templates were saved with back when this app read
+// from Rentman, kept as-is so every existing template still renders (a
+// template stores dataField keys, not labels). The labels are R2's.
+// Rentman-only fields with no R2 equivalent (book value, depreciation,
+// sealed...) were dropped; old templates using them print blank there.
 export type DataFieldKey =
   | "displayname"
-  | "serial"
-  | "ref"
   | "qrcodes"
-  | "tags"
+  | "serial"
+  | "status"
   | "remark"
   | "nextInspection"
   | "purchaseDate"
-  | "bookValue"
-  | "active"
-  | "rentmanId"
-  | "depreciationMonthly"
-  | "residualValue"
   | "purchasePrice"
-  | "currentBookValue"
-  | "sealed"
+  | "location"
+  | "project"
   | "equipmentName"
   | "equipmentCode"
-  | "equipmentTags"
   | "equipmentFolder"
-  | "equipmentType"
+  | "equipmentTags"
   | "equipmentPrice"
   | "equipmentWeight"
-  | "equipmentHeight"
-  | "equipmentWidth"
-  | "equipmentLength"
-  | "equipmentPackedPer"
-  | "equipmentCriticalStockLevel"
-  | "equipmentStockManagement"
-  | "equipmentQrcodesOfSerials"
-  | "equipmentInternalRemark"
-  | "equipmentExternalRemark"
-  | "equipmentRentalSales"
-  | "equipmentSubrentalCost"
-  | "equipmentListPrice"
-  | "equipmentVolume"
-  | "equipmentEmptyWeight"
   | "equipmentPower"
-  | "equipmentCurrent"
-  | "equipmentCountryOfOrigin"
-  | "equipmentArchived"
-  | "locationInWarehouse"
-  | "location"
-  | "project";
+  | "equipmentExternalRemark"
+  | "equipmentInternalRemark"
+  | "locationInWarehouse";
 
 export const DATA_FIELDS: { key: DataFieldKey; label: string }[] = [
-  { key: "displayname", label: "Display name" },
-  { key: "serial", label: "Serial" },
-  { key: "ref", label: "Reference" },
-  { key: "qrcodes", label: "QR codes" },
-  { key: "tags", label: "Tags" },
-  { key: "remark", label: "Remark" },
-  { key: "nextInspection", label: "Next inspection" },
+  { key: "displayname", label: "Unit name" },
+  { key: "qrcodes", label: "Barcode / QR value" },
+  { key: "serial", label: "Serial number" },
+  { key: "status", label: "Status" },
+  { key: "remark", label: "Unit notes" },
+  { key: "nextInspection", label: "Next test & tag" },
   { key: "purchaseDate", label: "Purchase date" },
-  { key: "bookValue", label: "Book value" },
-  { key: "active", label: "Active" },
-  { key: "rentmanId", label: "Rentman ID" },
-  { key: "depreciationMonthly", label: "Depreciation per month" },
-  { key: "residualValue", label: "Residual value" },
-  { key: "purchasePrice", label: "Purchase price" },
-  { key: "currentBookValue", label: "Current book value" },
-  { key: "sealed", label: "Sealed" },
-  { key: "equipmentName", label: "Name (equipment)" },
-  { key: "equipmentCode", label: "Code (equipment)" },
-  { key: "equipmentTags", label: "Tags (equipment)" },
-  { key: "equipmentFolder", label: "Folder (equipment)" },
-  { key: "equipmentType", label: "Type (equipment)" },
-  { key: "equipmentPrice", label: "Rental price (equipment)" },
-  { key: "equipmentWeight", label: "Weight (equipment)" },
-  { key: "equipmentHeight", label: "Height (equipment)" },
-  { key: "equipmentWidth", label: "Width (equipment)" },
-  { key: "equipmentLength", label: "Length (equipment)" },
-  { key: "equipmentPackedPer", label: "Packed per (equipment)" },
-  { key: "equipmentCriticalStockLevel", label: "Critical stock level (equipment)" },
-  { key: "equipmentStockManagement", label: "Stock management (equipment)" },
-  { key: "equipmentQrcodesOfSerials", label: "QR codes of serial numbers (equipment)" },
-  { key: "equipmentInternalRemark", label: "Internal remark (equipment)" },
-  { key: "equipmentExternalRemark", label: "External remark (equipment)" },
-  { key: "equipmentRentalSales", label: "Rental/sales (equipment)" },
-  { key: "equipmentSubrentalCost", label: "Subrent-/purchase cost (equipment)" },
-  { key: "equipmentListPrice", label: "List price (equipment)" },
-  { key: "equipmentVolume", label: "Transport volume (equipment)" },
-  { key: "equipmentEmptyWeight", label: "Empty weight (equipment)" },
-  { key: "equipmentPower", label: "Power (equipment)" },
-  { key: "equipmentCurrent", label: "Current, electrical (equipment)" },
-  { key: "equipmentCountryOfOrigin", label: "Country of origin (equipment)" },
-  { key: "equipmentArchived", label: "Archived (equipment)" },
-  { key: "locationInWarehouse", label: "Location in warehouse (equipment)" },
+  { key: "purchasePrice", label: "Purchase cost" },
   { key: "location", label: "Stock location" },
-  { key: "project", label: "Current project" },
+  { key: "project", label: "Current job" },
+  { key: "equipmentName", label: "Item name" },
+  { key: "equipmentCode", label: "Item code" },
+  { key: "equipmentFolder", label: "Category" },
+  { key: "equipmentTags", label: "Item tags" },
+  { key: "equipmentPrice", label: "Day rate" },
+  { key: "equipmentWeight", label: "Weight (kg)" },
+  { key: "equipmentPower", label: "Power (W)" },
+  { key: "equipmentExternalRemark", label: "Item description" },
+  { key: "equipmentInternalRemark", label: "Item notes" },
+  { key: "locationInWarehouse", label: "Location in warehouse" },
 ];
 
 // A plain string-keyed map rather than Record<DataFieldKey, string> — a
-// dataField can also be a "custom_<id>" account custom field (dynamic,
-// account-specific, not part of the fixed DataFieldKey union). Every
-// DATA_FIELDS/SAMPLE_CONTEXT object below still satisfies this structurally.
+// dataField can also be a "custom_<id>" imported custom field (dynamic,
+// account-specific, not part of the fixed DataFieldKey union).
 export type LabelDataContext = Record<string, string>;
 
-// Rentman custom field values arrive typed (string/number/boolean/null) —
-// stringified the same way the fixed fields already are (e.g. `active`,
-// `sealed` render as "Yes"/"No" rather than true/false).
+// Imported custom field values arrive typed (string/number/boolean/null) —
+// stringified the same way the fixed fields are (booleans as "Yes"/"No").
 export function normalizeCustomFields(custom: Record<string, unknown> | null | undefined): Record<string, string> {
   const result: Record<string, string> = {};
   if (!custom) return result;
@@ -151,188 +100,126 @@ export function normalizeCustomFields(custom: Record<string, unknown> | null | u
   return result;
 }
 
-// Placeholder values the designer renders with when there's no real asset
+// Placeholder values the designer renders with when there's no real unit
 // in hand yet (i.e. whenever you're just building/editing a template).
 export const SAMPLE_CONTEXT: LabelDataContext = {
-  displayname: "LX1435PAC1",
-  serial: "LX1435PAC1",
-  ref: "REF-001",
-  qrcodes: "1003508",
-  tags: "fixture",
+  displayname: "K12 #1",
+  qrcodes: "R2-000123",
+  serial: "QSC12345678",
+  status: "Active",
   remark: "",
-  nextInspection: "",
+  nextInspection: "15/01/2027",
   purchaseDate: "29/04/2024",
-  bookValue: "0",
-  active: "Yes",
-  rentmanId: "352",
-  depreciationMonthly: "0",
-  residualValue: "0",
-  purchasePrice: "0",
-  currentBookValue: "0",
-  sealed: "No",
-  equipmentName: "14-35 1000W PACIFIC",
-  equipmentCode: "LX1435PAC",
-  equipmentTags: "fixture",
-  equipmentFolder: "Old Inventory/LX/Fixture",
-  equipmentType: "item",
-  equipmentPrice: "60",
-  equipmentWeight: "50",
-  equipmentHeight: "15",
-  equipmentWidth: "120",
-  equipmentLength: "240",
-  equipmentPackedPer: "6",
-  equipmentCriticalStockLevel: "0",
-  equipmentStockManagement: "Track stock",
-  equipmentQrcodesOfSerials: "",
+  purchasePrice: "1999",
+  location: "Main warehouse",
+  project: "#1042 Spring Gala",
+  equipmentName: "QSC K12.2",
+  equipmentCode: "K12",
+  equipmentFolder: "Audio/Speakers",
+  equipmentTags: "speaker",
+  equipmentPrice: "80",
+  equipmentWeight: "17.7",
+  equipmentPower: "2000",
+  equipmentExternalRemark: "12in powered speaker",
   equipmentInternalRemark: "",
-  equipmentExternalRemark: "",
-  equipmentRentalSales: "Rental",
-  equipmentSubrentalCost: "0",
-  equipmentListPrice: "0",
-  equipmentVolume: "0",
-  equipmentEmptyWeight: "0",
-  equipmentPower: "0",
-  equipmentCurrent: "0",
-  equipmentCountryOfOrigin: "",
-  equipmentArchived: "No",
-  locationInWarehouse: "Lock Up",
-  location: "Bay AV Workshop",
-  project: "Sample Project",
+  locationInWarehouse: "Bay 3",
 };
 
-// Equipment-level fields, shared between a serial's own equipment join and
-// printing the equipment type directly (buildEquipmentLabelContext below) —
-// same field, same key, two different sources for the raw record.
-function equipmentFields(equipment: RentmanRecord | null | undefined): Pick<
-  LabelDataContext,
-  | "equipmentName"
-  | "equipmentCode"
-  | "equipmentTags"
-  | "equipmentType"
-  | "equipmentPrice"
-  | "equipmentWeight"
-  | "equipmentHeight"
-  | "equipmentWidth"
-  | "equipmentLength"
-  | "equipmentPackedPer"
-  | "equipmentCriticalStockLevel"
-  | "equipmentStockManagement"
-  | "equipmentQrcodesOfSerials"
-  | "equipmentInternalRemark"
-  | "equipmentExternalRemark"
-  | "equipmentRentalSales"
-  | "equipmentSubrentalCost"
-  | "equipmentListPrice"
-  | "equipmentVolume"
-  | "equipmentEmptyWeight"
-  | "equipmentPower"
-  | "equipmentCurrent"
-  | "equipmentCountryOfOrigin"
-  | "equipmentArchived"
-  | "locationInWarehouse"
-> {
+const STATUS_LABELS: Record<string, string> = { active: "Active", repair: "In repair", lost: "Lost", retired: "Retired" };
+
+function dateText(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value.replace(" ", "T"));
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+}
+
+function numberText(n: number | null | undefined): string {
+  return n ? String(n) : "";
+}
+
+// Item-level fields, shared by a unit's label and an item-type label.
+function itemFields(item: Item | null, categoryPath: string): LabelDataContext {
   return {
-    equipmentName: (equipment?.displayname as string) ?? (equipment?.name as string) ?? "",
-    equipmentCode: (equipment?.code as string) ?? "",
-    equipmentTags: (equipment?.tags as string) ?? "",
-    equipmentType: (equipment?.type as string) ?? "",
-    equipmentPrice: equipment?.price != null ? String(equipment.price) : "",
-    equipmentWeight: equipment?.weight != null ? String(equipment.weight) : "",
-    equipmentHeight: equipment?.height != null ? String(equipment.height) : "",
-    equipmentWidth: equipment?.width != null ? String(equipment.width) : "",
-    equipmentLength: equipment?.length != null ? String(equipment.length) : "",
-    equipmentPackedPer: equipment?.packed_per != null ? String(equipment.packed_per) : "",
-    equipmentCriticalStockLevel: equipment?.critical_stock_level != null ? String(equipment.critical_stock_level) : "",
-    equipmentStockManagement: (equipment?.stock_management as string) ?? "",
-    equipmentQrcodesOfSerials: (equipment?.qrcodes_of_serial_numbers as string) ?? "",
-    equipmentInternalRemark: (equipment?.internal_remark as string) ?? "",
-    equipmentExternalRemark: (equipment?.external_remark as string) ?? "",
-    equipmentRentalSales: (equipment?.rental_sales as string) ?? "",
-    equipmentSubrentalCost: equipment?.subrental_costs != null ? String(equipment.subrental_costs) : "",
-    equipmentListPrice: equipment?.list_price != null ? String(equipment.list_price) : "",
-    equipmentVolume: equipment?.volume != null ? String(equipment.volume) : "",
-    equipmentEmptyWeight: equipment?.empty_weight != null ? String(equipment.empty_weight) : "",
-    equipmentPower: equipment?.power != null ? String(equipment.power) : "",
-    equipmentCurrent: equipment?.current != null ? String(equipment.current) : "",
-    equipmentCountryOfOrigin: (equipment?.country_of_origin as string) ?? "",
-    equipmentArchived: equipment?.in_archive ? "Yes" : "No",
-    locationInWarehouse: (equipment?.location_in_warehouse as string) ?? "",
+    equipmentName: item?.name ?? "",
+    equipmentCode: item?.code ?? "",
+    equipmentFolder: categoryPath,
+    equipmentTags: item?.tags ?? "",
+    equipmentPrice: numberText(item?.dayRate),
+    equipmentWeight: numberText(item?.weightKg),
+    equipmentPower: numberText(item?.powerW),
+    equipmentExternalRemark: item?.description ?? "",
+    equipmentInternalRemark: item?.notes ?? "",
+    locationInWarehouse: item?.locationInWarehouse ?? "",
   };
 }
 
-export function buildLabelContext(asset: SerialNumber & { _lastSubproject?: RentmanRecord | null }): LabelDataContext {
+// What a unit's label needs beyond the serial record itself.
+export interface LabelUnit {
+  serial: Serial;
+  item: Item | null;
+  categoryPath: string;
+  locationName: string;
+  currentJob: string;
+}
+
+export function unitDisplayName(serial: Serial, item: Item | null): string {
+  return serial.label || [item?.name, serial.barcode].filter(Boolean).join(" ");
+}
+
+export function buildLabelContext(unit: LabelUnit): LabelDataContext {
+  const { serial, item } = unit;
   return {
-    displayname: asset.displayname ?? "",
-    serial: asset.serial ?? "",
-    ref: asset.ref ?? "",
-    qrcodes: asset.qrcodes ?? "",
-    tags: asset.tags ?? "",
-    remark: asset.remark ?? "",
-    nextInspection: asset.next_inspection ? new Date(asset.next_inspection).toLocaleDateString() : "",
-    purchaseDate: asset.purchasedate ? new Date(asset.purchasedate).toLocaleDateString() : "",
-    bookValue: asset.book_value != null ? String(asset.book_value) : "",
-    active: asset.active === false ? "No" : "Yes",
-    rentmanId: String(asset.id),
-    depreciationMonthly: asset.depreciation_monthly != null ? String(asset.depreciation_monthly) : "",
-    residualValue: asset.residual_value != null ? String(asset.residual_value) : "",
-    purchasePrice: asset.purchase_costs != null ? String(asset.purchase_costs) : "",
-    currentBookValue: asset.current_book_value != null ? String(asset.current_book_value) : "",
-    sealed: asset.sealed ? "Yes" : "No",
-    ...equipmentFields(asset._equipment),
-    equipmentFolder:
-      (asset._folder?.path as string) ?? (asset._folder?.displayname as string) ?? (asset._folder?.name as string) ?? "",
-    location: (asset._location?.displayname as string) ?? "",
-    project: asset._lastSubproject
-      ? ((asset._lastSubproject.displayname as string) ?? (asset._lastSubproject.name as string) ?? "")
-      : "",
+    displayname: unitDisplayName(serial, item),
+    qrcodes: serial.barcode,
+    serial: serial.serialNumber,
+    status: STATUS_LABELS[serial.status] ?? serial.status,
+    remark: serial.notes,
+    nextInspection: dateText(serial.nextInspection),
+    purchaseDate: dateText(serial.purchaseDate),
+    purchasePrice: numberText(serial.purchaseCost),
+    location: unit.locationName,
+    project: unit.currentJob,
+    ...itemFields(item, unit.categoryPath),
+    // Older templates' keys for the same values.
+    ref: serial.barcode,
+    tags: item?.tags ?? "",
+    active: serial.status === "active" ? "Yes" : "No",
+    rentmanId: serial.rentmanId,
     // Custom field ids are unique account-wide regardless of which item
-    // type they're defined on, so equipment-level and serial-level custom
-    // values never collide sharing this one flat namespace.
-    ...normalizeCustomFields(asset._equipment?.custom as Record<string, unknown> | undefined),
-    ...normalizeCustomFields(asset.custom),
+    // type they're defined on, so item-level and unit-level custom values
+    // never collide sharing this one flat namespace.
+    ...normalizeCustomFields(item?.custom),
+    ...normalizeCustomFields(serial.custom),
   };
 }
 
-// For labeling an equipment *type* rather than one specific serialized unit
-// (e.g. bulk stock like tape, which has no serial numbers to open at all).
-// The equipment record has its own qrcodes field, separate from any
-// individual serial's — that's the QR value to use for a type-level label.
-// Serial-only fields (serial, ref, remark, next inspection, purchase date,
-// book value, location, project) don't apply at the type level and are left
-// blank.
-export function buildEquipmentLabelContext(equipment: Equipment & { _folder?: RentmanRecord | null }): LabelDataContext {
+// For labelling an item *type* rather than one unit (bulk stock like
+// cable, which has no units to open at all). The item's own barcode is the
+// scan value; unit-only fields are blank.
+export function buildItemLabelContext(item: Item, categoryPath: string): LabelDataContext {
   return {
-    displayname: equipment.displayname ?? equipment.name ?? "",
+    displayname: item.name,
+    qrcodes: item.barcode,
     serial: "",
-    ref: "",
-    qrcodes: equipment.qrcodes ?? "",
-    tags: equipment.tags ?? "",
+    status: "",
     remark: "",
     nextInspection: "",
     purchaseDate: "",
-    bookValue: "",
-    active: "",
-    rentmanId: String(equipment.id),
-    depreciationMonthly: "",
-    residualValue: "",
     purchasePrice: "",
-    currentBookValue: "",
-    sealed: "",
-    ...equipmentFields(equipment),
-    equipmentFolder:
-      (equipment._folder?.path as string) ??
-      (equipment._folder?.displayname as string) ??
-      (equipment._folder?.name as string) ??
-      "",
     location: "",
     project: "",
-    ...normalizeCustomFields(equipment.custom),
+    ...itemFields(item, categoryPath),
+    ref: item.barcode,
+    tags: item.tags,
+    active: "",
+    rentmanId: item.rentmanId,
+    ...normalizeCustomFields(item.custom),
   };
 }
 
-// Rentman's folder "path" is slash-separated from root to leaf (e.g.
-// "Old Inventory/LX/Fixture"). `levels` picks specific 1-indexed segments —
-// e.g. [2] for just "LX" — joined back with "/"; empty/unset keeps the
+// A category path is slash-separated from root to leaf (e.g.
+// "Audio/Speakers/Powered"). `levels` picks specific 1-indexed segments —
+// e.g. [2] for just "Speakers" — joined back with "/"; empty/unset keeps the
 // full path. Levels beyond what a given item's folder actually has are
 // silently skipped rather than erroring, since depth varies per item.
 export function applyFolderLevels(fullPath: string, levels?: number[]): string {
@@ -364,8 +251,21 @@ export function labelIdForWidth(widthMm: number): string {
   return TAPE_WIDTHS.find((w) => w.mm === widthMm)?.labelId ?? "62";
 }
 
-export const SIZE_PRESETS: { name: string; widthMm: number; heightMm: number }[] = [
-  { name: "Large", widthMm: 62, heightMm: 100 },
-  { name: "Medium", widthMm: 62, heightMm: 29 },
-  { name: "Small", widthMm: 29, heightMm: 15 },
+// Brother sizes print straight to the networked QL printer; any size at
+// all can be downloaded as a PDF (one page per label at its real size) and
+// printed through a driver — the Zebra presets are common desktop
+// thermal label stock.
+export const SIZE_PRESETS: { name: string; group: "Brother" | "Zebra"; widthMm: number; heightMm: number }[] = [
+  { name: "62 × 100 mm", group: "Brother", widthMm: 62, heightMm: 100 },
+  { name: "62 × 29 mm", group: "Brother", widthMm: 62, heightMm: 29 },
+  { name: "29 × 15 mm", group: "Brother", widthMm: 29, heightMm: 15 },
+  { name: "2.25 × 1.25 in", group: "Zebra", widthMm: 57, heightMm: 32 },
+  { name: "2 × 1 in", group: "Zebra", widthMm: 51, heightMm: 25 },
+  { name: "4 × 2 in", group: "Zebra", widthMm: 102, heightMm: 51 },
+  { name: "4 × 6 in", group: "Zebra", widthMm: 102, heightMm: 152 },
 ];
+
+// Whether a label can go straight to the Brother QL (its tape widths only).
+export function isBrotherWidth(widthMm: number): boolean {
+  return TAPE_WIDTHS.some((w) => w.mm === widthMm);
+}

@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import type { LabelTemplateData } from "../lib/labelSpec";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
+import { useCan } from "../lib/roles";
 
 // A template as it comes back from GET /api/labels, minus the DB-assigned
 // fields that shouldn't be carried over when re-importing (id would collide,
@@ -18,6 +19,7 @@ function isExportedTemplate(value: unknown): value is ExportedTemplate {
 }
 
 export default function LabelsList() {
+  const can = useCan();
   const queryClient = useQueryClient();
   const { data: templates, isLoading } = useQuery({ queryKey: ["labels"], queryFn: api.listLabels });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,9 +114,11 @@ export default function LabelsList() {
           <button onClick={exportAll} disabled={!templates || templates.length === 0} className="btn-secondary">
             Export all
           </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="btn-secondary">
-            {importing ? "Importing…" : "Import"}
-          </button>
+          {can("templates.create") && (
+            <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="btn-secondary">
+              {importing ? "Importing…" : "Import"}
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -126,9 +130,11 @@ export default function LabelsList() {
               if (file) void importFromFile(file);
             }}
           />
-          <Link to="/labels/new" className="btn-primary">
-            New template
-          </Link>
+          {can("templates.create") && (
+            <Link to="/labels/new" className="btn-primary">
+              New template
+            </Link>
+          )}
         </div>
       </div>
 
@@ -147,9 +153,11 @@ export default function LabelsList() {
               <button onClick={() => exportOne(t)} className="text-gray-400 hover:text-gray-900 text-xs">
                 Export
               </button>
-              <button onClick={() => remove(t.id, t.name)} className="text-gray-400 hover:text-red-600 text-xs">
-                Delete
-              </button>
+              {can("templates.delete") && (
+                <button onClick={() => remove(t.id, t.name)} className="text-gray-400 hover:text-red-600 text-xs">
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}

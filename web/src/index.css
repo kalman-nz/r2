@@ -31,3 +31,25 @@ body {
     @apply inline-block w-1.5 h-1.5 rounded-full shrink-0;
   }
 }
+
+/* Quote and packing list pages (/print/...): browser print / Save as PDF
+   on A4, without the toolbar or the on-screen sheet styling. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  body {
+    background: white;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+}

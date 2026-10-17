@@ -3,12 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type LogEntry, type Stats } from "../lib/api";
 
 const TILES: { key: keyof Stats; label: string }[] = [
-  { key: "equipmentTypes", label: "Equipment types" },
-  { key: "totalStockUnits", label: "Total stock units" },
-  { key: "trackedSerials", label: "Tracked serial numbers" },
-  { key: "labelTemplates", label: "Label templates" },
+  { key: "upcomingJobs", label: "Current jobs" },
+  { key: "items", label: "Inventory items" },
+  { key: "stockUnits", label: "Units in stock" },
+  { key: "kits", label: "Kits" },
+  { key: "contacts", label: "Contacts" },
   { key: "labelsPrinted", label: "Labels printed" },
-  { key: "crewAccounts", label: "Crew accounts" },
 ];
 
 function exportLogs(logs: LogEntry[]) {

@@ -3,27 +3,38 @@ import { useNavigate } from "react-router-dom";
 import { api, type SearchResultItem, type SearchResults } from "../lib/api";
 import { useToast } from "./ToastProvider";
 
-const EMPTY: SearchResults = { equipment: [], assets: [], labels: [] };
+const EMPTY: SearchResults = { items: [], assets: [], jobs: [], contacts: [], labels: [] };
+
+const SECTIONS = ["jobs", "items", "assets", "contacts", "labels"] as const;
+type Section = (typeof SECTIONS)[number];
 
 interface FlatResult extends SearchResultItem {
-  section: "equipment" | "assets" | "labels";
+  section: Section;
 }
 
 function flatten(results: SearchResults): FlatResult[] {
-  return [
-    ...results.equipment.map((r) => ({ ...r, section: "equipment" as const })),
-    ...results.assets.map((r) => ({ ...r, section: "assets" as const })),
-    ...results.labels.map((r) => ({ ...r, section: "labels" as const })),
-  ];
+  return SECTIONS.flatMap((section) => results[section].map((r) => ({ ...r, section })));
 }
+
+const PATHS: Record<Section, string> = {
+  jobs: "/jobs",
+  items: "/inventory",
+  assets: "/assets",
+  contacts: "/contacts",
+  labels: "/labels",
+};
 
 function path(item: FlatResult): string {
-  if (item.section === "equipment") return `/equipment/${item.id}`;
-  if (item.section === "assets") return `/assets/${item.id}`;
-  return `/labels/${item.id}`;
+  return `${PATHS[item.section]}/${item.id}`;
 }
 
-const SECTION_LABEL = { equipment: "Equipment", assets: "Assets", labels: "Label templates" };
+const SECTION_LABEL: Record<Section, string> = {
+  jobs: "Jobs",
+  items: "Inventory",
+  assets: "Units",
+  contacts: "Contacts",
+  labels: "Label templates",
+};
 
 // A handheld barcode/QR scanner acts like a keyboard: it types the scanned
 // value into whatever's focused, then sends Enter, never touching arrow
@@ -88,10 +99,10 @@ export default function GlobalSearch() {
     setValue("");
     setOpen(false);
     try {
-      const { id } = await api.searchAssets(q);
-      navigate(`/assets/${id}`);
+      const found = await api.lookup(q);
+      navigate(found.kind === "serial" ? `/assets/${found.id}` : `/inventory/${found.id}`);
     } catch {
-      showToast("error", `No asset found for "${q}"`);
+      showToast("error", `Nothing has the code "${q}"`);
     } finally {
       inputRef.current?.focus();
     }
@@ -134,13 +145,13 @@ export default function GlobalSearch() {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={() => flat.length > 0 && setOpen(true)}
-        placeholder="Search everything or scan…"
-        className="input w-64 sm:w-80"
+        placeholder="Search or scan…"
+        className="input w-40 sm:w-64 lg:w-80"
       />
       {open && (
         <div className="absolute top-full left-0 mt-1 w-full sm:w-96 card shadow-lg z-30 py-1 max-h-96 overflow-y-auto">
           {flat.length === 0 && <p className="px-3 py-2 text-sm text-gray-400">No matches for "{value.trim()}"</p>}
-          {(["equipment", "assets", "labels"] as const).map((section) => {
+          {SECTIONS.map((section) => {
             const items = results[section];
             if (items.length === 0) return null;
             return (

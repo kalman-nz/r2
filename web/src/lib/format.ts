@@ -3,6 +3,72 @@ export function money(n: number | null | undefined): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const NZD = new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" });
+
+// Always shows the amount, $0.00 included — quotes and totals need it.
+export function nzd(n: number | null | undefined): string {
+  return NZD.format(n ?? 0);
+}
+
 export function num(n: number | null | undefined): string {
   return n == null ? "—" : n.toLocaleString();
+}
+
+// PocketBase stores datetimes as "2026-10-16 09:30:00.000Z"; Date only
+// reliably parses the ISO "T" form.
+export function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value.replace(" ", "T"));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function formatDate(value: string | null | undefined): string {
+  const d = parseDate(value);
+  return d ? d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "—";
+}
+
+export function formatDateTime(value: string | null | undefined): string {
+  const d = parseDate(value);
+  return d
+    ? d.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+    : "—";
+}
+
+export function formatTime(value: string | null | undefined): string {
+  const d = parseDate(value);
+  return d ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+}
+
+// "Tue 3 Mar, 8:00 am → Thu 5 Mar, 12:00 pm"
+export function formatRange(start: string | null | undefined, end: string | null | undefined): string {
+  return `${formatDateTime(start)} → ${formatDateTime(end)}`;
+}
+
+// <input type="datetime-local"> works in the browser's local time with no
+// zone ("2026-10-16T09:30"); these convert to/from the UTC PocketBase stores.
+export function toLocalInput(value: string | null | undefined): string {
+  const d = parseDate(value);
+  if (!d) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function fromLocalInput(value: string): string {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+// A Date as <input type="date"> wants it, in the browser's local time.
+export function localDateInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function toDateInput(value: string | null | undefined): string {
+  return toLocalInput(value).slice(0, 10);
+}
+
+export function fromDateInput(value: string): string {
+  return value ? fromLocalInput(`${value}T00:00`) : "";
 }

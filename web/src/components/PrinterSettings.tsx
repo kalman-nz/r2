@@ -70,13 +70,13 @@ export default function PrinterSettings() {
               <input
                 id="printerHost"
                 type="text"
-                placeholder="10.20.26.79"
+                placeholder="192.168.1.50"
                 value={printerHost}
                 onChange={(e) => setPrinterHost(e.target.value)}
                 className="input py-2 font-mono"
               />
               <p className="text-xs text-gray-500">
-                LAN/Wi-Fi IP of the Brother QL label printer (e.g. a QL-810W on the workshop network). Applies to
+                LAN/Wi-Fi IP of the Brother QL label printer (e.g. a QL-810W on the warehouse network). Applies to
                 every print job immediately, no restart needed.
               </p>
             </div>
@@ -119,7 +119,7 @@ export default function PrinterSettings() {
           <h2 className="text-sm font-semibold text-gray-900">Test the connection</h2>
           <p className="text-xs text-gray-500 mt-0.5">
             Prints a small label with the current date/time — confirms the printer is reachable and configured
-            correctly without needing a real asset to hand.
+            correctly without needing a real unit to hand.
           </p>
         </div>
         <div className="card p-4">

@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { renderLabelToCanvas } from "../lib/renderLabel";
 import { renderCustomTextCanvas } from "../lib/customLabel";
-import { printCustomText, printWithManualData } from "../lib/print";
 import {
-  DATA_FIELDS,
-  SAMPLE_CONTEXT,
-  SIZE_PRESETS,
-  TAPE_WIDTHS,
-  type LabelDataContext,
-  type LabelTemplateData,
-} from "../lib/labelSpec";
+  downloadLabelsPdf,
+  printCustomText,
+  printWithManualData,
+  renderCustomTextImage,
+  renderTemplateImage,
+} from "../lib/print";
+import { DATA_FIELDS, SAMPLE_CONTEXT, isBrotherWidth, type LabelDataContext, type LabelTemplateData } from "../lib/labelSpec";
+import { errorText } from "../lib/errors";
+import LabelSizeControls from "../components/LabelSizeControls";
 import { useToast } from "../components/ToastProvider";
 import NumberInput from "../components/NumberInput";
 import { api } from "../lib/api";
@@ -75,6 +76,7 @@ function BigTextMode() {
   const [rotate90, setRotate90] = useState(false);
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { showToast } = useToast();
 
@@ -106,6 +108,19 @@ function BigTextMode() {
     }
   }
 
+  async function downloadPdf() {
+    if (!text.trim()) return;
+    setDownloading(true);
+    try {
+      const imageDataUrl = await renderCustomTextImage(text, widthMm, heightMm, rotate90);
+      await downloadLabelsPdf([{ imageDataUrl, widthMm, heightMm, copies }]);
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -122,12 +137,19 @@ function BigTextMode() {
         />
       </div>
 
-      <SizePicker widthMm={widthMm} heightMm={heightMm} onWidth={setWidthMm} onHeight={setHeightMm}>
+      <LabelSizeControls
+        widthMm={widthMm}
+        heightMm={heightMm}
+        onChange={(w, h) => {
+          setWidthMm(w);
+          setHeightMm(h);
+        }}
+      >
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={rotate90} onChange={(e) => setRotate90(e.target.checked)} />
           <span className="text-gray-500">Rotate 90°</span>
         </label>
-      </SizePicker>
+      </LabelSizeControls>
 
       <div className="flex items-center justify-center border border-gray-200 rounded-lg p-6 bg-gray-100 overflow-auto">
         <canvas ref={canvasRef} className="bg-white shadow-sm" />
@@ -138,7 +160,15 @@ function BigTextMode() {
           Copies
           <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
         </label>
-        <button onClick={print} disabled={printing || !text.trim()} className="btn-primary py-2 px-4">
+        <button onClick={downloadPdf} disabled={downloading || !text.trim()} className="btn-secondary py-2">
+          {downloading ? "Making PDF…" : "Download PDF"}
+        </button>
+        <button
+          onClick={print}
+          disabled={printing || !text.trim() || !isBrotherWidth(widthMm)}
+          title={isBrotherWidth(widthMm) ? undefined : "Not a Brother tape width — download a PDF instead"}
+          className="btn-primary py-2 px-4"
+        >
           {printing ? "Printing…" : "Print"}
         </button>
       </div>
@@ -166,6 +196,7 @@ function FromTemplateMode() {
   const [fieldValues, setFieldValues] = useState<LabelDataContext>({});
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { showToast } = useToast();
 
@@ -205,6 +236,19 @@ function FromTemplateMode() {
       showToast("error", `Print failed: ${(err as Error).message}`);
     } finally {
       setPrinting(false);
+    }
+  }
+
+  async function downloadPdf() {
+    if (!template) return;
+    setDownloading(true);
+    try {
+      const imageDataUrl = await renderTemplateImage(template, context);
+      await downloadLabelsPdf([{ imageDataUrl, widthMm: template.widthMm, heightMm: template.heightMm, copies }]);
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -265,62 +309,20 @@ function FromTemplateMode() {
               Copies
               <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
             </label>
-            <button onClick={print} disabled={printing} className="btn-primary py-2 px-4">
+            <button onClick={downloadPdf} disabled={downloading} className="btn-secondary py-2">
+              {downloading ? "Making PDF…" : "Download PDF"}
+            </button>
+            <button
+              onClick={print}
+              disabled={printing || !isBrotherWidth(template.widthMm)}
+              title={isBrotherWidth(template.widthMm) ? undefined : "Not a Brother tape width — download a PDF instead"}
+              className="btn-primary py-2 px-4"
+            >
               {printing ? "Printing…" : "Print"}
             </button>
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function SizePicker({
-  widthMm,
-  heightMm,
-  onWidth,
-  onHeight,
-  children,
-}: {
-  widthMm: number;
-  heightMm: number;
-  onWidth: (mm: number) => void;
-  onHeight: (mm: number) => void;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-4 card p-3 text-sm">
-      <div className="flex items-center gap-2">
-        <span className="text-gray-500">Preset</span>
-        {SIZE_PRESETS.map((p) => (
-          <button
-            key={p.name}
-            onClick={() => {
-              onWidth(p.widthMm);
-              onHeight(p.heightMm);
-            }}
-            className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            {p.name}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-gray-500">Tape width</span>
-        <select value={widthMm} onChange={(e) => onWidth(Number(e.target.value))} className="input py-1">
-          {TAPE_WIDTHS.map((w) => (
-            <option key={w.mm} value={w.mm}>
-              {w.mm}mm
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-gray-500">Length</span>
-        <NumberInput min={5} value={heightMm} onChange={onHeight} className="input py-1 w-20" />
-        <span className="text-gray-500">mm</span>
-      </div>
-      {children}
     </div>
   );
 }

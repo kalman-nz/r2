@@ -1,0 +1,192 @@
+// Cross-field and cross-collection rules the schema can't express on its
+// own. Called from records_validation.pb.js on every save — REST API,
+// importer and custom routes alike — and they throw BadRequestError so the
+// message reaches the user (a plain Error would surface as a generic
+// "Failed to create record.").
+//
+// Every record belongs to an organisation, and anything it points at must
+// belong to the same one, or someone could link their records to another
+// organisation's by id. (A record saved with no org at all is left for
+// PocketBase's own "required" check to reject.)
+const { toMs } = require("./time.js");
+
+function countWhere(app, collection, filter, params) {
+  return app.findRecordsByFilter(collection, filter, "", 0, 0, params).length;
+}
+
+// The record `field` points at, which must be in record's organisation.
+function sameOrg(app, record, field, collection, what) {
+  const id = record.getString(field);
+  if (!id) return null;
+  let target;
+  try {
+    target = app.findRecordById(collection, id);
+  } catch (_) {
+    throw new BadRequestError("That " + what + " doesn't exist");
+  }
+  if (target.getString("org") !== record.getString("org")) throw new BadRequestError("That " + what + " belongs to another organisation");
+  return target;
+}
+
+function validateItem(app, record) {
+  const org = record.getString("org");
+  if (!org) return;
+  const kind = record.getString("kind");
+  const barcode = record.getString("barcode").trim();
+  record.set("barcode", barcode);
+  sameOrg(app, record, "category", "categories", "category");
+
+  if (kind === "kit") {
+    // A kit owns no stock of its own; its components do.
+    record.set("tracking", "");
+    record.set("stockQty", 0);
+    record.set("outOfServiceQty", 0);
+  } else if (record.getString("tracking") !== "bulk" && record.getString("tracking") !== "serial") {
+    throw new BadRequestError("Choose whether this item is tracked as a bulk quantity or by serial number");
+  }
+
+  if (record.getString("tracking") === "bulk" && record.getInt("outOfServiceQty") > record.getInt("stockQty")) {
+    throw new BadRequestError("Out-of-service quantity can't be more than the stock quantity");
+  }
+
+  if (barcode && countWhere(app, "serials", "org = {:org} && barcode = {:code}", { org: org, code: barcode }) > 0) {
+    throw new BadRequestError("Barcode " + barcode + " is already used by a serialised unit");
+  }
+
+  if (record.isNew()) return;
+  if (record.original().getString("org") !== org) throw new BadRequestError("Items can't move between organisations");
+  const id = record.id;
+  if (kind === "kit" && countWhere(app, "serials", "item = {:id}", { id: id }) > 0) {
+    throw new BadRequestError("This item has serial numbers, so it can't become a kit");
+  }
+  if (kind === "kit" && countWhere(app, "item_components", "child = {:id}", { id: id }) > 0) {
+    throw new BadRequestError("This item is part of a kit or is an accessory, so it can't become a kit itself");
+  }
+  if (kind === "item" && countWhere(app, "item_components", "parent = {:id} && kind = 'component'", { id: id }) > 0) {
+    throw new BadRequestError("Remove this kit's components before turning it into a physical item");
+  }
+  if (record.getString("tracking") === "bulk" && countWhere(app, "serials", "item = {:id}", { id: id }) > 0) {
+    throw new BadRequestError("Delete this item's serial numbers before switching it to bulk tracking");
+  }
+}
+
+function validateSerial(app, record) {
+  const org = record.getString("org");
+  if (!org) return;
+  const barcode = record.getString("barcode").trim();
+  record.set("barcode", barcode);
+  if (!record.getString("item")) throw new BadRequestError("Serial numbers need an item");
+  const item = sameOrg(app, record, "item", "items", "item");
+  sameOrg(app, record, "location", "locations", "location");
+  if (item.getString("kind") !== "item" || item.getString("tracking") !== "serial") {
+    throw new BadRequestError(item.getString("name") + " isn't tracked by serial number");
+  }
+  if (barcode && countWhere(app, "items", "org = {:org} && barcode = {:code}", { org: org, code: barcode }) > 0) {
+    throw new BadRequestError("Barcode " + barcode + " is already used by a bulk item");
+  }
+}
+
+function validateComponent(app, record) {
+  if (!record.getString("org")) return;
+  if (record.getString("parent") === record.getString("child")) throw new BadRequestError("An item can't contain itself");
+  const parent = sameOrg(app, record, "parent", "items", "item");
+  const child = sameOrg(app, record, "child", "items", "item");
+  if (!parent || !child) throw new BadRequestError("Both items must exist");
+  if (child.getString("kind") !== "item") {
+    throw new BadRequestError("Kits can't be nested — add the physical items instead");
+  }
+  if (record.getString("kind") === "component" && parent.getString("kind") !== "kit") {
+    throw new BadRequestError(parent.getString("name") + " isn't a kit, so it can't have components (add an accessory instead)");
+  }
+}
+
+// A category can't end up as its own ancestor.
+function validateCategory(app, record) {
+  if (!record.getString("org")) return;
+  sameOrg(app, record, "parent", "categories", "parent category");
+  let parentId = record.getString("parent");
+  const seen = {};
+  for (let depth = 0; parentId && depth < 50; depth++) {
+    if (parentId === record.id) throw new BadRequestError("A category can't sit inside itself");
+    if (seen[parentId]) break;
+    seen[parentId] = true;
+    let parent;
+    try {
+      parent = app.findRecordById("categories", parentId);
+    } catch (_) {
+      break;
+    }
+    parentId = parent.getString("parent");
+  }
+}
+
+// Kit is held from prepAt to returnAt; the show sits inside that.
+function validateJob(app, record) {
+  if (!record.getString("org")) return;
+  sameOrg(app, record, "client", "contacts", "client");
+  sameOrg(app, record, "venue", "venues", "venue");
+  const prep = toMs(record.getString("prepAt"));
+  const ret = toMs(record.getString("returnAt"));
+  if (!(prep < ret)) throw new BadRequestError("Return has to be after prep");
+
+  const showStartText = record.getString("showStart");
+  const showEndText = record.getString("showEnd");
+  if (!showStartText && !showEndText) return;
+  if (!showStartText || !showEndText) throw new BadRequestError("Set both show start and show end, or neither");
+  const showStart = toMs(showStartText);
+  const showEnd = toMs(showEndText);
+  if (!(showStart < showEnd)) throw new BadRequestError("Show end has to be after show start");
+  if (showStart < prep || showEnd > ret) throw new BadRequestError("The show has to fall between prep and return");
+}
+
+// A membership's or invitation's role has to be one of its own
+// organisation's roles.
+// (Before migration 0024 the role was plain text, so there's nothing to check.)
+function roleIsRecord(record) {
+  const field = record.collection().fields.getByName("role");
+  return !!field && field.type() === "relation";
+}
+
+function validateMembership(app, record) {
+  if (!record.getString("org") || !roleIsRecord(record)) return;
+  sameOrg(app, record, "role", "roles", "role");
+}
+
+function validateInvitation(app, record) {
+  record.set("email", record.getString("email").trim().toLowerCase());
+  if (!record.getString("org") || !roleIsRecord(record)) return;
+  sameOrg(app, record, "role", "roles", "role");
+}
+
+// Roles hold known permissions only (plus what those need, see
+// lib/permissions.js), and the locked Admin role always holds all of them.
+function validateRole(record) {
+  const { normalise, ALL } = require("./permissions.js");
+  const { decodeJson } = require("./records.js");
+  record.set("name", record.getString("name").trim());
+  if (!record.getString("name")) throw new BadRequestError("The role needs a name");
+  record.set("permissions", record.getBool("locked") ? ALL : normalise(decodeJson(record.get("permissions"), [])));
+  if (!record.isNew() && record.original().getBool("locked") !== record.getBool("locked")) {
+    throw new BadRequestError("A role can't be locked or unlocked");
+  }
+}
+
+// Deleting a contact/venue/item that jobs point at would silently blank
+// those jobs' references (the relations are optional), so refuse and point
+// at archiving instead.
+function guardReferenced(app, collection, filter, id, what) {
+  const n = countWhere(app, collection, filter, { id: id });
+  if (n > 0) throw new BadRequestError("This " + what + " is used on " + n + " job" + (n === 1 ? "" : "s") + " — archive it instead");
+}
+
+module.exports = {
+  validateItem,
+  validateSerial,
+  validateComponent,
+  validateCategory,
+  validateJob,
+  validateMembership,
+  validateRole,
+  validateInvitation,
+  guardReferenced,
+};

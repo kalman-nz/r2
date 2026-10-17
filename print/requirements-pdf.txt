@@ -1,0 +1,8 @@
+# PDF generation (print/r2_pdf.py). Separate from requirements.txt so local
+# development can install just this, without brother_ql's pinned old Pillow
+# (fpdf2 works with that Pillow too, which is what the Docker image uses).
+fpdf2==2.8.9
+fonttools>=4.34.0,<5
+defusedxml>=0.7,<1
+# Time zone data for printing local dates; slim images have no system copy.
+tzdata
