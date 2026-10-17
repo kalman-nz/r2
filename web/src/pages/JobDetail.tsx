@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type JobPricing, type JobSummary } from "../lib/api";
-import { formatDate, formatDateTime, formatRange, nzd } from "../lib/format";
+import { formatDate, formatDateTime, formatPeriod, nzd } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useRole } from "../lib/roles";
 import JobFields from "../components/job/JobFields";
-import { draftFromJob, draftToPayload, newJobDraft, type JobDraft } from "../lib/jobDraft";
+import { draftFromJob, draftToPayload, draftToUpdate, newJobDraft, type JobDraft } from "../lib/jobDraft";
 import JobLines from "../components/job/JobLines";
+import JobSchedule from "../components/job/JobSchedule";
+import { PERIOD_KINDS } from "../lib/statuses";
 import { JobStatusBadge, QuoteStatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
@@ -47,12 +49,12 @@ function NewJob() {
       </Link>
       <h1 className="text-xl font-semibold text-gray-900">New project</h1>
       <section className="card p-4 flex flex-col gap-4">
-        <JobFields draft={draft} onChange={setDraft} readOnly={false} />
+        <JobFields draft={draft} onChange={setDraft} readOnly={false} withDates />
         <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
           <button onClick={create} disabled={saving || !draft.name.trim()} className="btn-primary py-2">
             {saving ? "Creating…" : "Create project"}
           </button>
-          <span className="text-xs text-gray-500">Equipment gets added on the next screen.</span>
+          <span className="text-xs text-gray-500">Then build the schedule and add equipment on the project&apos;s tabs.</span>
         </div>
       </section>
     </div>
@@ -61,8 +63,8 @@ function NewJob() {
 
 const BASIS_TEXT: Record<JobPricing["basis"], string> = {
   override: "set on the project",
-  show: "from the show dates",
-  hire: "from prep to return",
+  billing: "from the billing periods",
+  hire: "for the whole booking",
 };
 
 function TotalsCard({ pricing }: { pricing: JobPricing }) {
@@ -90,6 +92,42 @@ function TotalsCard({ pricing }: { pricing: JobPricing }) {
   );
 }
 
+type Tab = "general" | "schedule" | "equipment";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "general", label: "General" },
+  { key: "schedule", label: "Schedule" },
+  { key: "equipment", label: "Equipment" },
+];
+
+// The schedule at a glance on the General tab.
+function ScheduleOverview({ summary, onOpen }: { summary: JobSummary; onOpen: () => void }) {
+  const periods = [...summary.periods].sort((a, b) => a.start.localeCompare(b.start));
+  const tag = (kind: string) => (kind === "usage" ? "Usage" : kind === "billing" ? "Billing" : "");
+  const bar = (kind: string) => PERIOD_KINDS.find((k) => k.value === kind)?.bar ?? "bg-steel";
+  return (
+    <section className="card p-4 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-gray-500">Schedule</h2>
+        <button onClick={onOpen} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
+          Open schedule →
+        </button>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {periods.map((p) => (
+          <li key={p.id} className="flex items-center gap-2.5 text-sm">
+            <span className={`w-2.5 h-2.5 rounded-sm shrink-0 ${bar(p.kind)}`} />
+            <span className="w-48 shrink-0 font-medium text-gray-900 truncate">
+              {p.name}
+              {tag(p.kind) && <span className="ml-1.5 eyebrow text-gray-500">{tag(p.kind)}</span>}
+            </span>
+            <span className="text-gray-600 truncate">{formatPeriod(p.start, p.end)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function ExistingJob({ id }: { id: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -100,6 +138,9 @@ function ExistingJob({ id }: { id: string }) {
   const [draft, setDraft] = useState<JobDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [quoting, setQuoting] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.some((t) => t.key === params.get("tab")) ? (params.get("tab") as Tab) : "general";
+  const openTab = (t: Tab) => setParams(t === "general" ? {} : { tab: t }, { replace: true });
 
   const { data: summary, isLoading, error } = useQuery({
     queryKey: ["job-summary", id],
@@ -127,7 +168,7 @@ function ExistingJob({ id }: { id: string }) {
     if (!draft) return;
     setSaving(true);
     try {
-      await pb.collection("jobs").update(job.id, draftToPayload(draft));
+      await pb.collection("jobs").update(job.id, draftToUpdate(draft));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["job-summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["jobs"] }),
@@ -201,9 +242,8 @@ function ExistingJob({ id }: { id: string }) {
             {[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ") || "No client or location yet"}
           </p>
           <p className="text-sm text-gray-500">
-            Prep {formatDateTime(job.prepAt)} · Back {formatDateTime(job.returnAt)}
+            {formatDateTime(job.startAt)} → {formatDateTime(job.endAt)}
           </p>
-          {job.showStart && <p className="text-sm text-gray-500">Show {formatRange(job.showStart, job.showEnd)}</p>}
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <Link to={`/print/jobs/${job.id}/packing`} className="btn-secondary">
@@ -223,52 +263,81 @@ function ExistingJob({ id }: { id: string }) {
       </div>
 
       {shortLines > 0 && (
-        <div className="card border-fault/40 bg-red-50/60 px-4 py-2.5 text-sm text-red-700">
-          {shortLines} line{shortLines === 1 ? " is" : "s are"} short for these dates. Hover a shortage for detail; a subhire or
-          different dates will fix it.
+        <div className="card border-fault/40 bg-red-50/60 px-4 py-2.5 text-sm text-red-700 flex items-center justify-between gap-3 flex-wrap">
+          <span>
+            {shortLines} line{shortLines === 1 ? " is" : "s are"} short for these dates. A subhire or different dates will fix it.
+          </span>
+          {tab !== "equipment" && (
+            <button onClick={() => openTab("equipment")} className="text-xs font-medium underline">
+              See the equipment
+            </button>
+          )}
         </div>
       )}
 
+      <nav className="flex items-center gap-6 border-b border-gray-200" aria-label="Project sections">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => openTab(t.key)}
+            className={tab === t.key ? "tab-underline-active" : "tab-underline-inactive"}
+            aria-current={tab === t.key ? "page" : undefined}
+          >
+            {t.label}
+            <span className="ml-1.5 font-mono text-xs text-gray-400">
+              {t.key === "schedule" ? summary.periods.length : t.key === "equipment" ? summary.lines.length : ""}
+            </span>
+          </button>
+        ))}
+      </nav>
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_19rem] gap-4 items-start">
         <div className="flex flex-col gap-4 min-w-0">
-          <JobLines summary={summary} canEdit={can("jobs.lines")} onSummary={setSummary} />
+          {tab === "equipment" && <JobLines summary={summary} canEdit={can("jobs.lines")} onSummary={setSummary} />}
 
-          <section className="card p-4 flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-gray-500">Details</h2>
-              {can("jobs.edit") && !editing && (
-                <button onClick={() => setEditing(true)} className="btn-secondary py-1">
-                  Edit
-                </button>
-              )}
-            </div>
-            {draft && <JobFields draft={draft} onChange={setDraft} readOnly={!can("jobs.edit") || !editing} />}
-            {can("jobs.edit") && editing && (
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-100">
-                <div className="flex items-center gap-2">
-                  <button onClick={save} disabled={saving || !dirty || !draft?.name.trim()} className="btn-primary py-2">
-                    {saving ? "Saving…" : "Save changes"}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDraft(draftFromJob(job));
-                      setEditing(false);
-                    }}
-                    className="btn-secondary py-2"
-                  >
-                    Cancel
-                  </button>
+          {tab === "schedule" && <JobSchedule summary={summary} canEdit={can("jobs.edit")} />}
+
+          {tab === "general" && (
+            <>
+              <section className="card p-4 flex flex-col gap-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-semibold text-gray-500">Details</h2>
+                  {can("jobs.edit") && !editing && (
+                    <button onClick={() => setEditing(true)} className="btn-secondary py-1">
+                      Edit
+                    </button>
+                  )}
                 </div>
-                {!can("jobs.delete") ? null : deletable ? (
-                  <button onClick={remove} className="text-sm text-red-600 hover:text-red-700">
-                    Delete project
-                  </button>
-                ) : (
-                  <span className="text-xs text-gray-400">Quoted or scanned projects can't be deleted — cancel instead</span>
+                {draft && <JobFields draft={draft} onChange={setDraft} readOnly={!can("jobs.edit") || !editing} />}
+                {can("jobs.edit") && editing && (
+                  <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <button onClick={save} disabled={saving || !dirty || !draft?.name.trim()} className="btn-primary py-2">
+                        {saving ? "Saving…" : "Save changes"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDraft(draftFromJob(job));
+                          setEditing(false);
+                        }}
+                        className="btn-secondary py-2"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {!can("jobs.delete") ? null : deletable ? (
+                      <button onClick={remove} className="text-sm text-red-600 hover:text-red-700">
+                        Delete project
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400">Quoted or scanned projects can't be deleted — cancel instead</span>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-          </section>
+              </section>
+              <ScheduleOverview summary={summary} onOpen={() => openTab("schedule")} />
+            </>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">

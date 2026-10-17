@@ -120,7 +120,7 @@ function validateCategory(app, record) {
   }
 }
 
-// Kit is held from prepAt to returnAt; the show sits inside that.
+// Kit is held from prepAt to returnAt (the usage periods; lib/periods.js).
 function validateJob(app, record) {
   if (!record.getString("org")) return;
   sameOrg(app, record, "client", "contacts", "client");
@@ -129,14 +129,12 @@ function validateJob(app, record) {
   const ret = toMs(record.getString("returnAt"));
   if (!(prep < ret)) throw new BadRequestError("Return has to be after prep");
 
-  const showStartText = record.getString("showStart");
-  const showEndText = record.getString("showEnd");
-  if (!showStartText && !showEndText) return;
-  if (!showStartText || !showEndText) throw new BadRequestError("Set both show start and show end, or neither");
-  const showStart = toMs(showStartText);
-  const showEnd = toMs(showEndText);
-  if (!(showStart < showEnd)) throw new BadRequestError("Show end has to be after show start");
-  if (showStart < prep || showEnd > ret) throw new BadRequestError("The show has to fall between prep and return");
+  // Only set when creating, to seed the first billing period.
+  const billingStart = record.getString("billingStart");
+  const billingEnd = record.getString("billingEnd");
+  if (!billingStart && !billingEnd) return;
+  if (!billingStart || !billingEnd) throw new BadRequestError("Set both ends of the billing period, or neither");
+  if (!(toMs(billingStart) < toMs(billingEnd))) throw new BadRequestError("The billing period has to end after it starts");
 }
 
 // A membership's or invitation's role has to be one of its own
@@ -145,6 +143,16 @@ function validateJob(app, record) {
 function roleIsRecord(record) {
   const field = record.collection().fields.getByName("role");
   return !!field && field.type() === "relation";
+}
+
+// A schedule period: on a job in the same organisation, ending after it
+// starts.
+function validatePeriod(app, record) {
+  if (!record.getString("org")) return;
+  sameOrg(app, record, "job", "jobs", "project");
+  const start = toMs(record.getString("start"));
+  const end = toMs(record.getString("end"));
+  if (!(start < end)) throw new BadRequestError("A period has to end after it starts");
 }
 
 function validateMembership(app, record) {
@@ -185,6 +193,7 @@ module.exports = {
   validateComponent,
   validateCategory,
   validateJob,
+  validatePeriod,
   validateMembership,
   validateRole,
   validateInvitation,

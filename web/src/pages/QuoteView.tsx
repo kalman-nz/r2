@@ -62,7 +62,12 @@ export default function QuoteView() {
   }
 
   const t = s.pricing.totals;
-  const dates = s.job.showStart ? formatRange(s.job.showStart, s.job.showEnd) : formatRange(s.job.prepAt, s.job.returnAt);
+  // The billing period(s); quotes from before schedules have show dates.
+  const dates = s.job.billingStart
+    ? formatRange(s.job.billingStart, s.job.billingEnd)
+    : s.job.showStart
+      ? formatRange(s.job.showStart, s.job.showEnd)
+      : formatRange(s.job.prepAt, s.job.returnAt);
 
   return (
     <div className="min-h-screen bg-paper print:bg-white">

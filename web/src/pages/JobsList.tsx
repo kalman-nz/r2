@@ -29,7 +29,7 @@ export default function JobsList() {
     queryKey: ["jobs", filter],
     queryFn: () =>
       pb.collection("jobs").getFullList<JobWithExpand>({
-        sort: filter === "active" ? "prepAt" : "-prepAt",
+        sort: filter === "active" ? "startAt" : "-startAt",
         expand: "client,venue",
         filter: orgFilter(
           filter === "active"
@@ -95,8 +95,8 @@ export default function JobsList() {
               <th className="px-3 py-2 font-medium w-16">#</th>
               <th className="px-3 py-2 font-medium">Project</th>
               <th className="px-3 py-2 font-medium hidden md:table-cell">Location</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap">Prep</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap hidden sm:table-cell">Return</th>
+              <th className="px-3 py-2 font-medium whitespace-nowrap">Start</th>
+              <th className="px-3 py-2 font-medium whitespace-nowrap hidden sm:table-cell">End</th>
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
@@ -114,12 +114,12 @@ export default function JobsList() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-gray-600 hidden md:table-cell">{job.expand?.venue?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDateTime(job.prepAt)}</td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDateTime(job.startAt)}</td>
                   <td
                     className={`px-3 py-2 whitespace-nowrap hidden sm:table-cell ${overdue ? "text-fault-ink font-medium" : "text-gray-600"}`}
                     title={overdue ? "Overdue back" : undefined}
                   >
-                    {formatDateTime(job.returnAt)}
+                    {formatDateTime(job.endAt)}
                   </td>
                   <td className="px-3 py-2">
                     <JobStatusBadge status={job.status} />

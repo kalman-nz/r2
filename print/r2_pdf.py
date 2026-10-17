@@ -300,7 +300,13 @@ def render_quote(data, tz):
     venue = s.get("venue")
     if venue:
         yr = doc.text_block(jx, yr, col, venue.get("name", "") + (f", {venue['address']}" if venue.get("address") else ""))
-    when = fmt_range(job.get("showStart"), job.get("showEnd"), tz) if job.get("showStart") else fmt_range(job.get("prepAt"), job.get("returnAt"), tz)
+    # Quotes from before schedules (migration 0025) have show dates instead.
+    if job.get("billingStart"):
+        when = fmt_range(job.get("billingStart"), job.get("billingEnd"), tz)
+    elif job.get("showStart"):
+        when = fmt_range(job.get("showStart"), job.get("showEnd"), tz)
+    else:
+        when = fmt_range(job.get("prepAt"), job.get("returnAt"), tz)
     yr = doc.text_block(jx, yr, col, when, color=MUTED)
 
     doc.set_y(max(yl, yr) + 8)
@@ -396,6 +402,9 @@ def render_quote(data, tz):
 
 # --- packing list ---
 
+# What the required periods do (web/src/lib/statuses.ts PERIOD_KINDS).
+PERIOD_TAGS = {"usage": "Kit booked", "billing": "Billed"}
+
 
 def render_packing(data, tz):
     job = data["job"]
@@ -412,13 +421,24 @@ def render_packing(data, tz):
     top = doc.text_block(MARGIN, top, 96, (job.get("venueInfo") or {}).get("address") or "", color=MUTED)
 
     rx, rw = PAGE_W - MARGIN - 82, 82
-    details = [job.get("status", "").capitalize(), f"Prep {fmt_datetime(job.get('prepAt'), tz)}"]
-    if job.get("showStart"):
-        details.append(f"Show {fmt_range(job.get('showStart'), job.get('showEnd'), tz)}")
-    details.append(f"Back {fmt_datetime(job.get('returnAt'), tz)}")
+    details = [job.get("status", "").capitalize(), f"Out {fmt_datetime(job.get('prepAt'), tz)}", f"Back {fmt_datetime(job.get('returnAt'), tz)}"]
     right = doc.text_block(rx, MARGIN, rw, "\n".join(details), size=9, align="R", line=4.4)
 
     doc.set_y(max(top, right) + 7)
+    periods = sorted(data.get("periods") or [], key=lambda p: p.get("start") or "")
+    if periods:
+        schedule = Table(doc, [("what", "Schedule", 52, "L"), ("when", "When", 70, "L"), ("notes", "Notes", 58, "L")])
+        schedule.header()
+        for p in periods:
+            schedule.row(
+                {
+                    "what": {"text": p.get("name") or "", "semibold": True, "sub": PERIOD_TAGS.get(p.get("kind"), "")},
+                    "when": {"text": fmt_range(p.get("start"), p.get("end"), tz)},
+                    "notes": {"text": p.get("notes") or "", "color": MUTED},
+                },
+                padding=1.2,
+            )
+        doc.set_y(doc.get_y() + 6)
     packed = {p["itemId"]: p for p in (data.get("packing") or {}).get("items", [])}
     lines = [l for l in data.get("lines", []) if l.get("lineType") != "custom"]
     table = Table(doc, [("box", "", 7, "L"), ("qty", "Qty", 13, "R"), ("item", "Item", 104, "L"), ("where", "Where", 34, "L"), ("scanned", "Scanned", 22, "R")])

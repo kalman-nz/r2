@@ -2,9 +2,10 @@
 // subscribe from Google/Apple/Outlook calendar. Pure, like lib/pricing.js,
 // and tested in pocketbase/tests/ical.test.js.
 //
-// One event per job spanning prep → return, because that's when the kit is
-// tied up; show times go in the description. Enquiries and provisional jobs
-// are TENTATIVE.
+// One event per job spanning the time its kit is booked; the schedule goes
+// in the description, in UTC since the feed has no idea of the reader's
+// zone.
+// Enquiries and provisional jobs are TENTATIVE.
 
 function escapeText(value) {
   return String(value || "")
@@ -29,6 +30,11 @@ function fold(line) {
   return parts.join("\r\n ");
 }
 
+// "2026-10-19 09:00"
+function utc(ms) {
+  return new Date(ms).toISOString().slice(0, 16).replace("T", " ");
+}
+
 const STATUS_LABEL = {
   enquiry: "Enquiry",
   provisional: "Provisional",
@@ -38,8 +44,8 @@ const STATUS_LABEL = {
   cancelled: "Cancelled",
 };
 
-// jobs: [{ id, number, name, status, start, end (ms), showStart, showEnd
-// (ms or NaN), client, venue, updated (ms), url }]
+// jobs: [{ id, number, name, status, start, end (ms), client, venue,
+// updated (ms), url, periods: [{ kind, name, start, end (ms) }] }]
 function buildIcs(jobs, calendarName, nowMs) {
   const lines = [
     "BEGIN:VCALENDAR",
@@ -52,8 +58,12 @@ function buildIcs(jobs, calendarName, nowMs) {
   for (const job of jobs) {
     const description = [];
     if (job.client) description.push("Client: " + job.client);
-    if (Number.isFinite(job.showStart) && Number.isFinite(job.showEnd)) {
-      description.push("Show: " + new Date(job.showStart).toISOString() + " to " + new Date(job.showEnd).toISOString() + " (UTC)");
+    if (job.periods && job.periods.length > 0) {
+      description.push("Schedule (UTC):");
+      for (const p of job.periods) {
+        const tag = p.kind === "usage" ? " (kit booked)" : p.kind === "billing" ? " (billed)" : "";
+        description.push(p.name + tag + ": " + utc(p.start) + " to " + utc(p.end));
+      }
     }
     description.push("Status: " + (STATUS_LABEL[job.status] || job.status));
     if (job.url) description.push(job.url);

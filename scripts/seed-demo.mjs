@@ -210,8 +210,8 @@ const jobs = [
     client: contacts["Kōwhai Events Ltd"].id,
     venue: venues["Example Town Hall"].id,
     prepAt: day(3, 9),
-    showStart: day(4, 17),
-    showEnd: day(4, 23),
+    billingStart: day(4, 17),
+    billingEnd: day(4, 23),
     returnAt: day(5, 12),
     quoteNotes: "Includes delivery, setup and pack-down by our crew.",
     lines: [
@@ -230,8 +230,8 @@ const jobs = [
     client: contacts["Southern Lights Productions"].id,
     venue: venues["Riverside Pavilion"].id,
     prepAt: day(4, 8),
-    showStart: day(5, 10),
-    showEnd: day(5, 16),
+    billingStart: day(5, 10),
+    billingEnd: day(5, 16),
     returnAt: day(6, 12),
     lines: [
       { itemId: items.SPK12.id, quantity: 3 },

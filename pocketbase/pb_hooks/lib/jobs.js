@@ -78,9 +78,11 @@ function jobInfo(app, job) {
     client: job.getString("client"),
     venue: job.getString("venue"),
     prepAt: job.getString("prepAt"),
-    showStart: job.getString("showStart"),
-    showEnd: job.getString("showEnd"),
     returnAt: job.getString("returnAt"),
+    startAt: job.getString("startAt"),
+    endAt: job.getString("endAt"),
+    billingStart: job.getString("billingStart"),
+    billingEnd: job.getString("billingEnd"),
     chargeDays: job.getInt("chargeDays"),
     discountPct: job.getFloat("discountPct"),
     reference: job.getString("reference"),
@@ -93,16 +95,15 @@ function jobInfo(app, job) {
   };
 }
 
-// Charged days: an explicit override wins, then the show dates, then the
-// whole prep→return period for a dry hire with no show.
-function chargeDaysFor(job) {
+// Charged days: an explicit override wins, then the billing periods, each
+// counted on its own (lib/periods.js chargedDays), then, if a project has
+// somehow lost them all, the whole time the kit is booked.
+function chargeDaysFor(app, job) {
   const override = job.getInt("chargeDays");
   if (override > 0) return { days: override, basis: "override" };
-  const showStart = toMs(job.getString("showStart"));
-  const showEnd = toMs(job.getString("showEnd"));
-  if (Number.isFinite(showStart) && Number.isFinite(showEnd)) {
-    return { days: pricing.chargeableDays(showStart, showEnd), basis: "show" };
-  }
+  const { chargedDays, plainPeriods } = require(`${__hooks}/lib/periods.js`);
+  const billed = chargedDays(plainPeriods(app, job.id));
+  if (billed !== null) return { days: billed, basis: "billing" };
   return { days: pricing.chargeableDays(toMs(job.getString("prepAt")), toMs(job.getString("returnAt"))), basis: "hire" };
 }
 
@@ -235,7 +236,7 @@ function buildSummary(app, jobId, show) {
       ? jobAvailability(app, org, job.id, start, end, needs, settings.bufferHours)
       : {};
 
-  const charge = chargeDaysFor(job);
+  const charge = chargeDaysFor(app, job);
   const factor = pricing.dayFactor(charge.days, settings.factors, settings.extraDayFactor);
   const priced = lines.map((l) => ({
     unitPrice: l.getFloat("unitPrice"),
@@ -283,8 +284,18 @@ function buildSummary(app, jobId, show) {
   // A kit's own line has no stock, so flag it when any of its components is short.
   for (const view of lineViews) view.componentsShort = shortByLine[view.id] === true;
 
+  const { periodsOf } = require(`${__hooks}/lib/periods.js`);
   const summary = {
     job: jobInfo(app, job),
+    // The schedule, in time order (lib/periods.js).
+    periods: periodsOf(app, job.id).map((p) => ({
+      id: p.id,
+      kind: p.getString("kind"),
+      name: p.getString("name"),
+      start: p.getString("start"),
+      end: p.getString("end"),
+      notes: p.getString("notes"),
+    })),
     lines: lineViews,
     packing: packingState(app, job.id, needs, itemsById),
     includesPrices: includePrices,
@@ -563,9 +574,9 @@ function issueQuote(jobId, authRecord) {
       name: summary.job.name,
       reference: summary.job.reference,
       prepAt: summary.job.prepAt,
-      showStart: summary.job.showStart,
-      showEnd: summary.job.showEnd,
       returnAt: summary.job.returnAt,
+      billingStart: summary.job.billingStart,
+      billingEnd: summary.job.billingEnd,
       quoteNotes: summary.job.quoteNotes,
     },
     client: summary.job.clientInfo,
