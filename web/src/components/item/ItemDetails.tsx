@@ -154,9 +154,9 @@ export default function ItemDetails({
         <Row label="Barcode" value={item.barcode} mono>
           <input value={draft.barcode} onChange={(e) => set("barcode", e.target.value)} className="input py-1.5 w-full font-mono" />
         </Row>
-        <Row label="Category" value={categoryPath ? displayPath(categoryPath) : null} empty="Uncategorised">
+        <Row label="Folder" value={categoryPath ? displayPath(categoryPath) : null} empty="Inventory (top level)">
           <select value={draft.category} onChange={(e) => set("category", e.target.value)} className="input py-1.5 w-full">
-            <option value="">Uncategorised</option>
+            <option value="">Inventory (top level)</option>
             {sortedCategories.map((c) => (
               <option key={c.id} value={c.id}>
                 {displayPath(c.path)}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type EquipmentView, type Item } from "../lib/api";
@@ -9,6 +9,12 @@ import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
 import { useRole } from "../lib/roles";
 import BatchPrintBar from "../components/BatchPrintBar";
 import { orgFilter } from "../lib/currentOrg";
+import { errorText } from "../lib/errors";
+import { folderOf, indexFolders, subtree, trail } from "../lib/folders";
+import FolderTree, { FolderIcon } from "../components/item/FolderTree";
+import FolderPicker from "../components/item/FolderPicker";
+import FolderActions, { useFolderActions } from "../components/item/FolderActions";
+import { useToast } from "../components/ToastProvider";
 
 const COLUMNS_STORAGE_KEY = "inventory.visibleColumns";
 const WIDTHS_STORAGE_KEY = "inventory.columnWidths";
@@ -62,7 +68,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "category",
-    label: "Category",
+    label: "Folder",
     toggleable: true,
     defaultVisible: true,
     defaultWidth: 180,
@@ -496,7 +502,16 @@ export default function ItemsList() {
   const navigate = useNavigate();
   const { can } = useRole();
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  // The folder being looked at ("" is the top, Inventory), in the URL so
+  // Back and links work like a file browser.
+  const [params, setParams] = useSearchParams();
+  const askedFolder = params.get("folder") ?? "";
+  const openFolder = (id: string) => {
+    setParams(id ? { folder: id } : {});
+    setSelected(new Set());
+  };
+  const [movingItems, setMovingItems] = useState(false);
+  const { showToast } = useToast();
   const [typeFilter, setTypeFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
   const [unavailableOnly, setUnavailableOnly] = useState(false);
@@ -510,6 +525,9 @@ export default function ItemsList() {
   const queryClient = useQueryClient();
   const { data: categories = [] } = useCategories();
   const paths = useCategoryPaths();
+  const folders = useMemo(() => indexFolders(categories), [categories]);
+  // A link to a folder that's gone (or another organisation's) opens the top.
+  const folder = folders.byId.has(askedFolder) ? askedFolder : "";
 
   useEffect(() => {
     localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...visibleColumns]));
@@ -580,12 +598,30 @@ export default function ItemsList() {
     [items, paths, availability],
   );
 
+  // Searching or filtering looks through this folder and everything in it;
+  // otherwise it's like opening a folder: its subfolders, then the items
+  // sitting directly in it.
+  const searching = search.trim() !== "" || typeFilter !== "all" || unavailableOnly;
+  const scope = useMemo(() => subtree(folders, folder), [folders, folder]);
+  const subfolders = searching ? [] : (folders.children.get(folder) ?? []);
+
+  // Items inside each folder at any depth (for the tree and folder rows).
+  const counts = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const r of rows) {
+      if (!showArchived && r.archived) continue;
+      out.set("", (out.get("") ?? 0) + 1);
+      for (const f of trail(folders, folderOf(folders, r.category))) out.set(f.id, (out.get(f.id) ?? 0) + 1);
+    }
+    return out;
+  }, [rows, folders, showArchived]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const categoryPath = categoryFilter !== "all" ? paths.get(categoryFilter) : null;
     let result = rows.filter((i) => {
       if (!showArchived && i.archived) return false;
-      if (categoryPath && i.categoryPath !== categoryPath && !i.categoryPath.startsWith(categoryPath + "/")) return false;
+      const where = folderOf(folders, i.category);
+      if (searching ? !scope.has(where) : where !== folder) return false;
       if (typeFilter !== "all" && TYPE_LABEL(i) !== typeFilter) return false;
       if (unavailableOnly && !(i.freeNow !== null && i.freeNow <= 0)) return false;
       if (
@@ -606,7 +642,21 @@ export default function ItemsList() {
       return String(av).localeCompare(String(bv)) * dir;
     });
     return result;
-  }, [rows, search, categoryFilter, typeFilter, showArchived, unavailableOnly, sortKey, sortDir, paths]);
+  }, [rows, search, folders, folder, scope, searching, typeFilter, showArchived, unavailableOnly, sortKey, sortDir]);
+
+  async function moveSelected(target: string) {
+    const ids = [...selected];
+    try {
+      for (const id of ids) await pb.collection("items").update(id, { category: target });
+      showToast("success", `Moved ${ids.length} item${ids.length === 1 ? "" : "s"} to ${folders.byId.get(target)?.name ?? "Inventory"}`);
+      setSelected(new Set());
+      setMovingItems(false);
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ["items"] });
+    }
+  }
 
   function toggleSort(key: string) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -679,7 +729,7 @@ export default function ItemsList() {
   }
 
   const activeFilterCount =
-    (categoryFilter !== "all" ? 1 : 0) + (typeFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0);
+    (typeFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -695,180 +745,233 @@ export default function ItemsList() {
 
   const selectedItems = filtered.filter((i) => selected.has(String(i.id)));
 
+  const folderActions = useFolderActions({ index: folders, items, onOpen: openFolder });
+  const here = trail(folders, folder);
+  const current = here[here.length - 1] ?? null;
+
   return (
-    <div className="w-full h-full flex flex-col gap-3 min-h-0">
-      <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Inventory</h1>
-          <p className="text-xs text-gray-500">
-            {filtered.length.toLocaleString()} of {rows.filter((r) => showArchived || !r.archived).length.toLocaleString()} items
-          </p>
+    <div className="w-full h-full flex gap-4 min-h-0">
+      <aside className="hidden lg:flex w-64 shrink-0 card p-2 flex-col min-h-0">
+        <div className="overflow-y-auto min-h-0">
+          <FolderTree index={folders} current={folder} onOpen={openFolder} counts={counts} actions={folderActions} />
         </div>
-        {can("items.create") && (
-          <Link to="/inventory/new" className="btn-primary">
-            New item
-          </Link>
-        )}
-      </div>
+      </aside>
 
-      <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, code, barcode, tag…"
-          className="input w-60"
-        />
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="input w-auto max-w-56">
-          <option value="all">All categories</option>
-          {categories
-            .map((c) => ({ id: c.id, path: paths.get(c.id) ?? c.name }))
-            .sort((a, b) => a.path.localeCompare(b.path))
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                {displayPath(c.path)}
-              </option>
-            ))}
-        </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input w-auto">
-          <option value="all">All types</option>
-          <option value="Bulk">Bulk</option>
-          <option value="Serialised">Serialised</option>
-          <option value="Kit">Kits</option>
-        </select>
-        <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
-          <input type="checkbox" checked={unavailableOnly} onChange={(e) => setUnavailableOnly(e.target.checked)} />
-          None free now
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
-        </label>
-        {activeFilterCount > 0 && (
-          <button
-            onClick={() => {
-              setCategoryFilter("all");
-              setTypeFilter("all");
-              setShowArchived(false);
-              setUnavailableOnly(false);
-            }}
-            className="text-xs text-signal-ink hover:text-signal-ink-hover px-1.5"
-          >
-            Clear filters
-          </button>
-        )}
-        <div className="ml-auto flex items-center gap-1.5">
-          <button onClick={() => setManageViewsOpen(true)} className="btn-secondary">
-            View: {activeView ? activeView.name : "Default"}
-          </button>
-        </div>
-      </div>
-
-      {manageViewsOpen && (
-        <ManageViewsModal
-          views={views}
-          activeView={activeView}
-          visibleColumns={visibleColumns}
-          onToggleColumn={toggleColumn}
-          getCurrentConfig={getCurrentViewConfig}
-          onApply={applyView}
-          onSaved={handleViewSaved}
-          onPatched={handleViewPatched}
-          onDeleted={handleViewDeleted}
-          onClose={() => setManageViewsOpen(false)}
-        />
-      )}
-
-      {isLoading && <p className="text-gray-500 text-sm shrink-0">Loading…</p>}
-      {error && <p className="text-red-600 text-sm shrink-0">Couldn't load inventory: {(error as Error).message}</p>}
-
-      {selectedItems.length > 0 && (
-        <div className="shrink-0">
-          <BatchPrintBar<Row>
-            items={selectedItems}
-            getDisplayName={(i) => i.name}
-            renderImage={(i, t) => renderItemLabelImage(i, i.categoryPath, t)}
-            sendPrint={(image, t) => sendRenderedLabel(image, t)}
-            onDone={() => setSelected(new Set())}
-          />
-        </div>
-      )}
-
-      <div className="card overflow-hidden flex-1 min-h-0 flex flex-col">
-        <div className="overflow-auto flex-1 min-h-0">
-          <table className="min-w-full text-[13px] border-collapse" style={{ width: tableWidth, tableLayout: "fixed" }}>
-            <colgroup>
-              <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
-              {columns.map((c) => (
-                <col key={c.key} style={{ width: columnWidth(c) }} />
+      <div className="flex-1 min-w-0 h-full flex flex-col gap-3 min-h-0">
+        <div className="flex items-start justify-between gap-3 flex-wrap shrink-0">
+          <div className="min-w-0">
+            <nav className="flex items-center gap-1 text-xs text-gray-500 flex-wrap" aria-label="Folder">
+              <button onClick={() => openFolder("")} className="hover:text-gray-900">
+                Inventory
+              </button>
+              {here.map((f) => (
+                <span key={f.id} className="flex items-center gap-1">
+                  <span className="text-gray-300">›</span>
+                  <button onClick={() => openFolder(f.id)} className="hover:text-gray-900">
+                    {f.name}
+                  </button>
+                </span>
               ))}
-            </colgroup>
-            <thead className="sticky top-0 bg-white z-10">
-              <tr className="border-b border-gray-200 text-left text-gray-500">
-                <th className="px-3 py-2">
-                  {filtered.length > 0 && (
-                    <input
-                      type="checkbox"
-                      checked={selected.size > 0 && selected.size === filtered.length}
-                      ref={(el) => {
-                        if (el) el.indeterminate = selected.size > 0 && selected.size < filtered.length;
-                      }}
-                      onChange={toggleSelectAll}
-                    />
-                  )}
-                </th>
+            </nav>
+            <h1 className="text-lg font-semibold text-gray-900 truncate">{current ? current.name : "Inventory"}</h1>
+            <p className="text-xs text-gray-500">
+              {searching
+                ? `${filtered.length.toLocaleString()} found${current ? ` in ${current.name}` : ""}`
+                : [
+                    subfolders.length > 0 && `${subfolders.length} folder${subfolders.length === 1 ? "" : "s"}`,
+                    `${filtered.length.toLocaleString()} item${filtered.length === 1 ? "" : "s"}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <FolderActions actions={folderActions} current={folder} />
+            {folderActions.dialogs}
+            {can("items.create") && (
+              <Link to={folder ? `/inventory/new?folder=${folder}` : "/inventory/new"} className="btn-primary">
+                New item
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={current ? `Search in ${current.name}…` : "Search name, code, barcode…"}
+            className="input w-60"
+          />
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input w-auto">
+            <option value="all">All types</option>
+            <option value="Bulk">Bulk</option>
+            <option value="Serialised">Serialised</option>
+            <option value="Kit">Kits</option>
+          </select>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
+            <input type="checkbox" checked={unavailableOnly} onChange={(e) => setUnavailableOnly(e.target.checked)} />
+            None free now
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived
+          </label>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => {
+                setTypeFilter("all");
+                setShowArchived(false);
+                setUnavailableOnly(false);
+              }}
+              className="text-xs text-signal-ink hover:text-signal-ink-hover px-1.5"
+            >
+              Clear filters
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-1.5">
+            <button onClick={() => setManageViewsOpen(true)} className="btn-secondary">
+              View: {activeView ? activeView.name : "Default"}
+            </button>
+          </div>
+        </div>
+
+        {manageViewsOpen && (
+          <ManageViewsModal
+            views={views}
+            activeView={activeView}
+            visibleColumns={visibleColumns}
+            onToggleColumn={toggleColumn}
+            getCurrentConfig={getCurrentViewConfig}
+            onApply={applyView}
+            onSaved={handleViewSaved}
+            onPatched={handleViewPatched}
+            onDeleted={handleViewDeleted}
+            onClose={() => setManageViewsOpen(false)}
+          />
+        )}
+
+        {isLoading && <p className="text-gray-500 text-sm shrink-0">Loading…</p>}
+        {error && <p className="text-red-600 text-sm shrink-0">Couldn't load inventory: {(error as Error).message}</p>}
+
+        {selectedItems.length > 0 && can("items.edit") && (
+          <div className="shrink-0 flex items-center gap-2 text-sm">
+            <button onClick={() => setMovingItems(true)} className="btn-secondary">
+              Move {selectedItems.length} to folder…
+            </button>
+          </div>
+        )}
+        {movingItems && (
+          <FolderPicker
+            title={`Move ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"} to…`}
+            index={folders}
+            initial={folder}
+            confirmLabel="Move here"
+            onPick={moveSelected}
+            onClose={() => setMovingItems(false)}
+          />
+        )}
+        {selectedItems.length > 0 && (
+          <div className="shrink-0">
+            <BatchPrintBar<Row>
+              items={selectedItems}
+              getDisplayName={(i) => i.name}
+              renderImage={(i, t) => renderItemLabelImage(i, i.categoryPath, t)}
+              sendPrint={(image, t) => sendRenderedLabel(image, t)}
+              onDone={() => setSelected(new Set())}
+            />
+          </div>
+        )}
+
+        <div className="card overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="overflow-auto flex-1 min-h-0">
+            <table className="min-w-full text-[13px] border-collapse" style={{ width: tableWidth, tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
                 {columns.map((c) => (
-                  <th
-                    key={c.key}
-                    onClick={() => toggleSort(c.key)}
-                    className={`relative px-3 py-2 font-medium cursor-pointer hover:text-gray-700 select-none whitespace-nowrap overflow-hidden text-ellipsis border-r border-gray-200 ${
-                      c.align === "right" ? "text-right" : "text-left"
-                    }`}
-                  >
-                    {c.label}
-                    {arrow(c.key)}
-                    <div
-                      onMouseDown={(e) => startResize(e, c)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none hover:bg-signal/30 active:bg-signal/50"
-                    />
-                  </th>
+                  <col key={c.key} style={{ width: columnWidth(c) }} />
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.map((item) => (
-                <tr
-                  key={item.id}
-                  onClick={() => navigate(`/inventory/${item.id}`)}
-                  className="hover:bg-gray-50 cursor-pointer"
-                >
-                  <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selected.has(String(item.id))}
-                      onChange={() => toggleSelect(String(item.id))}
-                    />
-                  </td>
+              </colgroup>
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="border-b border-gray-200 text-left text-gray-500">
+                  <th className="px-3 py-2">
+                    {filtered.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={selected.size > 0 && selected.size === filtered.length}
+                        ref={(el) => {
+                          if (el) el.indeterminate = selected.size > 0 && selected.size < filtered.length;
+                        }}
+                        onChange={toggleSelectAll}
+                      />
+                    )}
+                  </th>
                   {columns.map((c) => (
-                    <td
+                    <th
                       key={c.key}
-                      className={`px-3 py-1.5 overflow-hidden text-ellipsis border-r border-gray-100 ${
-                        c.align === "right" ? "text-right" : ""
+                      onClick={() => toggleSort(c.key)}
+                      className={`relative px-3 py-2 font-medium cursor-pointer hover:text-gray-700 select-none whitespace-nowrap overflow-hidden text-ellipsis border-r border-gray-200 ${
+                        c.align === "right" ? "text-right" : "text-left"
                       }`}
                     >
-                      {c.render(item)}
-                    </td>
+                      {c.label}
+                      {arrow(c.key)}
+                      <div
+                        onMouseDown={(e) => startResize(e, c)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none hover:bg-signal/30 active:bg-signal/50"
+                      />
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {subfolders.map((f) => (
+                  <tr key={f.id} onClick={() => openFolder(f.id)} className="hover:bg-gray-50 cursor-pointer">
+                    <td className="px-3 py-1.5" />
+                    <td colSpan={columns.length} className="px-3 py-1.5">
+                      <span className="flex items-center gap-2">
+                        <FolderIcon className="w-4 h-4 text-gray-400" />
+                        <span className="font-medium text-gray-900">{f.name}</span>
+                        <span className="font-mono text-[11px] text-gray-400">{counts.get(f.id) ?? 0}</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.map((item) => (
+                  <tr
+                    key={item.id}
+                    onClick={() => navigate(`/inventory/${item.id}`)}
+                    className="hover:bg-gray-50 cursor-pointer"
+                  >
+                    <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(String(item.id))}
+                        onChange={() => toggleSelect(String(item.id))}
+                      />
+                    </td>
+                    {columns.map((c) => (
+                      <td
+                        key={c.key}
+                        className={`px-3 py-1.5 overflow-hidden text-ellipsis border-r border-gray-100 ${
+                          c.align === "right" ? "text-right" : ""
+                        }`}
+                      >
+                        {c.render(item)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!isLoading && filtered.length === 0 && subfolders.length === 0 && (
+            <p className="px-4 py-6 text-gray-500 text-sm text-center">
+              {rows.length === 0 ? "No inventory yet — add items here, or import them in Settings > Import." : searching ? "No items match." : "This folder is empty."}
+            </p>
+          )}
         </div>
-        {!isLoading && filtered.length === 0 && (
-          <p className="px-4 py-6 text-gray-500 text-sm text-center">
-            {rows.length === 0 ? "No inventory yet — add items here, or import them in Settings > Import." : "No items match."}
-          </p>
-        )}
       </div>
     </div>
   );

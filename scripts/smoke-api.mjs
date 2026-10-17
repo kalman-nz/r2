@@ -446,6 +446,28 @@ assert.equal(summary.pricing.totals.gst, 71.1);
 assert.equal(summary.pricing.totals.total, 545.1);
 log("lines: kit expands to components, repeat adds merge, totals = $474 + GST $71.10");
 
+// --- deleting folders ---
+const xlrFolder = xlr.category;
+const outer = await planner.create("categories", { name: `Outer ${run}` });
+const inner = await planner.create("categories", { name: `Inner ${run}`, parent: outer.id });
+const spare = await planner.create("items", { name: `Spare ${run}`, kind: "item", tracking: "bulk", stockQty: 1, category: inner.id });
+await planner.ok("PATCH", `/api/collections/items/records/${xlr.id}`, { category: inner.id });
+await tech.fails("POST", `/api/folders/${outer.id}/delete`, { contents: true }, 403);
+const gone = await planner.ok("POST", `/api/folders/${outer.id}/delete`, { contents: true });
+assert.deepEqual([gone.deleted, gone.archived], [1, 1], "unused items are deleted, ones on projects archived");
+await planner.fails("GET", `/api/collections/items/records/${spare.id}`, null, 404);
+await planner.fails("GET", `/api/collections/categories/records/${inner.id}`, null, 404);
+const keptXlr = await planner.ok("GET", `/api/collections/items/records/${xlr.id}`);
+assert.equal(keptXlr.archived, true);
+assert.equal(keptXlr.category, "", "kept at the deleted folder's level");
+await planner.ok("PATCH", `/api/collections/items/records/${xlr.id}`, { archived: false, category: xlrFolder });
+const shell = await planner.create("categories", { name: `Shell ${run}` });
+const loose = await planner.create("items", { name: `Loose ${run}`, kind: "item", tracking: "bulk", stockQty: 1, category: shell.id });
+assert.equal((await planner.ok("POST", `/api/folders/${shell.id}/delete`, { contents: false })).moved, 1);
+assert.equal((await planner.ok("GET", `/api/collections/items/records/${loose.id}`)).category, "", "keeping contents moves them up");
+await planner.ok("DELETE", `/api/collections/items/records/${loose.id}`);
+log("deleting a folder: with its contents (used items archived), or keeping them");
+
 summary = await planner.ok("PATCH", `/api/job-lines/${summary.lines[0].id}`, { quantity: 2 });
 assert.equal(summary.lines[1].quantity, 4, "component follows the kit's quantity");
 assert.equal(summary.lines[1].availability.short, 2, "only 2 K12s exist");
