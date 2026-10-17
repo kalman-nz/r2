@@ -75,6 +75,45 @@ export default function ItemDetail() {
     if (isNew) navigate(`/inventory/${next.id}`, { replace: true });
   }
 
+  // Deleting is only for items with no project history (never on a project,
+  // never scanned): anything else is archived instead. The server refuses
+  // it too; this just says so up front.
+  const { data: history } = useQuery({
+    queryKey: ["item-history", id],
+    queryFn: async () => {
+      const count = async (collection: string) =>
+        (await pb.collection(collection).getList(1, 1, { filter: pb.filter("item = {:item}", { item: id }), skipTotal: false })).totalItems;
+      const [lines, scans] = await Promise.all([count("job_lines"), count("scans")]);
+      return { lines, scans };
+    },
+    enabled: !isNew,
+  });
+  const hasHistory = !!history && history.lines + history.scans > 0;
+
+  async function remove() {
+    if (!item) return;
+    const kits = links.length;
+    const parts = [
+      serialCount > 0 && `its ${serialCount} unit${serialCount === 1 ? "" : "s"}`,
+      kits > 0 && `its ${kits} kit or accessory link${kits === 1 ? "" : "s"}`,
+    ].filter(Boolean);
+    const ok = await confirm({
+      title: "Delete item",
+      message: `Delete ${item.name}${parts.length ? ` and ${parts.join(" and ")}` : ""}? This can't be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await pb.collection("items").delete(item.id);
+      await queryClient.invalidateQueries({ queryKey: ["items"] });
+      showToast("success", `Deleted ${item.name}`);
+      navigate(item.category ? `/inventory?folder=${item.category}` : "/inventory", { replace: true });
+    } catch (err) {
+      showToast("error", errorText(err));
+    }
+  }
+
   // Archived items are hidden and can't go on new projects; restoring puts
   // them straight back. History and units are untouched either way.
   async function setArchived(archived: boolean) {
@@ -161,6 +200,19 @@ export default function ItemDetail() {
             <button onClick={() => setArchived(true)} disabled={archiving} className="btn-secondary">
               Archive
             </button>
+          )}
+          {can("items.delete") && (
+            <span
+              title={
+                hasHistory
+                  ? `Used on ${history!.lines > 0 ? `${history!.lines} project line${history!.lines === 1 ? "" : "s"}` : "a project"}${history!.scans > 0 ? ` and scanned ${history!.scans} time${history!.scans === 1 ? "" : "s"}` : ""}, so it can't be deleted. Archive it instead`
+                  : undefined
+              }
+            >
+              <button onClick={remove} disabled={!history || hasHistory} className="btn-secondary hover:text-fault-ink disabled:opacity-40">
+                Delete
+              </button>
+            </span>
           )}
           <PrintButton context={buildItemLabelContext(item, categoryPath)} label={item.tracking === "serial" ? "Print item label" : "Print label"} />
         </div>

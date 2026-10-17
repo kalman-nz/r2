@@ -93,6 +93,10 @@ onRecordCreateRequest((e) => {
 onRecordDelete((e) => {
   const { guardReferenced } = require(`${__hooks}/lib/validation.js`);
   guardReferenced(e.app, "job_lines", "item = {:id}", e.record.id, "item");
+  // Scans keep a project's history too, even once its lines have changed.
+  if (e.app.findRecordsByFilter("scans", "item = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("This item has been scanned on a project — archive it instead");
+  }
   e.next();
 }, "items");
 
