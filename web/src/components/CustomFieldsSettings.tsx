@@ -19,7 +19,11 @@ export const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
 
 const typeLabel = (type: CustomField["type"]) => CUSTOM_FIELD_TYPES.find((t) => t.value === (type || "text"))?.label ?? type;
 // Dropdown choices are typed as one comma-separated line.
-const splitOptions = (text: string) => text.split(",").map((o) => o.trim()).filter(Boolean);
+const splitOptions = (text: string) =>
+  text
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
 
 // Settings > Custom fields: the organisation's own fields on every item,
 // filled in on the item page's Custom fields card. Fields the Rentman import
@@ -51,7 +55,9 @@ export default function CustomFieldsSettings() {
     if (!label.trim()) return;
     const sortOrder = Math.max(0, ...fields.map((f) => f.sortOrder)) + 1;
     const ok = await run(() =>
-      pb.collection("custom_fields").create(withOrg({ label: label.trim(), type, appliesTo: "item", options: type === "select" ? splitOptions(options) : [], sortOrder })),
+      pb
+        .collection("custom_fields")
+        .create(withOrg({ label: label.trim(), type, appliesTo: "item", options: type === "select" ? splitOptions(options) : [], sortOrder })),
     );
     if (ok) {
       setLabel("");
@@ -64,7 +70,9 @@ export default function CustomFieldsSettings() {
     const order = [...fields];
     const [field] = order.splice(index, 1);
     order.splice(index + by, 0, field);
-    return run(() => Promise.all(order.map((f, i) => (f.sortOrder === i + 1 ? null : pb.collection("custom_fields").update(f.id, { sortOrder: i + 1 })))));
+    return run(() =>
+      Promise.all(order.map((f, i) => (f.sortOrder === i + 1 ? null : pb.collection("custom_fields").update(f.id, { sortOrder: i + 1 })))),
+    );
   }
 
   async function remove(field: CustomField) {
@@ -87,7 +95,12 @@ export default function CustomFieldsSettings() {
         {fields.map((f, i) => (
           <div key={f.id} className="flex items-center gap-2 flex-wrap">
             <div className="flex flex-col -my-1">
-              <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-400 hover:text-gray-900 disabled:opacity-30 text-xs leading-none px-1" title="Move up">
+              <button
+                onClick={() => move(i, -1)}
+                disabled={i === 0}
+                className="text-gray-400 hover:text-gray-900 disabled:opacity-30 text-xs leading-none px-1"
+                title="Move up"
+              >
                 ▲
               </button>
               <button
@@ -99,7 +112,11 @@ export default function CustomFieldsSettings() {
                 ▼
               </button>
             </div>
-            <InlineText value={f.label} onCommit={(v) => v && run(() => pb.collection("custom_fields").update(f.id, { label: v }))} className="w-48" />
+            <InlineText
+              value={f.label}
+              onCommit={(v) => v && run(() => pb.collection("custom_fields").update(f.id, { label: v }))}
+              className="w-48"
+            />
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{typeLabel(f.type)}</span>
             {f.type === "select" ? (
               <InlineText
@@ -128,9 +145,18 @@ export default function CustomFieldsSettings() {
             ))}
           </select>
           {type === "select" && (
-            <input value={options} onChange={(e) => setOptions(e.target.value)} placeholder="Choices, separated by commas" className="input py-1.5 flex-1 min-w-40" />
+            <input
+              value={options}
+              onChange={(e) => setOptions(e.target.value)}
+              placeholder="Choices, separated by commas"
+              className="input py-1.5 flex-1 min-w-40"
+            />
           )}
-          <button type="submit" disabled={!label.trim() || (type === "select" && splitOptions(options).length === 0)} className="btn-secondary py-1.5">
+          <button
+            type="submit"
+            disabled={!label.trim() || (type === "select" && splitOptions(options).length === 0)}
+            className="btn-secondary py-1.5"
+          >
             Add
           </button>
         </form>

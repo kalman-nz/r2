@@ -53,7 +53,7 @@ const TRACKING_OPTIONS: { value: Draft["tracking"]; label: string }[] = [
   { value: "serial", label: "Serialised" },
 ];
 // What a price is per: each (sold), hour, day or week.
-const PER_OPTIONS: { value: PriceUnit; label: string }[] = [
+export const PER_OPTIONS: { value: PriceUnit; label: string }[] = [
   { value: "each", label: "/ea" },
   { value: "hour", label: "/hr" },
   { value: "day", label: "/day" },
@@ -96,7 +96,7 @@ function customValue(field: CustomField, value: unknown): ReactNode {
 
 // Its input while editing. Dates are kept as plain YYYY-MM-DD, with no time
 // or timezone to drift.
-function CustomInput({ field, value, onChange }: { field: CustomField; value: unknown; onChange: (value: unknown) => void }) {
+export function CustomInput({ field, value, onChange }: { field: CustomField; value: unknown; onChange: (value: unknown) => void }) {
   const text = value === null || value === undefined ? "" : String(value);
   switch (field.type) {
     case "number":

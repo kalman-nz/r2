@@ -19,6 +19,9 @@ type BatchPrintBarProps<T> = {
   renderImage: (item: T, template: Template) => Promise<string>;
   sendPrint: (imageDataUrl: string, template: Template, item: T) => Promise<{ ok: boolean; message: string }>;
   onDone: () => void;
+  // Just the Print button (and its progress), for a caller with its own
+  // selection bar around it.
+  bare?: boolean;
 };
 
 // Hidden from roles without labels.print.
@@ -26,30 +29,31 @@ export default function BatchPrintBar<T>(props: BatchPrintBarProps<T>) {
   return useCan()("labels.print") ? <BatchPrintBarInner {...props} /> : null;
 }
 
-function BatchPrintBarInner<T>({
-  items,
-  getDisplayName,
-  renderImage,
-  sendPrint,
-  onDone,
-}: {
-  items: T[];
-  getDisplayName: (item: T) => string;
-  renderImage: (item: T, template: Template) => Promise<string>;
-  sendPrint: (imageDataUrl: string, template: Template, item: T) => Promise<{ ok: boolean; message: string }>;
-  onDone: () => void;
-}) {
+function BatchPrintBarInner<T>({ items, getDisplayName, renderImage, sendPrint, onDone, bare = false }: BatchPrintBarProps<T>) {
   const [copies, setCopies] = useState(1);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number; failed: string[] } | null>(null);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+    failed: string[];
+  } | null>(null);
   const [downloading, setDownloading] = useState(false);
   const { showToast } = useToast();
 
-  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const { data: templates } = useQuery({ queryKey: ["labels"], queryFn: api.listLabels });
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+  });
+  const { data: templates } = useQuery({
+    queryKey: ["labels"],
+    queryFn: api.listLabels,
+  });
   const sortedTemplates = useMemo<Template[]>(() => {
-    const list = (templates ?? []).map((t) => ({ ...t, isDefault: t.id === settings?.defaultTemplateId }));
+    const list = (templates ?? []).map((t) => ({
+      ...t,
+      isDefault: t.id === settings?.defaultTemplateId,
+    }));
     list.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
     return list;
   }, [templates, settings?.defaultTemplateId]);
@@ -127,7 +131,12 @@ function BatchPrintBarInner<T>({
       const labels = [];
       for (const item of items) {
         const imageDataUrl = item === items[0] && image ? image : await renderImage(item, template);
-        labels.push({ imageDataUrl, widthMm: template.widthMm, heightMm: template.heightMm, copies });
+        labels.push({
+          imageDataUrl,
+          widthMm: template.widthMm,
+          heightMm: template.heightMm,
+          copies,
+        });
       }
       await downloadLabelsPdf(labels);
       setTemplateId(null);
@@ -137,6 +146,20 @@ function BatchPrintBarInner<T>({
     } finally {
       setDownloading(false);
     }
+  }
+
+  if (progress && bare) {
+    return (
+      <span className="flex items-center gap-2 text-gray-700">
+        Printing {progress.done}/{progress.total}…
+        {progress.failed.length > 0 && <span className="text-red-600">Failed: {progress.failed.join(", ")}</span>}
+        {progress.done === progress.total && progress.failed.length > 0 && (
+          <button onClick={() => setProgress(null)} className="text-gray-500 hover:text-gray-900">
+            Dismiss
+          </button>
+        )}
+      </span>
+    );
   }
 
   if (progress) {
@@ -156,34 +179,45 @@ function BatchPrintBarInner<T>({
   }
 
   const selected = sortedTemplates.find((t) => t.id === templateId);
+  const printButton = (
+    <button onClick={openPreview} disabled={templates === undefined} className={bare ? "btn-secondary" : "btn-primary"}>
+      Print
+    </button>
+  );
+  const preview = selected && (
+    <LabelPreviewModal
+      templates={sortedTemplates}
+      selectedTemplateId={selected.id}
+      onTemplateChange={changeTemplate}
+      subtitle={`Preview of "${getDisplayName(items[0])}" · ${items.length} item${items.length === 1 ? "" : "s"} × ${copies} ${copies === 1 ? "copy" : "copies"}`}
+      imageDataUrl={image}
+      copies={copies}
+      onCopiesChange={setCopies}
+      onConfirm={confirmPrint}
+      onCancel={() => setTemplateId(null)}
+      printing={false}
+      onDownloadPdf={downloadPdf}
+      downloading={downloading}
+    />
+  );
+
+  if (bare) {
+    return (
+      <>
+        {printButton}
+        {preview}
+      </>
+    );
+  }
 
   return (
     <div className="flex items-center gap-3 card px-4 py-2 text-sm">
       <span className="font-medium text-gray-900">{items.length} selected</span>
-
-      <button onClick={openPreview} disabled={templates === undefined} className="btn-primary">
-        Print
-      </button>
+      {printButton}
       <button onClick={onDone} className="text-gray-500 hover:text-gray-900 ml-auto">
         Clear selection
       </button>
-
-      {selected && (
-        <LabelPreviewModal
-          templates={sortedTemplates}
-          selectedTemplateId={selected.id}
-          onTemplateChange={changeTemplate}
-          subtitle={`Preview of "${getDisplayName(items[0])}" · ${items.length} item${items.length === 1 ? "" : "s"} × ${copies} ${copies === 1 ? "copy" : "copies"}`}
-          imageDataUrl={image}
-          copies={copies}
-          onCopiesChange={setCopies}
-          onConfirm={confirmPrint}
-          onCancel={() => setTemplateId(null)}
-          printing={false}
-          onDownloadPdf={downloadPdf}
-          downloading={downloading}
-        />
-      )}
+      {preview}
     </div>
   );
 }

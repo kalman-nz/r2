@@ -7,8 +7,7 @@ import { useLocations } from "../../lib/catalog";
 import { formatDate, parseDate } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import type { LabelUnit } from "../../lib/labelSpec";
-import { renderUnitLabelImage, sendRenderedLabel } from "../../lib/print";
-import BatchPrintBar from "../BatchPrintBar";
+import UnitBulkBar from "./UnitBulkBar";
 import { SerialStatusBadge } from "../StatusBadge";
 import { useToast } from "../ToastProvider";
 import { withOrg } from "../../lib/currentOrg";
@@ -126,12 +125,17 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
 
       {selectedSerials.length > 0 && (
         <div className="px-4 pb-2">
-          <BatchPrintBar<Serial>
-            items={selectedSerials}
-            getDisplayName={(s) => s.label || s.barcode}
-            renderImage={(s, t) => renderUnitLabelImage(unitFor(s), t)}
-            sendPrint={(image, t, s) => sendRenderedLabel(image, t, s.id)}
-            onDone={() => setSelected(new Set())}
+          <UnitBulkBar
+            units={selectedSerials}
+            unitFor={unitFor}
+            onClear={() => setSelected(new Set())}
+            setSelected={setSelected}
+            onChanged={() =>
+              Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["serials"] }),
+                queryClient.invalidateQueries({ queryKey: ["availability"] }),
+              ])
+            }
           />
         </div>
       )}

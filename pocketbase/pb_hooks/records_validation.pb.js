@@ -106,6 +106,14 @@ onRecordDelete((e) => {
   e.next();
 }, "items");
 
+// A unit's scans are its history: keep it, retired, instead.
+onRecordDelete((e) => {
+  if (e.app.findRecordsByFilter("scans", "serial = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("This unit has been scanned on a project — mark it retired instead");
+  }
+  e.next();
+}, "serials");
+
 onRecordDelete((e) => {
   const { guardReferenced } = require(`${__hooks}/lib/validation.js`);
   guardReferenced(e.app, "jobs", "client = {:id}", e.record.id, "contact");
