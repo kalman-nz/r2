@@ -1,9 +1,6 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { formatRange, parseDate } from "../lib/format";
-import { JobStatusBadge } from "./StatusBadge";
+import { parseDate } from "../lib/format";
 
 const DAYS = 60;
 
@@ -34,15 +31,12 @@ export function freeNow(data: ReturnType<typeof useItemTimeline>["data"]): numbe
   return segment ? segment.free : (data.stock ?? 0);
 }
 
-const SHOWN_BOOKINGS = 3;
-
 // One bar per local day for the next DAYS days: the lowest free count at
 // any moment that day (the engine's own rule — one clashing hour is a
-// clash). Red at zero or below, so overbookings jump out. Underneath, the
-// next few projects holding the item, the rest one click away.
+// clash). Red at zero or below, so overbookings jump out. The projects
+// themselves are on the item's History tab.
 export default function AvailabilityStrip({ itemId }: { itemId: string }) {
   const from = windowStart();
-  const [showAll, setShowAll] = useState(false);
   const { data, isLoading, error } = useItemTimeline(itemId);
 
   if (isLoading) return <p className="text-gray-500 text-sm">Loading…</p>;
@@ -91,32 +85,6 @@ export default function AvailabilityStrip({ itemId }: { itemId: string }) {
             <span key={d.date.toISOString()}>{d.date.toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
           ))}
       </div>
-
-      {data.bookings.length === 0 ? (
-        <p className="text-sm text-gray-500">Not booked on anything in the next {DAYS} days.</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-gray-100 -mx-4">
-          {(showAll ? data.bookings : data.bookings.slice(0, SHOWN_BOOKINGS)).map((b) => (
-            <Link key={b.jobId} to={`/projects/${b.jobId}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
-              <span className="flex flex-col min-w-0">
-                <span className="text-gray-900 truncate">
-                  #{b.number} {b.name}
-                </span>
-                <span className="text-xs text-gray-500">{formatRange(b.prepAt, b.returnAt)}</span>
-              </span>
-              <span className="flex items-center gap-2 shrink-0">
-                {b.quantity !== null && <span className="tabular-nums text-gray-700">× {b.quantity}</span>}
-                <JobStatusBadge status={b.status} />
-              </span>
-            </Link>
-          ))}
-          {data.bookings.length > SHOWN_BOOKINGS && (
-            <button onClick={() => setShowAll((v) => !v)} className="px-4 py-2 text-left text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
-              {showAll ? "Show fewer" : `Show all ${data.bookings.length} bookings`}
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
