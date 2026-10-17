@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { pb } from "../../lib/pocketbase";
-import type { Item, PriceUnit } from "../../lib/api";
-import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog";
+import type { CustomField, Item, PriceUnit } from "../../lib/api";
+import { displayPath, useCategories, useCategoryPaths, useItemCustomFields } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import { nzd, priceLabel } from "../../lib/format";
 import NumberInput from "../NumberInput";
@@ -14,7 +14,7 @@ import { useToast } from "../ToastProvider";
 // scrolling to. (New items use ItemForm.) The item code is never editable:
 // the server assigns it.
 
-type Section = "identification" | "pricing" | "warehouse" | "notes";
+type Section = "identification" | "pricing" | "warehouse" | "notes" | "custom";
 
 interface Draft {
   name: string;
@@ -30,8 +30,8 @@ interface Draft {
   bufferHours: number;
   weightKg: number;
   powerW: number;
-  description: string;
   notes: string;
+  custom: Record<string, unknown>;
 }
 
 // The fields each section saves.
@@ -39,7 +39,8 @@ const FIELDS: Record<Section, (keyof Draft)[]> = {
   identification: ["name", "barcode", "category", "kind", "tracking"],
   pricing: ["price", "priceUnit", "replacementValue"],
   warehouse: ["stockQty", "locationInWarehouse", "bufferHours", "weightKg", "powerW"],
-  notes: ["description", "notes"],
+  notes: ["notes"],
+  custom: ["custom"],
 };
 
 // The same words when reading and editing.
@@ -75,9 +76,69 @@ function draftOf(item: Item): Draft {
     bufferHours: item.bufferHours,
     weightKg: item.weightKg,
     powerW: item.powerW,
-    description: item.description,
     notes: item.notes,
+    custom: { ...(item.custom ?? {}) },
   };
+}
+
+// A custom field's value as read on the card. Imported values can be any
+// JSON type whatever the field says, so anything unexpected shows as text.
+function customValue(field: CustomField, value: unknown): ReactNode {
+  if (value === null || value === undefined || value === "") return null;
+  if (field.type === "boolean" || typeof value === "boolean") return value === true || value === "true" ? "Yes" : "No";
+  if (field.type === "number" && typeof value === "number") return value.toLocaleString();
+  if (field.type === "date" && typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  }
+  return <span className="whitespace-pre-line">{String(value)}</span>;
+}
+
+// Its input while editing. Dates are kept as plain YYYY-MM-DD, with no time
+// or timezone to drift.
+function CustomInput({ field, value, onChange }: { field: CustomField; value: unknown; onChange: (value: unknown) => void }) {
+  const text = value === null || value === undefined ? "" : String(value);
+  switch (field.type) {
+    case "number":
+      return (
+        <input
+          type="number"
+          value={text}
+          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+          className="input py-1.5 w-full"
+        />
+      );
+    case "boolean":
+      return (
+        <Segmented
+          label={field.label}
+          value={value === true || value === "true" ? "yes" : value === false || value === "false" ? "no" : ""}
+          options={[
+            { value: "yes", label: "Yes" },
+            { value: "no", label: "No" },
+          ]}
+          onChange={(v) => onChange(v === "yes")}
+        />
+      );
+    case "date":
+      return <input type="date" value={text.slice(0, 10)} onChange={(e) => onChange(e.target.value || null)} className="input py-1.5 w-full" />;
+    case "select": {
+      // A value from before the choices changed stays pickable.
+      const options = field.options ?? [];
+      return (
+        <select value={text} onChange={(e) => onChange(e.target.value || null)} className="input py-1.5 w-full">
+          <option value="">—</option>
+          {[...options, ...(text && !options.includes(text) ? [text] : [])].map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    default:
+      return <input value={text} onChange={(e) => onChange(e.target.value)} className="input py-1.5 w-full" />;
+  }
 }
 
 export default function ItemDetails({
@@ -99,6 +160,7 @@ export default function ItemDetails({
   const { showToast } = useToast();
   const { data: categories = [] } = useCategories();
   const paths = useCategoryPaths();
+  const { data: customFields = [] } = useItemCustomFields();
   const [editing, setEditing] = useState<Section | null>(null);
   const [draft, setDraft] = useState<Draft>(() => draftOf(item));
   const [saving, setSaving] = useState(false);
@@ -221,19 +283,23 @@ export default function ItemDetails({
         </Card>
     ),
     notes: (
-      <Card title="Quote & notes" {...card("notes")}>
-        <Row
-          label="On quotes"
-          value={item.description ? <span className="whitespace-pre-line">{item.description}</span> : null}
-          empty="No description"
-        >
-          <textarea value={draft.description} onChange={(e) => set("description", e.target.value)} rows={3} className="input py-1.5 w-full" />
-        </Row>
+      <Card title="Notes" {...card("notes")}>
         <Row label="Internal notes" value={item.notes ? <span className="whitespace-pre-line">{item.notes}</span> : null}>
           <textarea value={draft.notes} onChange={(e) => set("notes", e.target.value)} rows={3} className="input py-1.5 w-full" />
         </Row>
       </Card>
     ),
+    // Settings → Custom fields. Nothing to show until there are some.
+    custom:
+      customFields.length > 0 ? (
+        <Card title="Custom fields" {...card("custom")}>
+          {customFields.map((f) => (
+            <Row key={f.id} label={f.label} value={customValue(f, item.custom?.[f.key])}>
+              <CustomInput field={f} value={draft.custom[f.key]} onChange={(v) => set("custom", { ...draft.custom, [f.key]: v })} />
+            </Row>
+          ))}
+        </Card>
+      ) : null,
   });
 }
 

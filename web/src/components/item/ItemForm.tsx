@@ -24,7 +24,6 @@ interface ItemDraft {
   bufferHours: number;
   barcode: string;
   locationInWarehouse: string;
-  description: string;
   notes: string;
   archived: boolean;
 }
@@ -45,7 +44,6 @@ function draftFrom(item: Item | null, defaultFolder = ""): ItemDraft {
     bufferHours: item?.bufferHours ?? 0,
     barcode: item?.barcode ?? "",
     locationInWarehouse: item?.locationInWarehouse ?? "",
-    description: item?.description ?? "",
     notes: item?.notes ?? "",
     archived: item?.archived ?? false,
   };
@@ -224,10 +222,7 @@ export default function ItemForm({
         </Group>
       )}
 
-      <Group title="Quote & notes">
-        <Field label="Description" className="sm:col-span-2">
-          <textarea value={draft.description} onChange={(e) => set("description", e.target.value)} disabled={readOnly} rows={2} className="input py-2" />
-        </Field>
+      <Group title="Notes">
         <Field label="Internal notes" className="sm:col-span-2">
           <textarea value={draft.notes} onChange={(e) => set("notes", e.target.value)} disabled={readOnly} rows={2} className="input py-2" />
         </Field>

@@ -614,6 +614,23 @@ export interface CustomFieldDef {
   appliesTo: "item" | "serial";
 }
 
+export type CustomFieldType = "text" | "number" | "boolean" | "date" | "select";
+
+// A custom_fields record: an organisation's own field (Settings → Custom
+// fields), or a name the Rentman importer brought in. Items keep their
+// values under `key` in their `custom` object.
+export interface CustomField extends RecordModel {
+  org: string;
+  key: string;
+  label: string;
+  appliesTo: "item" | "serial";
+  // Empty on fields imported before types existed: those are text.
+  type: CustomFieldType | "";
+  options: string[] | null;
+  sortOrder: number;
+  source: string;
+}
+
 export interface SearchResultItem {
   id: string;
   name: string;

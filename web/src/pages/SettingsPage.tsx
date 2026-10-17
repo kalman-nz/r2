@@ -5,6 +5,7 @@ import PrinterSettings from "../components/PrinterSettings";
 import GeneralSettings, { CalendarFeed } from "../components/GeneralSettings";
 import PricingSettings from "../components/PricingSettings";
 import CatalogSettings from "../components/CatalogSettings";
+import CustomFieldsSettings from "../components/CustomFieldsSettings";
 import ImportSettings from "../components/ImportSettings";
 import AccountingSettings from "../components/AccountingSettings";
 import MembersSettings from "../components/MembersSettings";
@@ -82,6 +83,18 @@ const NAV_ITEMS: NavItem[] = [
       <Icon>
         <path d="M21 8l-9-5-9 5 9 5 9-5z" />
         <path d="M3 8v8l9 5 9-5V8" />
+      </Icon>
+    ),
+  },
+  {
+    to: "custom-fields",
+    label: "Custom fields",
+    group: "Inventory",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M7 10h4M7 14h10" />
       </Icon>
     ),
   },
@@ -228,6 +241,7 @@ export default function SettingsPage() {
             <Route path="pricing" element={gate("pricing", <PricingSettings />)} />
             <Route path="accounting" element={gate("accounting", <AccountingSettings />)} />
             <Route path="inventory" element={gate("inventory", <CatalogSettings />)} />
+            <Route path="custom-fields" element={gate("custom-fields", <CustomFieldsSettings />)} />
             <Route path="import" element={gate("import", <ImportSettings />)} />
             <Route path="labels" element={gate("labels", <LabelsList />)} />
             <Route path="printer" element={gate("printer", <PrinterSettings />)} />

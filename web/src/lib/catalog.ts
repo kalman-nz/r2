@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "./pocketbase";
-import type { Category, Contact, Location, Venue } from "./api";
+import type { Category, Contact, CustomField, Location, Venue } from "./api";
 import { orgFilter } from "./currentOrg";
 
 // Shared react-query hooks for the small lists most pages need (dropdowns,
@@ -12,6 +12,15 @@ export function useCategories() {
   return useQuery({
     queryKey: ["categories"],
     queryFn: () => pb.collection("categories").getFullList<Category>({ filter: orgFilter(), sort: "sortOrder,name" }),
+  });
+}
+
+// The organisation's custom fields for items, in the order they're shown.
+// Under the ["customFields"] prefix the importer refreshes.
+export function useItemCustomFields() {
+  return useQuery({
+    queryKey: ["customFields", "item"],
+    queryFn: () => pb.collection("custom_fields").getFullList<CustomField>({ filter: orgFilter('appliesTo = "item"'), sort: "sortOrder,label" }),
   });
 }
 
