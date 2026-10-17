@@ -1,52 +1,55 @@
-// Record.get() on a "json" field returns the raw stored bytes (a plain JS
-// array of char codes), not a decoded value — confirmed empirically: an
-// untouched pass-through to e.json() round-trips fine (Go's json.Marshaler
-// on the underlying value handles it), but any JS-side read/copy of it
-// (Object.assign, spread, etc.) mangles it into {"0":123,"1":125,...} and,
-// worse, can leak a Go method value that crashes json.Marshal with "json:
-// unsupported type: func() ([]uint8, error)". Decode it back to real JS
-// data before touching it.
-function decodeJsonField(raw) {
-  if (raw == null) return {};
-  if (typeof raw === "string") return raw ? JSON.parse(raw) : {};
-  if (Array.isArray(raw) || typeof raw.length === "number") {
-    if (raw.length === 0) return {};
-    return JSON.parse(String.fromCharCode.apply(null, raw));
-  }
-  return raw;
-}
-
-// resolveSerials looks up the local serial-number mirror (lib/mirror.js) to
-// turn a print's rentmanSerialNumberId into a readable asset name — that
-// mirror is kept current by lib/sync.js, so this never hits Rentman
-// directly. The admin activity feed wants that polish; a single user's own
-// activity view doesn't need it, so false skips the lookup entirely.
+// Turns raw log rows into one-line summaries for the Logs page and a user's
+// activity feed.
+//
+// resolveNames looks up serial and job names for prints and scans. The
+// admin activity feed wants that polish; a single user's own activity view
+// doesn't need it, so false skips the lookups entirely. Prints logged before
+// R2 carry a Rentman serial id (rentmanSerialNumberId) that no longer
+// resolves to anything, so they show the raw id.
 function summarizeLogs(rows, opts) {
-  const resolveSerials = (opts && opts.resolveSerials) || false;
+  const { decodeJson } = require(`${__hooks}/lib/records.js`);
+  const resolveNames = (opts && opts.resolveNames) || false;
 
   const templates = $app.findAllRecords("label_templates");
   const templateNameById = new Map(templates.map((t) => [t.id, t.get("name")]));
 
-  let labelFor = (id) => id;
-  if (resolveSerials) {
-    const { allData } = require(`${__hooks}/lib/mirror.js`);
-    const serials = allData($app, "rm_serialnumbers");
-    const serialLabelById = new Map(serials.map((s) => [String(s.id), s.displayname || String(s.id)]));
-    labelFor = (id) => serialLabelById.get(id) || id;
+  const decoded = rows.map((entry) => decodeJson(entry.details));
+  const serialName = {};
+  const jobName = {};
+  if (resolveNames) {
+    const serialIds = [];
+    const jobIds = [];
+    for (const d of decoded) {
+      if (typeof d.serialId === "string" && d.serialId) serialIds.push(d.serialId);
+      if (typeof d.job === "string" && d.job) jobIds.push(d.job);
+    }
+    const serials = $app.findRecordsByIds("serials", serialIds).filter(Boolean);
+    const itemNames = {};
+    for (const it of $app.findRecordsByIds("items", serials.map((s) => s.get("item")))) {
+      if (it) itemNames[it.id] = it.get("name");
+    }
+    for (const s of serials) {
+      const label = s.get("label") || s.get("barcode");
+      serialName[s.id] = (itemNames[s.get("item")] || "") + (label ? " (" + label + ")" : "");
+    }
+    for (const j of $app.findRecordsByIds("jobs", jobIds)) {
+      if (j) jobName[j.id] = "#" + j.getInt("number") + " " + j.get("name");
+    }
   }
+  const jobLabel = (id) => jobName[id] || "job " + id;
 
-  return rows.map((entry) => {
-    const details = decodeJsonField(entry.details);
+  return rows.map((entry, i) => {
+    const details = decoded[i];
     let summary = entry.type;
     if (entry.type === "print" && typeof details.customText === "string") {
       summary = 'Printed custom label "' + details.customText + '"';
     } else if (entry.type === "print") {
       const templateId = typeof details.template === "string" ? details.template : "";
-      const serialId = typeof details.rentmanSerialNumberId === "string" ? details.rentmanSerialNumberId : "";
+      const serialId = details.serialId || details.rentmanSerialNumberId || "";
       details.templateName = templateNameById.get(templateId) || "deleted template";
       summary = 'Printed "' + details.templateName + '" label';
       if (serialId) {
-        details.serialLabel = labelFor(serialId);
+        details.serialLabel = serialName[serialId] || serialId;
         summary += " · " + details.serialLabel;
       } else {
         summary += " (manual field values)";
@@ -67,6 +70,41 @@ function summarizeLogs(rows, opts) {
       summary = 'Edited user "' + (details.name || details.id) + '"';
     } else if (entry.type === "user_deleted") {
       summary = 'Deleted user "' + (details.name || details.id) + '"';
+    } else if (entry.type === "quote_issued") {
+      summary = "Issued quote v" + details.version + " for " + jobLabel(details.job);
+    } else if (entry.type === "quote_status") {
+      summary = "Marked a quote for " + jobLabel(details.job) + " as " + details.status;
+    } else if (entry.type === "scan_out" || entry.type === "scan_in") {
+      summary = "Scanned " + (details.message || details.code) + " · " + jobLabel(details.job);
+    } else if (entry.type === "serial_status") {
+      summary = "Flagged " + (details.barcode || details.serial) + " as " + details.to + (details.note ? ': "' + details.note + '"' : "");
+    } else if (entry.type === "item_out_of_service") {
+      summary = "Set " + details.name + " out of service: " + details.to + (details.note ? ' ("' + details.note + '")' : "");
+    } else if (entry.type === "import_rentman") {
+      summary = "Imported from Rentman" + (details.errors ? " (" + details.errors + " problems)" : "");
+    } else if (entry.type === "import_csv") {
+      summary = "Imported " + details.kind + " from CSV";
+    } else if (entry.type === "export_xero") {
+      const invoices = details.invoices || [];
+      summary = "Exported " + invoices.length + " invoice" + (invoices.length === 1 ? "" : "s") + " for Xero";
+    } else if (entry.type === "ical_rotated") {
+      summary = "Made a new calendar feed address";
+    } else if (entry.type === "member_invited") {
+      summary = "Invited " + details.email + " as " + details.role;
+    } else if (entry.type === "invite_accepted") {
+      summary = details.email + " joined as " + details.role;
+    } else if (entry.type === "member_role") {
+      summary = "Changed a member's role to " + details.role;
+    } else if (entry.type === "member_removed") {
+      summary = "Removed a member";
+    } else if (entry.type === "member_left") {
+      summary = details.email + " left the organisation";
+    } else if (entry.type === "role_created") {
+      summary = "Created the " + details.name + " role";
+    } else if (entry.type === "role_changed") {
+      summary = "Changed the " + details.name + " role";
+    } else if (entry.type === "role_deleted") {
+      summary = "Deleted the " + details.name + " role";
     }
     return {
       id: "log-" + entry.id,

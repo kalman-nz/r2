@@ -1,111 +1,99 @@
 /// <reference path="../pb_data/types.d.ts" />
-// requireAdmin is only ever referenced immediately (as a routerAdd argument,
-// resolved once at file-load/registration time), so it's safe as a
-// file-scoped const — wrapped in an IIFE purely to avoid colliding with the
-// same const name in the other routes_*.pb.js files (every *.pb.js file
-// shares one concatenated top-level scope at boot).
+// Label templates belong to an organisation. Any member can list and read
+// them (printing needs them); creating, editing and deleting is for the
+// organisation's admins, same as the Settings > Label templates page that's
+// the only way to reach those actions.
 //
-// Every route HANDLER below, on the other hand, does its own require() at
-// the top of its own function body — PocketBase's JSVM does not keep a
-// handler's outer lexical scope alive when it actually runs a request (only
-// its own body + true globals survive), so anything it needs must be
-// re-required or re-declared inline every time. See routes_assets.pb.js.
-(function () {
-const { requireAdmin } = require(`${__hooks}/lib/auth.js`);
+// Every route HANDLER in this directory does its own require() at the top
+// of its own function body — PocketBase's JSVM does not keep a handler's
+// outer lexical scope alive when it actually runs a request (only its own
+// body + true globals survive), so anything it needs must be re-required or
+// re-declared inline every time. Anything captured from an enclosing scope
+// in a *.pb.js file (even inside an IIFE) throws "X is not defined" at
+// request time. require() is registry-cached, so calling it repeatedly is
+// cheap. Every *.pb.js file in this directory follows this.
 
-// GET stays open to every authenticated user — printing (any crew member)
-// needs to list/read templates. Creating/editing/deleting is admin-only,
-// same as the Settings > Label templates page that's the only way to reach
-// those actions.
 routerAdd(
   "GET",
   "/api/labels",
   (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
     const { toLabelJson } = require(`${__hooks}/lib/labels.js`);
-    const records = $app.findAllRecords("label_templates");
-    records.sort((a, b) => String(a.get("name")).localeCompare(String(b.get("name"))));
+    const ctx = requireOrg(e);
+    const records = $app.findRecordsByFilter("label_templates", "org = {:org}", "name", 0, 0, { org: ctx.orgId });
     return e.json(200, records.map(toLabelJson));
   },
-  $apis.requireAuth(),
+  $apis.requireAuth("users"),
 );
 
 routerAdd(
   "GET",
   "/api/labels/{id}",
   (e) => {
+    const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
     const { toLabelJson } = require(`${__hooks}/lib/labels.js`);
-    try {
-      const record = $app.findRecordById("label_templates", e.request.pathValue("id"));
-      return e.json(200, toLabelJson(record));
-    } catch (err) {
-      throw new NotFoundError("Template not found");
-    }
+    const { findOrNull } = require(`${__hooks}/lib/records.js`);
+    const record = findOrNull($app, "label_templates", e.request.pathValue("id"));
+    if (!record) throw new NotFoundError("Template not found");
+    requireRecordOrg(e, record);
+    return e.json(200, toLabelJson(record));
   },
-  $apis.requireAuth(),
+  $apis.requireAuth("users"),
 );
 
 routerAdd(
   "POST",
   "/api/labels",
   (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
     const { validateTemplateBody, toLabelJson } = require(`${__hooks}/lib/labels.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const ctx = requireOrg(e, "templates.create");
     const data = validateTemplateBody(e.requestInfo().body);
-    const collection = $app.findCollectionByNameOrId("label_templates");
-    const record = new Record(collection, data);
+    const record = new Record($app.findCollectionByNameOrId("label_templates"), Object.assign({ org: ctx.orgId }, data));
     $app.save(record);
-    const who = e.auth.get("name") || e.auth.get("email");
-    logEvent("label_created", who, { id: record.id, name: record.get("name") });
+    logEvent(ctx.orgId, "label_created", e.auth.get("name") || e.auth.get("email"), { id: record.id, name: record.get("name") });
     return e.json(200, toLabelJson(record));
   },
-  $apis.requireAuth(),
-  requireAdmin,
+  $apis.requireAuth("users"),
 );
 
 routerAdd(
   "PUT",
   "/api/labels/{id}",
   (e) => {
+    const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
     const { validateTemplateBody, toLabelJson } = require(`${__hooks}/lib/labels.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const { findOrNull } = require(`${__hooks}/lib/records.js`);
+    const record = findOrNull($app, "label_templates", e.request.pathValue("id"));
+    if (!record) throw new NotFoundError("Template not found");
+    const ctx = requireRecordOrg(e, record, "templates.edit");
     const data = validateTemplateBody(e.requestInfo().body);
-    let record;
-    try {
-      record = $app.findRecordById("label_templates", e.request.pathValue("id"));
-    } catch (err) {
-      throw new NotFoundError("Template not found");
-    }
     record.set("name", data.name);
     record.set("widthMm", data.widthMm);
     record.set("heightMm", data.heightMm);
     record.set("elements", data.elements);
     $app.save(record);
-    const who = e.auth.get("name") || e.auth.get("email");
-    logEvent("label_updated", who, { id: record.id, name: record.get("name") });
+    logEvent(ctx.orgId, "label_updated", e.auth.get("name") || e.auth.get("email"), { id: record.id, name: record.get("name") });
     return e.json(200, toLabelJson(record));
   },
-  $apis.requireAuth(),
-  requireAdmin,
+  $apis.requireAuth("users"),
 );
 
 routerAdd(
   "DELETE",
   "/api/labels/{id}",
   (e) => {
+    const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
-    const id = e.request.pathValue("id");
-    let existing = null;
-    try {
-      existing = $app.findRecordById("label_templates", id);
-    } catch (err) {
-      existing = null;
-    }
-    if (existing) $app.delete(existing);
-    const who = e.auth.get("name") || e.auth.get("email");
-    logEvent("label_deleted", who, { id: id, name: existing ? existing.get("name") : id });
+    const { findOrNull } = require(`${__hooks}/lib/records.js`);
+    const record = findOrNull($app, "label_templates", e.request.pathValue("id"));
+    if (!record) return e.json(200, { ok: true });
+    const ctx = requireRecordOrg(e, record, "templates.delete");
+    $app.delete(record);
+    logEvent(ctx.orgId, "label_deleted", e.auth.get("name") || e.auth.get("email"), { id: record.id, name: record.get("name") });
     return e.json(200, { ok: true });
   },
-  $apis.requireAuth(),
-  requireAdmin,
+  $apis.requireAuth("users"),
 );
-})();

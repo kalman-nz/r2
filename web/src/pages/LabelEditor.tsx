@@ -7,12 +7,11 @@ import { trimWhitespace } from "../lib/imageTrim";
 import { generateId } from "../lib/id";
 import { useToast } from "../components/ToastProvider";
 import NumberInput from "../components/NumberInput";
+import LabelSizeControls from "../components/LabelSizeControls";
 import {
   applyFolderLevels,
   DATA_FIELDS,
   SAMPLE_CONTEXT,
-  SIZE_PRESETS,
-  TAPE_WIDTHS,
   type ElementType,
   type LabelElement,
 } from "../lib/labelSpec";
@@ -310,38 +309,15 @@ export default function LabelEditor() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 card p-3 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-500">Preset</span>
-          {SIZE_PRESETS.map((p) => (
-            <button
-              key={p.name}
-              onClick={() => {
-                setWidthMm(p.widthMm);
-                setHeightMm(p.heightMm);
-              }}
-              className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-gray-500">Tape width</span>
-          <select value={widthMm} onChange={(e) => setWidthMm(Number(e.target.value))} className="input py-1">
-            {TAPE_WIDTHS.map((w) => (
-              <option key={w.mm} value={w.mm}>
-                {w.mm}mm
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-gray-500">Length</span>
-          <NumberInput min={5} value={heightMm} onChange={setHeightMm} className="input py-1 w-20" />
-          <span className="text-gray-500">mm</span>
-        </div>
-        <div className="flex items-center gap-2 ml-auto">
+      <LabelSizeControls
+        widthMm={widthMm}
+        heightMm={heightMm}
+        onChange={(w, h) => {
+          setWidthMm(w);
+          setHeightMm(h);
+        }}
+      >
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
           <span className="text-gray-500">Add</span>
           <button onClick={() => addElement("text")} className="px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
             Text
@@ -373,7 +349,7 @@ export default function LabelEditor() {
             }}
           />
         </div>
-      </div>
+      </LabelSizeControls>
 
       <div className="flex gap-4 items-start">
         {/* Padded workspace so elements can be dragged past the label's edges

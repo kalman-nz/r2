@@ -12,6 +12,12 @@ import PocketBase, { type RecordModel } from "pocketbase";
 // other than the root.
 export const pb = new PocketBase("/");
 
+// The SDK cancels a pending request when an identical one starts. With
+// react-query running several list queries for the same collection at once
+// (a contacts dropdown and the contacts page), that silently cancels real
+// requests, so turn it off and let react-query dedupe instead.
+pb.autoCancellation(false);
+
 // Reads pb.authStore.record reactively — a plain read only reflects
 // whatever was cached at the last login/authRefresh, so anything (isAdmin,
 // name) that can change server-side needs this instead of pb.authStore.record

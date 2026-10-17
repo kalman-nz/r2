@@ -1,28 +1,37 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
+import { api } from "../lib/api";
+import { errorText } from "../lib/errors";
+import AuthLayout from "../components/AuthLayout";
+import Field from "../components/Field";
+
+function returnPath(state: unknown): string {
+  return (state as { from?: Location } | null)?.from?.pathname ?? "/";
+}
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [forgot, setForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { data: setup } = useQuery({ queryKey: ["setup"], queryFn: api.setupStatus, enabled: !pb.authStore.isValid });
 
-  if (pb.authStore.isValid) {
-    const from = (location.state as { from?: Location })?.from?.pathname ?? "/equipment";
-    return <Navigate to={from} replace />;
-  }
+  if (pb.authStore.isValid) return <Navigate to={returnPath(location.state)} replace />;
+  if (setup?.needed) return <FirstRun />;
+  if (forgot) return <ForgotPassword initialEmail={email} onBack={() => setForgot(false)} />;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await pb.collection("users").authWithPassword(email, password);
-      const from = (location.state as { from?: Location })?.from?.pathname ?? "/equipment";
-      navigate(from, { replace: true });
+      await pb.collection("users").authWithPassword(email.trim(), password);
+      navigate(returnPath(location.state), { replace: true });
     } catch {
       setError("Couldn't sign in — check your email and password.");
     } finally {
@@ -31,30 +40,30 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-4 card p-6 shadow-sm">
-        <div className="flex flex-col items-center gap-2 mb-1">
-          <img src="/favicon.svg" alt="" className="w-9 h-9 rounded-md" />
-          <h1 className="text-xl font-semibold text-gray-900">Rentman+</h1>
-        </div>
+    <AuthLayout
+      title="Sign in to R2"
+      footer={
+        <>
+          New to R2?{" "}
+          <Link to="/signup" state={location.state} className="text-[#167cfb] hover:underline">
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Field label="Email">
+          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className="input py-2" />
+        </Field>
         <div className="flex flex-col gap-1">
-          <label htmlFor="email" className="text-sm text-gray-500">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="input py-2"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="password" className="text-sm text-gray-500">
-            Password
-          </label>
+          <div className="flex items-baseline justify-between">
+            <label htmlFor="password" className="text-sm text-gray-500">
+              Password
+            </label>
+            <button type="button" onClick={() => setForgot(true)} className="text-xs text-gray-500 hover:text-gray-900">
+              Forgot password?
+            </button>
+          </div>
           <input
             id="password"
             type="password"
@@ -69,10 +78,117 @@ export default function LoginPage() {
         <button type="submit" disabled={submitting} className="btn-primary py-2">
           {submitting ? "Signing in…" : "Sign in"}
         </button>
-        <p className="text-xs text-gray-500 text-center">
-          Don't have an account? Ask whoever manages your workshop's Rentman+ setup to create one for you.
-        </p>
       </form>
-    </div>
+    </AuthLayout>
+  );
+}
+
+function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initialEmail);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await pb.collection("users").requestPasswordReset(email.trim());
+      setSent(true);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const back = (
+    <button type="button" onClick={onBack} className="text-[#167cfb] hover:underline">
+      Back to sign in
+    </button>
+  );
+  if (sent) {
+    return (
+      <AuthLayout title="Check your email" footer={back}>
+        <p className="text-sm text-gray-600 text-center">
+          If there's an R2 account for <strong>{email.trim()}</strong>, we've emailed it a link to choose a new password.
+        </p>
+      </AuthLayout>
+    );
+  }
+  return (
+    <AuthLayout title="Reset your password" subtitle="We'll email you a link to choose a new one." footer={back}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Field label="Email">
+          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className="input py-2" />
+        </Field>
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <button type="submit" disabled={submitting} className="btn-primary py-2">
+          {submitting ? "Sending…" : "Email me a link"}
+        </button>
+      </form>
+    </AuthLayout>
+  );
+}
+
+// A brand-new install: the first account runs the platform (it can create
+// more organisations from the admin panel) and the first business on it.
+function FirstRun() {
+  const navigate = useNavigate();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.setup({ name: name.trim(), email: email.trim(), password, businessName: businessName.trim() });
+      await pb.collection("users").authWithPassword(email.trim(), password);
+      navigate("/settings/general", { replace: true });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AuthLayout
+      title="Set up R2"
+      subtitle="Create the first account. It can manage every organisation on this R2, starting with your business."
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Field label="Business name">
+          <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input py-2" placeholder="e.g. Harbour AV Hire" />
+        </Field>
+        <Field label="Your name">
+          <input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" className="input py-2" />
+        </Field>
+        <Field label="Email">
+          <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" className="input py-2" />
+        </Field>
+        <Field label="Password" hint="At least 8 characters">
+          <input
+            required
+            type="password"
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            className="input py-2"
+          />
+        </Field>
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <button type="submit" disabled={submitting} className="btn-primary py-2">
+          {submitting ? "Setting up…" : "Create account"}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

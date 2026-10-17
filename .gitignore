@@ -7,3 +7,6 @@ dist-ssr
 .env
 print_jobs_backup.json
 pb_data.tar.gz
+
+# Local PocketBase from scripts/dev-pocketbase.sh (binary + data)
+.pb/

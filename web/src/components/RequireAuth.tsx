@@ -18,19 +18,16 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   // manual log out/in; if the session's gone stale entirely (deleted user,
   // expired token), this clears it and RequireAuth naturally redirects.
   //
-  // React's dev-mode StrictMode double-invokes this effect, and the SDK
-  // auto-cancels the first of two identical in-flight requests — that
-  // cancellation surfaces here as a rejected promise with isAbort: true,
-  // not a real auth failure (confirmed empirically: it was wiping a valid
-  // session and bouncing every dev-mode page load back to /login). Only
-  // clear the store for a genuine rejection from the server.
+  // Only clear the store when the server actually rejects the session
+  // (401/403, or 404 for a deleted user). A cancelled request, no network
+  // (status 0 — the app opening offline from its service worker, or on bad
+  // warehouse Wi-Fi) or a server hiccup must not sign anyone out.
   useEffect(() => {
     if (!pb.authStore.isValid) return;
     pb.collection("users")
       .authRefresh()
       .catch((err) => {
-        if (err instanceof ClientResponseError && err.isAbort) return;
-        pb.authStore.clear();
+        if (err instanceof ClientResponseError && [401, 403, 404].includes(err.status)) pb.authStore.clear();
       });
   }, []);
 

@@ -1,60 +1,77 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Backs the header's global search box (web/src/components/GlobalSearch.tsx)
-// — one endpoint across the app's core named entities (equipment types,
-// individual serialized assets, label templates) instead of three separate
-// lookups. Reads come from the same local mirror the list pages already
-// use (lib/mirror.js), so this is instant regardless of Rentman API
-// latency. Every match is a case-insensitive substring check, not fuzzy —
-// fine at this dataset's size, and predictable for barcode-scanned exact
-// values too.
+// — one endpoint across the app's main named things (inventory items,
+// individual units, jobs, contacts, label templates) instead of separate
+// lookups. Every match is a case-insensitive substring check (PocketBase's
+// ~ operator), not fuzzy — predictable for barcode-scanned exact values too.
+// A job number ("1042" or "#1042") matches that job directly.
 routerAdd(
   "GET",
   "/api/search",
   (e) => {
-    const { allData } = require(`${__hooks}/lib/mirror.js`);
-    const { enrichSerialNumbersLocal } = require(`${__hooks}/lib/enrich.js`);
-    const term = (e.requestInfo().query.q || "").trim().toLowerCase();
-    if (!term) return e.json(200, { equipment: [], assets: [], labels: [] });
-
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const ctx = requireOrg(e);
+    const term = (e.requestInfo().query.q || "").trim();
+    const empty = { items: [], assets: [], jobs: [], contacts: [], labels: [] };
+    if (!term) return e.json(200, empty);
     const LIMIT = 8;
-    function includesTerm(fields) {
-      return fields.some((f) => typeof f === "string" && f.toLowerCase().includes(term));
-    }
+    const p = { q: term, org: ctx.orgId };
 
-    const allEquipment = allData($app, "rm_equipment");
-    const equipment = allEquipment
-      .filter((eq) => !eq.in_archive)
-      .filter((eq) => includesTerm([eq.displayname, eq.name, eq.code, eq.tags, eq.type]))
-      .slice(0, LIMIT)
-      .map((eq) => ({
-        id: String(eq.id),
-        name: eq.displayname || eq.name,
-        subtitle: [eq.code, eq.location_in_warehouse].filter(Boolean).join(" · "),
+    const items = $app
+      .findRecordsByFilter("items", "org = {:org} && archived = false && (name ~ {:q} || code ~ {:q} || barcode ~ {:q} || tags ~ {:q})", "name", LIMIT, 0, p)
+      .map((it) => ({
+        id: it.id,
+        name: it.getString("name"),
+        subtitle: [it.getString("code"), it.getString("kind") === "kit" ? "Kit" : it.getString("locationInWarehouse")]
+          .filter(Boolean)
+          .join(" · "),
       }));
 
-    const allSerials = allData($app, "rm_serialnumbers");
-    const matchedSerials = allSerials
-      .filter((s) => includesTerm([s.displayname, s.serial, s.ref, s.qrcodes, s.tags]))
-      .slice(0, LIMIT);
-    const allLocations = allData($app, "rm_stocklocations");
-    const allFolders = allData($app, "rm_folders");
-    const assets = enrichSerialNumbersLocal(allEquipment, allLocations, allFolders, matchedSerials).map((s) => ({
-      id: String(s.id),
-      name: s.displayname,
-      subtitle: [s._location ? s._location.displayname : null, s.serial].filter(Boolean).join(" · "),
+    const serials = $app.findRecordsByFilter("serials", "org = {:org} && (barcode ~ {:q} || serialNumber ~ {:q} || label ~ {:q})", "barcode", LIMIT, 0, p);
+    const itemNames = {};
+    for (const it of $app.findRecordsByIds("items", serials.map((s) => s.getString("item")))) {
+      if (it) itemNames[it.id] = it.getString("name");
+    }
+    const assets = serials.map((s) => ({
+      id: s.id,
+      name: itemNames[s.getString("item")] || "(deleted item)",
+      subtitle: [s.getString("label") || s.getString("barcode"), s.getString("serialNumber"), s.getString("status") === "active" ? "" : s.getString("status")]
+        .filter(Boolean)
+        .join(" · "),
     }));
 
-    const labels = $app
-      .findAllRecords("label_templates")
-      .filter((l) => includesTerm([l.get("name")]))
-      .slice(0, LIMIT)
-      .map((l) => ({
-        id: l.id,
-        name: l.get("name"),
-        subtitle: `${l.get("widthMm")} × ${l.get("heightMm")} mm`,
+    const number = Number(term.replace(/^#/, ""));
+    const byNumber = Number.isInteger(number) && number > 0;
+    const jobs = $app
+      .findRecordsByFilter(
+        "jobs",
+        byNumber ? "org = {:org} && (number = {:n} || name ~ {:q} || reference ~ {:q})" : "org = {:org} && (name ~ {:q} || reference ~ {:q})",
+        "-prepAt",
+        LIMIT,
+        0,
+        byNumber ? { q: term, n: number, org: ctx.orgId } : p,
+      )
+      .map((j) => ({
+        id: j.id,
+        name: j.getString("name"),
+        subtitle: ["#" + j.getInt("number"), j.getString("status"), j.getString("prepAt").slice(0, 10)].join(" · "),
       }));
 
-    return e.json(200, { equipment, assets, labels });
+    const contacts = $app
+      .findRecordsByFilter("contacts", "org = {:org} && archived = false && (name ~ {:q} || email ~ {:q} || contactPerson ~ {:q})", "name", LIMIT, 0, p)
+      .map((c) => ({
+        id: c.id,
+        name: c.getString("name"),
+        subtitle: [c.getString("contactPerson"), c.getString("email")].filter(Boolean).join(" · "),
+      }));
+
+    const labels = $app.findRecordsByFilter("label_templates", "org = {:org} && name ~ {:q}", "name", LIMIT, 0, p).map((l) => ({
+      id: l.id,
+      name: l.getString("name"),
+      subtitle: l.getFloat("widthMm") + " × " + l.getFloat("heightMm") + " mm",
+    }));
+
+    return e.json(200, { items: items, assets: assets, jobs: jobs, contacts: contacts, labels: labels });
   },
-  $apis.requireAuth(),
+  $apis.requireAuth("users"),
 );

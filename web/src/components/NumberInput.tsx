@@ -16,12 +16,14 @@ export default function NumberInput({
   min,
   max,
   className,
+  disabled,
 }: {
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
   className?: string;
+  disabled?: boolean;
 }) {
   const [text, setText] = useState(String(value));
 
@@ -53,6 +55,7 @@ export default function NumberInput({
       value={text}
       onChange={(e) => handleChange(e.target.value)}
       onBlur={handleBlur}
+      disabled={disabled}
       className={className}
     />
   );

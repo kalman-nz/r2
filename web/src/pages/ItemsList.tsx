@@ -1,17 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Equipment, type EquipmentView } from "../lib/api";
-import { renderEquipmentLabelImage, sendRenderedLabel } from "../lib/print";
+import { pb } from "../lib/pocketbase";
+import { api, type EquipmentView, type Item } from "../lib/api";
+import { renderItemLabelImage, sendRenderedLabel } from "../lib/print";
 import { money, num } from "../lib/format";
-import RefreshButton from "../components/RefreshButton";
+import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
+import { useRole } from "../lib/roles";
 import BatchPrintBar from "../components/BatchPrintBar";
+import { orgFilter } from "../lib/currentOrg";
 
-const COLUMNS_STORAGE_KEY = "assets.visibleColumns";
-const WIDTHS_STORAGE_KEY = "assets.columnWidths";
-const ACTIVE_VIEW_STORAGE_KEY = "assets.activeViewId";
+const COLUMNS_STORAGE_KEY = "inventory.visibleColumns";
+const WIDTHS_STORAGE_KEY = "inventory.columnWidths";
+const ACTIVE_VIEW_STORAGE_KEY = "inventory.activeViewId";
 const CHECKBOX_COLUMN_WIDTH = 36;
 const MIN_COLUMN_WIDTH = 60;
+
+// An item plus what the table needs that isn't on the record itself.
+interface Row extends Item {
+  categoryPath: string;
+  stock: number | null;
+  freeNow: number | null;
+}
 
 interface Column {
   key: string;
@@ -20,9 +30,11 @@ interface Column {
   toggleable: boolean;
   defaultVisible: boolean;
   defaultWidth: number;
-  sortValue: (item: Equipment) => string | number;
-  render: (item: Equipment) => React.ReactNode;
+  sortValue: (row: Row) => string | number;
+  render: (row: Row) => React.ReactNode;
 }
+
+const TYPE_LABEL = (i: Item) => (i.kind === "kit" ? "Kit" : i.tracking === "serial" ? "Serialised" : "Bulk");
 
 const COLUMNS: Column[] = [
   {
@@ -30,14 +42,12 @@ const COLUMNS: Column[] = [
     label: "Name",
     toggleable: false,
     defaultVisible: true,
-    defaultWidth: 240,
-    sortValue: (i) => (i.displayname ?? i.name ?? "").toLowerCase(),
+    defaultWidth: 260,
+    sortValue: (i) => i.name.toLowerCase(),
     render: (i) => (
       <div className="flex flex-col min-w-0">
-        <span className="font-medium text-gray-900 truncate">{i.displayname ?? i.name}</span>
-        {i.in_archive && (
-          <span className="text-xs text-gray-400">Archived</span>
-        )}
+        <span className="font-medium text-gray-900 truncate">{i.name}</span>
+        {i.archived && <span className="text-xs text-gray-400">Archived</span>}
       </div>
     ),
   },
@@ -47,89 +57,112 @@ const COLUMNS: Column[] = [
     toggleable: true,
     defaultVisible: true,
     defaultWidth: 110,
-    sortValue: (i) => (i.code ?? "").toLowerCase(),
+    sortValue: (i) => i.code.toLowerCase(),
     render: (i) => <span className="text-gray-600 font-mono text-xs">{i.code || "—"}</span>,
+  },
+  {
+    key: "category",
+    label: "Category",
+    toggleable: true,
+    defaultVisible: true,
+    defaultWidth: 180,
+    sortValue: (i) => i.categoryPath.toLowerCase(),
+    render: (i) => <span className="text-gray-600 truncate">{displayPath(i.categoryPath) || "—"}</span>,
   },
   {
     key: "type",
     label: "Type",
     toggleable: true,
     defaultVisible: true,
+    defaultWidth: 100,
+    sortValue: (i) => TYPE_LABEL(i),
+    render: (i) => <span className="text-gray-600">{TYPE_LABEL(i)}</span>,
+  },
+  {
+    key: "stock",
+    label: "Stock",
+    align: "right",
+    toggleable: true,
+    defaultVisible: true,
+    defaultWidth: 80,
+    sortValue: (i) => i.stock ?? -1,
+    render: (i) => <span className="text-gray-700 tabular-nums">{i.stock === null ? "—" : num(i.stock)}</span>,
+  },
+  {
+    key: "freeNow",
+    label: "Free now",
+    align: "right",
+    toggleable: true,
+    defaultVisible: true,
+    defaultWidth: 100,
+    sortValue: (i) => i.freeNow ?? -Infinity,
+    render: (i) => {
+      if (i.freeNow === null) return <span className="text-gray-300">…</span>;
+      const none = i.freeNow <= 0;
+      return (
+        <span className="inline-flex items-center justify-end gap-1.5 tabular-nums">
+          <span className={`status-dot ${none ? "bg-[#fc3465]" : "bg-[#16d590]"}`} />
+          <span className={none ? "text-[#fc3465] font-medium" : "text-gray-700"}>{i.freeNow}</span>
+        </span>
+      );
+    },
+  },
+  {
+    key: "outOfService",
+    label: "Out of service",
+    align: "right",
+    toggleable: true,
+    defaultVisible: false,
     defaultWidth: 130,
-    sortValue: (i) => (i.type ?? "").toLowerCase(),
-    render: (i) => <span className="text-gray-600">{i.type || "—"}</span>,
+    sortValue: (i) => i.outOfServiceQty,
+    render: (i) => <span className="text-gray-600 tabular-nums">{i.tracking === "bulk" ? num(i.outOfServiceQty) : "—"}</span>,
+  },
+  {
+    key: "dayRate",
+    label: "Day rate",
+    align: "right",
+    toggleable: true,
+    defaultVisible: true,
+    defaultWidth: 100,
+    sortValue: (i) => i.dayRate,
+    render: (i) => <span className="text-gray-700 tabular-nums">{money(i.dayRate)}</span>,
   },
   {
     key: "location",
     label: "Location",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 140,
-    sortValue: (i) => (i.location_in_warehouse ?? "").toLowerCase(),
-    render: (i) => <span className="text-gray-600">{i.location_in_warehouse || "—"}</span>,
+    defaultWidth: 130,
+    sortValue: (i) => i.locationInWarehouse.toLowerCase(),
+    render: (i) => <span className="text-gray-600">{i.locationInWarehouse || "—"}</span>,
   },
   {
     key: "tags",
     label: "Tags",
     toggleable: true,
-    defaultVisible: true,
+    defaultVisible: false,
     defaultWidth: 170,
-    sortValue: (i) => (i.tags ?? "").toLowerCase(),
-    render: (i) =>
-      i.tags ? (
-        <span className="text-gray-500 truncate">{i.tags}</span>
-      ) : (
-        <span className="text-gray-300">—</span>
-      ),
+    sortValue: (i) => i.tags.toLowerCase(),
+    render: (i) => (i.tags ? <span className="text-gray-500 truncate">{i.tags}</span> : <span className="text-gray-300">—</span>),
   },
   {
-    key: "quantity",
-    label: "In stock",
-    align: "right",
+    key: "barcode",
+    label: "Barcode",
     toggleable: true,
-    defaultVisible: true,
-    defaultWidth: 100,
-    sortValue: (i) => i.current_quantity ?? 0,
-    render: (i) => {
-      const qty = i.current_quantity ?? 0;
-      const low = i.critical_stock_level > 0 && qty <= i.critical_stock_level;
-      return (
-        <span className="inline-flex items-center justify-end gap-1.5 tabular-nums">
-          <span className={`status-dot ${low ? "bg-[#fc3465]" : "bg-[#16d590]"}`} />
-          <span className={low ? "text-[#fc3465] font-medium" : "text-gray-700"}>{qty}</span>
-        </span>
-      );
-    },
+    defaultVisible: false,
+    defaultWidth: 130,
+    sortValue: (i) => i.barcode.toLowerCase(),
+    render: (i) => <span className="text-gray-600 font-mono text-xs">{i.barcode || "—"}</span>,
   },
   {
-    key: "quantityExclCases",
-    label: "Qty (excl. cases)",
+    key: "replacementValue",
+    label: "Replacement value",
     align: "right",
     toggleable: true,
     defaultVisible: false,
-    defaultWidth: 160,
-    sortValue: (i) => i.current_quantity_excl_cases ?? 0,
-    render: (i) => <span className="text-gray-600 tabular-nums">{num(i.current_quantity_excl_cases)}</span>,
-  },
-  {
-    key: "price",
-    label: "Price",
-    align: "right",
-    toggleable: true,
-    defaultVisible: true,
-    defaultWidth: 100,
-    sortValue: (i) => i.price ?? 0,
-    render: (i) => <span className="text-gray-700 tabular-nums">{money(i.price)}</span>,
-  },
-  {
-    key: "listPrice",
-    label: "List price",
-    align: "right",
-    toggleable: true,
-    defaultVisible: false,
-    defaultWidth: 110,
-    sortValue: (i) => i.list_price ?? 0,
-    render: (i) => <span className="text-gray-600 tabular-nums">{money(i.list_price)}</span>,
+    defaultWidth: 150,
+    sortValue: (i) => i.replacementValue,
+    render: (i) => <span className="text-gray-600 tabular-nums">{money(i.replacementValue)}</span>,
   },
   {
     key: "weight",
@@ -138,8 +171,8 @@ const COLUMNS: Column[] = [
     toggleable: true,
     defaultVisible: false,
     defaultWidth: 120,
-    sortValue: (i) => i.weight ?? 0,
-    render: (i) => <span className="text-gray-600 tabular-nums">{num(i.weight)}</span>,
+    sortValue: (i) => i.weightKg,
+    render: (i) => <span className="text-gray-600 tabular-nums">{i.weightKg ? num(i.weightKg) : "—"}</span>,
   },
   {
     key: "power",
@@ -148,36 +181,8 @@ const COLUMNS: Column[] = [
     toggleable: true,
     defaultVisible: false,
     defaultWidth: 120,
-    sortValue: (i) => i.power ?? 0,
-    render: (i) => <span className="text-gray-600 tabular-nums">{num(i.power)}</span>,
-  },
-  {
-    key: "criticalStock",
-    label: "Critical stock",
-    align: "right",
-    toggleable: true,
-    defaultVisible: false,
-    defaultWidth: 130,
-    sortValue: (i) => i.critical_stock_level ?? 0,
-    render: (i) => <span className="text-gray-600 tabular-nums">{num(i.critical_stock_level)}</span>,
-  },
-  {
-    key: "country",
-    label: "Country of origin",
-    toggleable: true,
-    defaultVisible: false,
-    defaultWidth: 160,
-    sortValue: (i) => (i.country_of_origin ?? "").toLowerCase(),
-    render: (i) => <span className="text-gray-600">{i.country_of_origin || "—"}</span>,
-  },
-  {
-    key: "rentalSales",
-    label: "Rental / sales",
-    toggleable: true,
-    defaultVisible: false,
-    defaultWidth: 130,
-    sortValue: (i) => (i.rental_sales ?? "").toLowerCase(),
-    render: (i) => <span className="text-gray-600">{i.rental_sales || "—"}</span>,
+    sortValue: (i) => i.powerW,
+    render: (i) => <span className="text-gray-600 tabular-nums">{i.powerW ? num(i.powerW) : "—"}</span>,
   },
 ];
 
@@ -490,13 +495,14 @@ function ManageViewsModal({
   );
 }
 
-export default function EquipmentList() {
+export default function ItemsList() {
   const navigate = useNavigate();
+  const { can } = useRole();
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [locationFilter, setLocationFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [unavailableOnly, setUnavailableOnly] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadVisibleColumns);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(loadColumnWidths);
   const [sortKey, setSortKey] = useState("name");
@@ -505,6 +511,8 @@ export default function EquipmentList() {
   const [activeViewId, setActiveViewId] = useState<string | null>(loadActiveViewId);
   const [manageViewsOpen, setManageViewsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { data: categories = [] } = useCategories();
+  const paths = useCategoryPaths();
 
   useEffect(() => {
     localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...visibleColumns]));
@@ -548,36 +556,47 @@ export default function EquipmentList() {
     };
   }
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["equipment"],
-    queryFn: api.listEquipment,
-    // Matches the server's Rentman cache TTL (see rentman/client.ts) — polling
-    // faster than that just forces an expensive full catalog + full
-    // stock-movement-history re-walk against Rentman for no fresher data.
-    refetchInterval: 5 * 60_000,
+  const { data: items = [], isLoading, error } = useQuery({
+    queryKey: ["items"],
+    queryFn: () => pb.collection("items").getFullList<Item>({ filter: orgFilter(), sort: "name" }),
   });
 
-  const items = useMemo(() => data?.data ?? [], [data]);
+  // "Stock" and "free now" for every item in one call: the availability
+  // engine over the next minute.
+  const { data: availability } = useQuery({
+    queryKey: ["availability", "now"],
+    queryFn: () => {
+      const now = Date.now();
+      return api.availability(new Date(now).toISOString(), new Date(now + 60_000).toISOString());
+    },
+    refetchInterval: 60_000,
+  });
 
-  const types = useMemo(
-    () => Array.from(new Set(items.map((i) => i.type).filter(Boolean))).sort(),
-    [items],
-  );
-  const locations = useMemo(
-    () => Array.from(new Set(items.map((i) => i.location_in_warehouse).filter(Boolean))).sort(),
-    [items],
+  const rows = useMemo<Row[]>(
+    () =>
+      items.map((i) => ({
+        ...i,
+        categoryPath: paths.get(i.category) ?? "",
+        stock: availability?.[i.id]?.stock ?? null,
+        freeNow: availability?.[i.id]?.free ?? null,
+      })),
+    [items, paths, availability],
   );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    let result = items.filter((e) => {
-      if (!showArchived && e.in_archive) return false;
-      if (typeFilter !== "all" && e.type !== typeFilter) return false;
-      if (locationFilter !== "all" && e.location_in_warehouse !== locationFilter) return false;
-      if (lowStockOnly && !(e.critical_stock_level > 0 && (e.current_quantity ?? 0) <= e.critical_stock_level)) {
+    const categoryPath = categoryFilter !== "all" ? paths.get(categoryFilter) : null;
+    let result = rows.filter((i) => {
+      if (!showArchived && i.archived) return false;
+      if (categoryPath && i.categoryPath !== categoryPath && !i.categoryPath.startsWith(categoryPath + "/")) return false;
+      if (typeFilter !== "all" && TYPE_LABEL(i) !== typeFilter) return false;
+      if (unavailableOnly && !(i.freeNow !== null && i.freeNow <= 0)) return false;
+      if (
+        term &&
+        ![i.name, i.code, i.barcode, i.tags, i.categoryPath, i.locationInWarehouse].some((v) => v.toLowerCase().includes(term))
+      ) {
         return false;
       }
-      if (term && !JSON.stringify(e).toLowerCase().includes(term)) return false;
       return true;
     });
 
@@ -590,7 +609,7 @@ export default function EquipmentList() {
       return String(av).localeCompare(String(bv)) * dir;
     });
     return result;
-  }, [items, search, typeFilter, locationFilter, showArchived, lowStockOnly, sortKey, sortDir]);
+  }, [rows, search, categoryFilter, typeFilter, showArchived, unavailableOnly, sortKey, sortDir, paths]);
 
   function toggleSort(key: string) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -663,7 +682,7 @@ export default function EquipmentList() {
   }
 
   const activeFilterCount =
-    (typeFilter !== "all" ? 1 : 0) + (locationFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0) + (lowStockOnly ? 1 : 0);
+    (categoryFilter !== "all" ? 1 : 0) + (typeFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -677,46 +696,51 @@ export default function EquipmentList() {
     setSelected((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((i) => String(i.id)))));
   }
 
-  const selectedEquipment = filtered.filter((i) => selected.has(String(i.id)));
+  const selectedItems = filtered.filter((i) => selected.has(String(i.id)));
 
   return (
     <div className="w-full h-full flex flex-col gap-3 min-h-0">
       <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">Assets</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Inventory</h1>
           <p className="text-xs text-gray-500">
-            {filtered.length.toLocaleString()} of {items.length.toLocaleString()} equipment types
+            {filtered.length.toLocaleString()} of {rows.filter((r) => showArchived || !r.archived).length.toLocaleString()} items
           </p>
         </div>
-        <RefreshButton queryKeys={[["equipment"]]} />
+        {can("items.create") && (
+          <Link to="/inventory/new" className="btn-primary">
+            New item
+          </Link>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5 flex-wrap shrink-0">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search equipment, code, tag…"
+          placeholder="Search name, code, barcode, tag…"
           className="input w-60"
         />
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="input w-auto max-w-56">
+          <option value="all">All categories</option>
+          {categories
+            .map((c) => ({ id: c.id, path: paths.get(c.id) ?? c.name }))
+            .sort((a, b) => a.path.localeCompare(b.path))
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {displayPath(c.path)}
+              </option>
+            ))}
+        </select>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input w-auto">
           <option value="all">All types</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="input w-auto">
-          <option value="all">All locations</option>
-          {locations.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
+          <option value="Bulk">Bulk</option>
+          <option value="Serialised">Serialised</option>
+          <option value="Kit">Kits</option>
         </select>
         <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
-          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
-          Low stock only
+          <input type="checkbox" checked={unavailableOnly} onChange={(e) => setUnavailableOnly(e.target.checked)} />
+          None free now
         </label>
         <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
@@ -725,10 +749,10 @@ export default function EquipmentList() {
         {activeFilterCount > 0 && (
           <button
             onClick={() => {
+              setCategoryFilter("all");
               setTypeFilter("all");
-              setLocationFilter("all");
               setShowArchived(false);
-              setLowStockOnly(false);
+              setUnavailableOnly(false);
             }}
             className="text-xs text-[#167cfb] hover:text-[#0f6ae0] px-1.5"
           >
@@ -758,18 +782,14 @@ export default function EquipmentList() {
       )}
 
       {isLoading && <p className="text-gray-500 text-sm shrink-0">Loading…</p>}
-      {error && (
-        <p className="text-red-600 text-sm shrink-0">
-          Couldn't load equipment: {(error as Error).message}. Check RENTMAN_API_TOKEN in server/.env.
-        </p>
-      )}
+      {error && <p className="text-red-600 text-sm shrink-0">Couldn't load inventory: {(error as Error).message}</p>}
 
-      {selectedEquipment.length > 0 && (
+      {selectedItems.length > 0 && (
         <div className="shrink-0">
-          <BatchPrintBar<Equipment>
-            items={selectedEquipment}
-            getDisplayName={(i) => i.displayname ?? i.name}
-            renderImage={(i, t) => renderEquipmentLabelImage(i, t)}
+          <BatchPrintBar<Row>
+            items={selectedItems}
+            getDisplayName={(i) => i.name}
+            renderImage={(i, t) => renderItemLabelImage(i, i.categoryPath, t)}
             sendPrint={(image, t) => sendRenderedLabel(image, t)}
             onDone={() => setSelected(new Set())}
           />
@@ -822,7 +842,7 @@ export default function EquipmentList() {
               {filtered.map((item) => (
                 <tr
                   key={item.id}
-                  onClick={() => navigate(`/equipment/${item.id}`)}
+                  onClick={() => navigate(`/inventory/${item.id}`)}
                   className="hover:bg-gray-50 cursor-pointer"
                 >
                   <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
@@ -848,7 +868,9 @@ export default function EquipmentList() {
           </table>
         </div>
         {!isLoading && filtered.length === 0 && (
-          <p className="px-4 py-6 text-gray-500 text-sm text-center">No equipment found.</p>
+          <p className="px-4 py-6 text-gray-500 text-sm text-center">
+            {rows.length === 0 ? "No inventory yet — add items here, or import them in Settings > Import." : "No items match."}
+          </p>
         )}
       </div>
     </div>

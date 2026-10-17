@@ -1,4 +1,5 @@
 import NumberInput from "./NumberInput";
+import { isBrotherWidth } from "../lib/labelSpec";
 
 export interface TemplateOption {
   id: string;
@@ -25,6 +26,8 @@ export default function LabelPreviewModal({
   onConfirm,
   onCancel,
   printing,
+  onDownloadPdf,
+  downloading = false,
 }: {
   templates: TemplateOption[];
   selectedTemplateId: string;
@@ -36,7 +39,13 @@ export default function LabelPreviewModal({
   onConfirm: () => void;
   onCancel: () => void;
   printing: boolean;
+  // Any printer with a driver (Zebra, Dymo, Brother over USB): one PDF page
+  // per label at its real size.
+  onDownloadPdf?: () => void;
+  downloading?: boolean;
 }) {
+  const selected = templates.find((t) => t.id === selectedTemplateId);
+  const brother = selected ? isBrotherWidth(selected.widthMm) : true;
   return (
     <div onClick={onCancel} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm card p-5 shadow-xl flex flex-col gap-4">
@@ -72,11 +81,22 @@ export default function LabelPreviewModal({
             <button onClick={onCancel} className="btn-secondary">
               Cancel
             </button>
-            <button onClick={onConfirm} disabled={printing || !imageDataUrl} className="btn-primary">
+            {onDownloadPdf && (
+              <button onClick={onDownloadPdf} disabled={downloading || !imageDataUrl} className="btn-secondary">
+                {downloading ? "Making PDF…" : "PDF"}
+              </button>
+            )}
+            <button onClick={onConfirm} disabled={printing || !imageDataUrl || !brother} className="btn-primary">
               {printing ? "Printing…" : `Print ${copies > 1 ? `${copies} copies` : "label"}`}
             </button>
           </div>
         </div>
+        {!brother && (
+          <p className="text-xs text-amber-700 -mt-2">
+            This template isn't a Brother tape width, so it can't go to the label printer. Download the PDF and print it from a
+            Zebra or other label printer.
+          </p>
+        )}
       </div>
     </div>
   );

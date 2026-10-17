@@ -1,26 +1,34 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { renderContextImage, sendRenderedLabel } from "../lib/print";
+import { downloadLabelsPdf, renderContextImage, sendRenderedLabel } from "../lib/print";
+import { errorText } from "../lib/errors";
 import type { LabelDataContext, LabelTemplateData } from "../lib/labelSpec";
 import { useToast } from "./ToastProvider";
 import LabelPreviewModal from "./LabelPreviewModal";
+import { useCan } from "../lib/roles";
 
 type Template = LabelTemplateData & { id: string; isDefault: boolean };
 
-export default function PrintButton({
+// Hidden from roles without labels.print.
+export default function PrintButton(props: { context: LabelDataContext; serialId?: string; label?: string }) {
+  return useCan()("labels.print") ? <PrintButtonInner {...props} /> : null;
+}
+
+function PrintButtonInner({
   context,
-  rentmanSerialNumberId,
+  serialId,
   label = "Print label",
 }: {
   context: LabelDataContext;
-  rentmanSerialNumberId?: string;
+  serialId?: string;
   label?: string;
 }) {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const { showToast } = useToast();
 
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
@@ -61,7 +69,7 @@ export default function PrintButton({
     try {
       let failed = 0;
       for (let i = 0; i < copies; i++) {
-        const result = await sendRenderedLabel(image, template, rentmanSerialNumberId);
+        const result = await sendRenderedLabel(image, template, serialId);
         if (!result.ok) failed++;
       }
       if (failed === 0) {
@@ -74,6 +82,20 @@ export default function PrintButton({
       showToast("error", `Print failed: ${(err as Error).message}`);
     } finally {
       setPrinting(false);
+    }
+  }
+
+  async function downloadPdf() {
+    const template = sortedTemplates.find((t) => t.id === templateId);
+    if (!template || !image) return;
+    setDownloading(true);
+    try {
+      await downloadLabelsPdf([{ imageDataUrl: image, widthMm: template.widthMm, heightMm: template.heightMm, copies }]);
+      setTemplateId(null);
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -96,6 +118,8 @@ export default function PrintButton({
           onConfirm={confirmPrint}
           onCancel={() => setTemplateId(null)}
           printing={printing}
+          onDownloadPdf={downloadPdf}
+          downloading={downloading}
         />
       )}
     </>
