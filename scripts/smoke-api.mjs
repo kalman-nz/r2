@@ -312,6 +312,19 @@ await planner.fails("POST", "/api/collections/item_components/records", { org: o
 await planner.fails("POST", "/api/collections/item_components/records", { org: orgA, parent: k12.id, child: pa.id, kind: "accessory", quantity: 1 }, 400, /nested/);
 log("catalogue: categories, bulk + serial items, a kit, an accessory, and the rules around them");
 
+// --- automatic codes and barcodes ---
+assert.match(k12.code, /^\d{5}$/, "items get a 5-digit code");
+assert.equal(Number(stand.code), Number(k12.code) + 1, "codes count up");
+assert.match(stand.barcode, /^[1-9]\d{9}$/, "and a 10-digit barcode");
+assert.equal(xlr.barcode, `XLR-${run}`, "a barcode you give is kept");
+await planner.fails("PATCH", `/api/collections/items/records/${stand.id}`, { code: k12.code }, 400, /already used/);
+const autoUnit = await planner.create("serials", { item: k12.id, status: "active" });
+assert.match(autoUnit.barcode, /^[1-9]\d{9}$/, "units get a 10-digit barcode too");
+const spaced = `${autoUnit.barcode.slice(0, 3)} ${autoUnit.barcode.slice(3, 6)}-${autoUnit.barcode.slice(6)}`;
+assert.equal((await tech.ok("GET", `/api/lookup?code=${encodeURIComponent(spaced)}`)).id, autoUnit.id, "typed with spaces and dashes still finds it");
+await planner.ok("DELETE", `/api/collections/serials/records/${autoUnit.id}`);
+log("items get the next 5-digit code and 10-digit barcodes are generated, kept unique and easy to type");
+
 const client = await planner.create("contacts", { name: `Client ${run}`, email: `client-${run}@example.com` });
 const venue = await planner.create("venues", { name: `Venue ${run}` });
 

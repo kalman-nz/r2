@@ -13,23 +13,6 @@ import { SerialStatusBadge } from "../StatusBadge";
 import { useToast } from "../ToastProvider";
 import { withOrg } from "../../lib/currentOrg";
 
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Suggests the next asset tag in a PREFIX-001 sequence, using the item's
-// code as the prefix. Barcodes are unique across all units; the server
-// rejects a clash.
-function nextBarcode(prefix: string, serials: Serial[]): string {
-  const re = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
-  let max = 0;
-  for (const s of serials) {
-    const m = re.exec(s.barcode);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `${prefix}-${String(max + 1).padStart(3, "0")}`;
-}
-
 export default function SerialsSection({ item, categoryPath, canAdd }: { item: Item; categoryPath: string; canAdd: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -48,7 +31,6 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
       pb.collection("serials").getFullList<Serial>({ filter: pb.filter("item = {:item}", { item: item.id }), sort: "barcode" }),
   });
   const locationName = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations]);
-  const prefix = (item.code || "R2").replace(/\s+/g, "").toUpperCase();
 
   function unitFor(serial: Serial): LabelUnit {
     return { serial, item, categoryPath, locationName: locationName.get(serial.location) ?? "", currentJob: "" };
@@ -72,8 +54,8 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
         queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: ["availability"] }),
       ]);
-      // Ready for the next unit in the sequence.
-      setBarcode(nextBarcode(prefix, [...serials, { barcode: code } as Serial]));
+      // Ready for the next unit.
+      setBarcode("");
       setSerialNumber("");
       setLabel("");
       showToast("success", "Unit added");
@@ -98,7 +80,7 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
           <button
             onClick={() => {
               setAdding(true);
-              setBarcode(nextBarcode(prefix, serials));
+              setBarcode("");
             }}
             className="btn-secondary py-1"
           >
@@ -117,7 +99,13 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
         >
           <label className="flex flex-col gap-1 text-xs text-gray-500">
             Barcode / asset tag
-            <input autoFocus value={barcode} onChange={(e) => setBarcode(e.target.value)} className="input py-1.5 font-mono w-40" />
+            <input
+              autoFocus
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              placeholder="Blank = generate"
+              className="input py-1.5 font-mono w-40"
+            />
           </label>
           <label className="flex flex-col gap-1 text-xs text-gray-500">
             Manufacturer serial
@@ -127,7 +115,7 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
             Name (optional)
             <input value={label} onChange={(e) => setLabel(e.target.value)} className="input py-1.5 w-32" placeholder="e.g. Desk 2" />
           </label>
-          <button type="submit" disabled={saving || !barcode.trim()} className="btn-primary py-1.5">
+          <button type="submit" disabled={saving} className="btn-primary py-1.5">
             {saving ? "Adding…" : "Add"}
           </button>
           <button type="button" onClick={() => setAdding(false)} className="btn-secondary py-1.5">

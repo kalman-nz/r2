@@ -52,6 +52,23 @@ onRecordValidate((e) => {
   e.next();
 }, "invitations");
 
+// Items and units saved without a code or barcode get one (lib/codes.js):
+// before e.next(), so validation sees them. Runs for imports too.
+onRecordCreate((e) => {
+  const { newBarcode, nextItemCode } = require(`${__hooks}/lib/codes.js`);
+  const org = e.record.getString("org");
+  if (org && !e.record.getString("code").trim()) e.record.set("code", nextItemCode(e.app, org));
+  if (org && !e.record.getString("barcode").trim()) e.record.set("barcode", newBarcode(e.app, org));
+  e.next();
+}, "items");
+
+onRecordCreate((e) => {
+  const { newBarcode } = require(`${__hooks}/lib/codes.js`);
+  const org = e.record.getString("org");
+  if (org && !e.record.getString("barcode").trim()) e.record.set("barcode", newBarcode(e.app, org));
+  e.next();
+}, "serials");
+
 // Each organisation's job numbers count up from 1001 and are never reused.
 // The unique (org, number) index is the backstop if two jobs are created at
 // the same instant.

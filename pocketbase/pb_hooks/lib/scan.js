@@ -8,6 +8,7 @@
 // - enquiries, cancelled and returned jobs don't send kit out
 // The first scan out moves a provisional/confirmed job to "out".
 const { findOrNull } = require("./records.js");
+const { typedCode } = require("./codes.js");
 const jobs = require("./jobs.js");
 
 const NO_SCAN_OUT_STATUSES = ["enquiry", "cancelled", "returned"];
@@ -15,7 +16,7 @@ const NO_SCAN_OUT_STATUSES = ["enquiry", "cancelled", "returned"];
 // Serial barcodes first (one code = one unit), then bulk item barcodes —
 // only within one organisation (two organisations can use the same codes).
 function lookupCode(app, org, code) {
-  const c = String(code || "").trim();
+  const c = typedCode(code);
   if (!c || !org) return null;
   const serial = app.findRecordsByFilter("serials", "org = {:org} && barcode = {:c}", "", 1, 0, { org: org, c: c })[0];
   if (serial) return { kind: "serial", serial: serial, item: findOrNull(app, "items", serial.getString("item")) };
