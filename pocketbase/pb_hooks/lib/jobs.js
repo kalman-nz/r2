@@ -114,16 +114,20 @@ function jobInfo(app, job) {
 // billing periods, each counted on its own, then, if a project has somehow
 // lost them all, the whole time the kit is booked), hours (the billing
 // periods' total time, or the booked window) and weeks (from the days).
-function chargeDaysFor(app, job) {
+// What the main project (sub omitted) or one of its subprojects is charged
+// for, from its own billing periods. The project's day override applies to
+// the main project only.
+function chargeDaysFor(app, job, sub) {
   const { chargedDays, chargedHours, plainPeriods } = require(`${__hooks}/lib/periods.js`);
-  const periods = plainPeriods(app, job.id);
-  const bookedMs = toMs(job.getString("returnAt")) - toMs(job.getString("prepAt"));
+  const owner = sub || job;
+  const periods = plainPeriods(app, job.id, sub ? sub.id : "");
+  const bookedMs = toMs(owner.getString("returnAt")) - toMs(owner.getString("prepAt"));
   const billedHours = chargedHours(periods);
   const hours = billedHours !== null ? billedHours : Math.max(1, Math.ceil(bookedMs / 3600000 - 1e-9) || 1);
-  const override = job.getInt("chargeDays");
+  const override = sub ? 0 : job.getInt("chargeDays");
   const billed = chargedDays(periods);
   const days =
-    override > 0 ? override : billed !== null ? billed : pricing.chargeableDays(toMs(job.getString("prepAt")), toMs(job.getString("returnAt")));
+    override > 0 ? override : billed !== null ? billed : pricing.chargeableDays(toMs(owner.getString("prepAt")), toMs(owner.getString("returnAt")));
   const basis = override > 0 ? "override" : billed !== null ? "billing" : "hire";
   return { days: days, hours: hours, weeks: pricing.chargeableWeeks(days), basis: basis };
 }
@@ -148,6 +152,20 @@ function orderLines(lines) {
 
 function loadLines(app, jobId) {
   return orderLines(app.findRecordsByFilter("job_lines", "job = {:job}", "", 0, 0, { job: jobId }));
+}
+
+function loadSubprojects(app, jobId) {
+  return app.findRecordsByFilter("subprojects", "job = {:job}", "sortOrder,created", 0, 0, { job: jobId });
+}
+
+// A subproject id from a request body: "" for the main project, else one of
+// this job's subprojects.
+function subprojectFor(app, job, value) {
+  const id = typeof value === "string" ? value : "";
+  if (!id) return "";
+  const sub = findOrNull(app, "subprojects", id);
+  if (!sub || sub.getString("job") !== job.id) throw new BadRequestError("That subproject isn't part of this project");
+  return sub.id;
 }
 
 function loadItems(app, lines) {
@@ -240,31 +258,57 @@ function buildSummary(app, jobId, show) {
   const lines = loadLines(app, job.id);
   const itemsById = loadItems(app, lines);
 
-  // Physical units needed per item, across every line (an item can be on a
-  // job directly and inside a kit).
-  const needs = {};
+  // The main project ("") and each subproject: its own booking window and
+  // charge. A line on a subproject that's gone counts as the main project's.
+  const subs = loadSubprojects(app, job.id);
+  const sections = [{ id: "", record: null }].concat(subs.map((sub) => ({ id: sub.id, record: sub })));
+  const sectionOf = (line) => (subs.some((sub) => sub.id === line.getString("subproject")) ? line.getString("subproject") : "");
+  for (const s of sections) {
+    const owner = s.record || job;
+    s.start = toMs(owner.getString("prepAt"));
+    s.end = toMs(owner.getString("returnAt"));
+    s.charge = chargeDaysFor(app, job, s.record);
+    s.factor = pricing.dayFactor(s.charge.days, settings.factors, settings.extraDayFactor);
+    // Physical units needed per item (an item can be on directly and inside a kit).
+    s.needs = {};
+  }
+  const sectionById = {};
+  for (const s of sections) sectionById[s.id] = s;
   for (const line of lines) {
     const item = itemsById[line.getString("item")];
     if (item && item.getString("kind") === "item") {
-      needs[item.id] = (needs[item.id] || 0) + Math.round(line.getFloat("quantity"));
+      const sectionNeeds = sectionById[sectionOf(line)].needs;
+      sectionNeeds[item.id] = (sectionNeeds[item.id] || 0) + Math.round(line.getFloat("quantity"));
     }
   }
+  // Across the whole job, for packing.
+  const needs = {};
+  for (const s of sections) for (const itemId of Object.keys(s.needs)) needs[itemId] = (needs[itemId] || 0) + s.needs[itemId];
 
-  const start = toMs(job.getString("prepAt"));
-  const end = toMs(job.getString("returnAt"));
+  const checked = sections.filter((s) => Object.keys(s.needs).length > 0 && s.start < s.end);
   const availability =
-    NO_AVAILABILITY_STATUSES.indexOf(job.getString("status")) === -1 && Object.keys(needs).length > 0
-      ? jobAvailability(app, org, job.id, start, end, needs, settings.bufferHours)
+    NO_AVAILABILITY_STATUSES.indexOf(job.getString("status")) === -1 && checked.length > 0
+      ? jobAvailability(
+          app,
+          org,
+          job.id,
+          checked.map((s) => ({ section: s.id, start: s.start, end: s.end, needs: s.needs })),
+          settings.bufferHours,
+        )
       : {};
 
-  const charge = chargeDaysFor(app, job);
-  const factor = pricing.dayFactor(charge.days, settings.factors, settings.extraDayFactor);
-  const priced = lines.map((l) => ({
-    unitPrice: l.getFloat("unitPrice"),
-    quantity: l.getFloat("quantity"),
-    discountPct: l.getFloat("discountPct"),
-    priceMode: l.getString("priceMode"),
-  }));
+  const charge = sectionById[""].charge;
+  const factor = sectionById[""].factor;
+  const priced = lines.map((l) => {
+    const s = sectionById[sectionOf(l)];
+    return {
+      unitPrice: l.getFloat("unitPrice"),
+      quantity: l.getFloat("quantity"),
+      discountPct: l.getFloat("discountPct"),
+      priceMode: l.getString("priceMode"),
+      charge: { factor: s.factor, hours: s.charge.hours, weeks: s.charge.weeks },
+    };
+  });
   const totals = pricing.quoteTotals(priced, {
     factor: factor,
     hours: charge.hours,
@@ -276,12 +320,14 @@ function buildSummary(app, jobId, show) {
   const shortByLine = {};
   const lineViews = lines.map((line, i) => {
     const item = itemsById[line.getString("item")] || null;
-    const avail = item && availability[item.id] ? availability[item.id] : null;
+    const sectionAvailability = availability[sectionOf(line)] || {};
+    const avail = item && sectionAvailability[item.id] ? sectionAvailability[item.id] : null;
     if (avail && avail.short > 0 && line.getString("parentLine")) shortByLine[line.getString("parentLine")] = true;
     const view = {
       id: line.id,
       parentLine: line.getString("parentLine"),
       lineType: line.getString("lineType"),
+      subproject: sectionOf(line),
       item: itemInfo(item),
       name: displayName(line, item),
       description: line.getString("description"),
@@ -313,6 +359,7 @@ function buildSummary(app, jobId, show) {
     // The schedule, in time order (lib/periods.js).
     periods: periodsOf(app, job.id).map((p) => ({
       id: p.id,
+      subproject: p.getString("subproject"),
       kind: p.getString("kind"),
       name: p.getString("name"),
       start: p.getString("start"),
@@ -320,6 +367,27 @@ function buildSummary(app, jobId, show) {
       notes: p.getString("notes"),
     })),
     lines: lineViews,
+    // In order. What each is charged is only there with prices.
+    subprojects: subs.map((sub) => {
+      const s = sectionById[sub.id];
+      const view = {
+        id: sub.id,
+        name: sub.getString("name"),
+        sortOrder: sub.getInt("sortOrder"),
+        prepAt: sub.getString("prepAt"),
+        returnAt: sub.getString("returnAt"),
+        billingStart: sub.getString("billingStart"),
+        billingEnd: sub.getString("billingEnd"),
+      };
+      if (includePrices) {
+        let net = 0;
+        lines.forEach((l, i) => {
+          if (sectionOf(l) === sub.id) net += totals.lines[i].net;
+        });
+        Object.assign(view, { days: s.charge.days, hours: s.charge.hours, weeks: s.charge.weeks, factor: s.factor, subtotal: pricing.fromCents(net) });
+      }
+      return view;
+    }),
     packing: packingState(app, job.id, needs, itemsById),
     includesPrices: includePrices,
   };
@@ -416,6 +484,7 @@ function expandChildren(app, parentLine, item, qty) {
       new Record(collection, {
         org: parentLine.getString("org"),
         job: parentLine.getString("job"),
+        subproject: parentLine.getString("subproject"),
         item: child.id,
         parentLine: parentLine.id,
         lineType: kind,
@@ -450,6 +519,7 @@ function addLine(jobId, body) {
     const collection = tx.findCollectionByNameOrId("job_lines");
     const unitPrice = optionalNumber(body.unitPrice, "Price");
     const discountPct = percent(body.discountPct);
+    const subproject = subprojectFor(tx, job, body.subproject);
 
     if (body.itemId) {
       const item = findOrNull(tx, "items", String(body.itemId));
@@ -459,11 +529,11 @@ function addLine(jobId, body) {
 
       const existing = tx.findRecordsByFilter(
         "job_lines",
-        "job = {:job} && item = {:item} && lineType = 'item'",
+        "job = {:job} && item = {:item} && lineType = 'item' && subproject = {:sub}",
         "created",
         1,
         0,
-        { job: job.id, item: item.id },
+        { job: job.id, item: item.id, sub: subproject },
       )[0];
       if (existing) {
         setQuantity(tx, existing, Math.round(existing.getFloat("quantity")) + qty);
@@ -474,6 +544,7 @@ function addLine(jobId, body) {
         org: job.getString("org"),
         job: job.id,
         item: item.id,
+        subproject: subproject,
         lineType: "item",
         quantity: qty,
         unitPrice: unitPrice === undefined ? item.getFloat("price") : unitPrice,
@@ -496,6 +567,7 @@ function addLine(jobId, body) {
       new Record(collection, {
         org: job.getString("org"),
         job: job.id,
+        subproject: subproject,
         lineType: "custom",
         description: description,
         quantity: quantity,
@@ -534,6 +606,17 @@ function updateLine(lineId, body) {
     }
     const sortOrder = optionalNumber(body.sortOrder, "Sort order");
     if (sortOrder !== undefined) line.set("sortOrder", Math.round(sortOrder));
+
+    // Moving a line to the main project or a subproject takes its
+    // auto-added lines with it.
+    if (body.subproject !== undefined && !followsParent) {
+      const subproject = subprojectFor(tx, requireJob(tx, jobId), body.subproject);
+      line.set("subproject", subproject);
+      for (const child of tx.findRecordsByFilter("job_lines", "parentLine = {:id}", "", 0, 0, { id: line.id })) {
+        child.set("subproject", subproject);
+        tx.save(child);
+      }
+    }
 
     if (typeof body.group === "string" && !followsParent) {
       line.set("group", body.group.trim());
@@ -606,9 +689,23 @@ function issueQuote(jobId, authRecord) {
     },
     client: summary.job.clientInfo,
     venue: summary.job.venueInfo,
+    // Subprojects, each with its own times and charge; lines on one carry
+    // its id, the rest are the main project's.
+    subprojects: summary.subprojects.map((sp) => ({
+      id: sp.id,
+      name: sp.name,
+      prepAt: sp.prepAt,
+      returnAt: sp.returnAt,
+      billingStart: sp.billingStart,
+      billingEnd: sp.billingEnd,
+      days: sp.days,
+      factor: sp.factor,
+      subtotal: sp.subtotal,
+    })),
     lines: summary.lines.map((l) => ({
       id: l.id,
       parentLine: l.parentLine,
+      subproject: l.subproject,
       lineType: l.lineType,
       name: l.name,
       code: l.item ? l.item.code : "",
@@ -644,6 +741,37 @@ function issueQuote(jobId, authRecord) {
   return quote;
 }
 
+// A new subproject with its own usage and billing periods. body: { name,
+// usageStart, usageEnd, billingStart?, billingEnd? }: billing defaults to
+// the usage window.
+function addSubproject(jobId, body) {
+  const { seedSubprojectPeriods, syncJobDates } = require(`${__hooks}/lib/periods.js`);
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) throw new BadRequestError("Give the subproject a name");
+  const usage = { start: String(body.usageStart || ""), end: String(body.usageEnd || "") };
+  if (!(toMs(usage.start) < toMs(usage.end))) throw new BadRequestError("The equipment has to be booked back after it goes out");
+  const billed = body.billingStart && body.billingEnd;
+  const billing = billed ? { start: String(body.billingStart), end: String(body.billingEnd) } : usage;
+  if (!(toMs(billing.start) < toMs(billing.end))) throw new BadRequestError("The billing period has to end after it starts");
+  let id = "";
+  $app.runInTransaction((tx) => {
+    const job = requireJob(tx, jobId);
+    const rows = arrayOf(new DynamicModel({ n: 0 }));
+    tx.db().newQuery("SELECT COALESCE(MAX(sortOrder), 0) AS n FROM subprojects WHERE job = {:job}").bind({ job: job.id }).all(rows);
+    const sub = new Record(tx.findCollectionByNameOrId("subprojects"), {
+      org: job.getString("org"),
+      job: job.id,
+      name: name.slice(0, 200),
+      sortOrder: rows[0].n + 10,
+    });
+    tx.save(sub);
+    seedSubprojectPeriods(tx, sub, usage, billing);
+    syncJobDates(tx, job.id);
+    id = sub.id;
+  });
+  return id;
+}
+
 // Setting a price or discount on a line needs permission to see prices.
 function checkPriceFields(ctx, body) {
   const touchesMoney = ["unitPrice", "discountPct", "priceMode"].some((k) => body && body[k] !== undefined);
@@ -651,4 +779,4 @@ function checkPriceFields(ctx, body) {
 }
 
 module.exports = {
-  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, issueQuote, packingState, loadLines, loadItems };
+  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject, issueQuote, packingState, loadLines, loadItems };

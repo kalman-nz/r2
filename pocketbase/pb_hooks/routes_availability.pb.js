@@ -53,10 +53,13 @@ routerAdd(
     const timeline = itemTimeline($app, item, from, to, pricingSettings(item.getString("org")).bufferHours);
 
     // Name the jobs behind the bookings (one job can book an item on
-    // several lines; merge those).
+    // several lines, and over different times on its subprojects; merge
+    // those into the job's whole span).
     const byJob = {};
     for (const b of timeline.bookings) {
       if (!byJob[b.jobId]) byJob[b.jobId] = { jobId: b.jobId, status: b.status, start: b.start, end: b.end, qty: 0, items: {} };
+      byJob[b.jobId].start = Math.min(byJob[b.jobId].start, b.start);
+      byJob[b.jobId].end = Math.max(byJob[b.jobId].end, b.end);
       byJob[b.jobId].qty += b.qty;
       byJob[b.jobId].items[b.itemId] = true;
     }

@@ -155,11 +155,31 @@ function roleIsRecord(record) {
   return !!field && field.type() === "relation";
 }
 
+// A subproject is in its project's organisation.
+function sameOrgJob(app, record) {
+  if (record.getString("org")) sameOrg(app, record, "job", "jobs", "project");
+}
+
+// A period's or line's subproject, if it has one, has to be part of the
+// same project.
+function sameSubproject(app, record) {
+  const id = record.getString("subproject");
+  if (!id) return;
+  let sub;
+  try {
+    sub = app.findRecordById("subprojects", id);
+  } catch (_) {
+    throw new BadRequestError("That subproject doesn't exist");
+  }
+  if (sub.getString("job") !== record.getString("job")) throw new BadRequestError("That subproject is part of another project");
+}
+
 // A schedule period: on a job in the same organisation, ending after it
 // starts.
 function validatePeriod(app, record) {
   if (!record.getString("org")) return;
   sameOrg(app, record, "job", "jobs", "project");
+  sameSubproject(app, record);
   const start = toMs(record.getString("start"));
   const end = toMs(record.getString("end"));
   if (!(start < end)) throw new BadRequestError("A period has to end after it starts");
@@ -248,4 +268,6 @@ module.exports = {
   validateCustomField,
   validateInvitation,
   guardReferenced,
+  sameSubproject,
+  sameOrgJob,
 };

@@ -16,6 +16,11 @@ services:
       # Optional: only used by Settings > Import when no token is saved there.
       RENTMAN_API_TOKEN: ${RENTMAN_API_TOKEN:-}
       PRINTER_HOST: ${PRINTER_HOST:-}
+      # "Find photo" on items: Ollama with a vision model, on the host by default.
+      R2_OLLAMA_URL: ${R2_OLLAMA_URL:-http://host.docker.internal:11434}
+      R2_VISION_MODEL: ${R2_VISION_MODEL:-gemma4:12b-it-qat}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - pb_data:/pb/pb_data
     restart: unless-stopped

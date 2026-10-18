@@ -106,6 +106,31 @@ onRecordDelete((e) => {
   e.next();
 }, "items");
 
+// A line's subproject has to be part of its own project.
+onRecordValidate((e) => {
+  const { sameSubproject } = require(`${__hooks}/lib/validation.js`);
+  if (e.record.getString("org")) sameSubproject(e.app, e.record);
+  e.next();
+}, "job_lines");
+
+onRecordValidate((e) => {
+  e.record.set("name", e.record.getString("name").trim());
+  if (!e.record.getString("name")) throw new BadRequestError("Give the subproject a name");
+  const { sameOrgJob } = require(`${__hooks}/lib/validation.js`);
+  sameOrgJob(e.app, e.record);
+  e.next();
+}, "subprojects");
+
+// A subproject with equipment on it can't just disappear: its lines would
+// silently change dates and price. Only on requests, so deleting the whole
+// project (which takes its subprojects and lines with it) still works.
+onRecordDeleteRequest((e) => {
+  if (e.app.findRecordsByFilter("job_lines", "subproject = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("Move or remove this subproject's equipment first");
+  }
+  e.next();
+}, "subprojects");
+
 // A unit's scans are its history: keep it, retired, instead.
 onRecordDelete((e) => {
   if (e.app.findRecordsByFilter("scans", "serial = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {

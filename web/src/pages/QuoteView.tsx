@@ -51,15 +51,24 @@ export default function QuoteView() {
 
   // Group headings in the order lines first use them; auto-added lines sit
   // under their parent.
-  const groups: { name: string; lines: QuoteLine[] }[] = [];
-  const parentGroup = new Map<string, string>();
-  for (const line of s.lines) {
-    const name = line.parentLine ? (parentGroup.get(line.parentLine) ?? line.group) : line.group;
-    if (!line.parentLine) parentGroup.set(line.id, name);
-    let group = groups.find((g) => g.name === name);
-    if (!group) groups.push((group = { name, lines: [] }));
-    group.lines.push(line);
-  }
+  const groupsOf = (lines: QuoteLine[]) => {
+    const groups: { name: string; lines: QuoteLine[] }[] = [];
+    const parentGroup = new Map<string, string>();
+    for (const line of lines) {
+      const name = line.parentLine ? (parentGroup.get(line.parentLine) ?? line.group) : line.group;
+      if (!line.parentLine) parentGroup.set(line.id, name);
+      let group = groups.find((g) => g.name === name);
+      if (!group) groups.push((group = { name, lines: [] }));
+      group.lines.push(line);
+    }
+    return groups;
+  };
+  // The main project's lines, then each subproject's under its own heading.
+  const subprojects = (s.subprojects ?? []).filter((sp) => s.lines.some((l) => l.subproject === sp.id));
+  const known = new Set(subprojects.map((sp) => sp.id));
+  const groups = groupsOf(s.lines.filter((l) => !l.subproject || !known.has(l.subproject)));
+  const charged = (days: number | undefined, factor: number | undefined) =>
+    `${days} day${days === 1 ? "" : "s"} at ${factor}× the day rate`;
 
   const t = s.pricing.totals;
   // The billing period(s); quotes from before schedules have show dates.
@@ -165,12 +174,37 @@ export default function QuoteView() {
               <QuoteGroup key={group.name || "(none)"} name={group.name} lines={group.lines} />
             ))}
           </tbody>
+          {subprojects.map((sp) => (
+            <tbody key={sp.id}>
+              <tr className="break-inside-avoid border-b border-gray-300">
+                <td colSpan={4} className="pt-6 pb-1">
+                  <span className="font-bold text-gray-900">{sp.name}</span>
+                  <span className="block text-[11px] text-gray-500">
+                    {formatRange(sp.billingStart, sp.billingEnd)} · charged {charged(sp.days, sp.factor)}
+                  </span>
+                </td>
+                <td className="pt-6 pb-1 text-right font-semibold tabular-nums align-top">{nzd(sp.subtotal)}</td>
+              </tr>
+              {groupsOf(s.lines.filter((l) => l.subproject === sp.id)).map((group) => (
+                <QuoteGroup key={group.name || "(none)"} name={group.name} lines={group.lines} />
+              ))}
+            </tbody>
+          ))}
         </table>
 
         <section className="flex justify-between gap-8 break-inside-avoid">
           <p className="text-gray-500 text-[11.5px] max-w-sm">
-            Equipment rates are per day. This hire is charged as {s.pricing.days} day{s.pricing.days === 1 ? "" : "s"} at{" "}
-            {s.pricing.factor}× the day rate. Prices are in NZD.
+            {subprojects.length > 0 ? (
+              <>
+                Equipment rates are per day. The main project is charged as {charged(s.pricing.days, s.pricing.factor)}; each part below it as
+                shown with it. Prices are in NZD.
+              </>
+            ) : (
+              <>
+                Equipment rates are per day. This hire is charged as {s.pricing.days} day{s.pricing.days === 1 ? "" : "s"} at{" "}
+                {s.pricing.factor}× the day rate. Prices are in NZD.
+              </>
+            )}
           </p>
           <div className="w-64 shrink-0 flex flex-col gap-1">
             <div className="flex justify-between">

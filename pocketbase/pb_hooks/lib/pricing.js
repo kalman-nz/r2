@@ -91,6 +91,7 @@ function lineAmounts(line, charge) {
   return { gross: gross, discount: discount, net: gross - discount };
 }
 
+// lines: lineAmounts lines, each optionally with its own charge.
 // opts: { factor, hours, weeks, discountPct (whole-job, applied after line
 // discounts), gstRate (percent, e.g. 15) }. Every amount returned is in cents.
 // GST is worked out once on the job total rather than per line, which is
@@ -100,7 +101,8 @@ function quoteTotals(lines, opts) {
   let lineDiscount = 0;
   let net = 0;
   const amounts = lines.map((line) => {
-    const a = lineAmounts(line, opts);
+    // A line on a subproject brings its own { factor, hours, weeks }.
+    const a = lineAmounts(line, line.charge || opts);
     gross += a.gross;
     lineDiscount += a.discount;
     net += a.net;

@@ -273,6 +273,8 @@ export interface LineAmount {
 export interface JobLineView {
   id: string;
   parentLine: string;
+  // The subproject it's on, "" for the main project.
+  subproject: string;
   lineType: "item" | "component" | "accessory" | "custom";
   item: ItemInfo | null;
   name: string;
@@ -367,6 +369,8 @@ export type PeriodKind = "usage" | "billing" | "other";
 // derived from these on the server (pb_hooks/lib/periods.js).
 export interface JobPeriod {
   id: string;
+  // The subproject it belongs to, "" for the main project.
+  subproject: string;
   kind: PeriodKind;
   name: string;
   start: string;
@@ -374,8 +378,27 @@ export interface JobPeriod {
   notes: string;
 }
 
+// Part of a project with its own schedule (pb_migrations/0030_subprojects.js):
+// its kit is booked and charged over its own periods, on the same quote.
+// The charge fields are only there with prices.
+export interface Subproject {
+  id: string;
+  name: string;
+  sortOrder: number;
+  prepAt: string;
+  returnAt: string;
+  billingStart: string;
+  billingEnd: string;
+  days?: number;
+  hours?: number;
+  weeks?: number;
+  factor?: number;
+  subtotal?: number;
+}
+
 export interface JobSummary {
   job: JobInfo;
+  subprojects: Subproject[];
   periods: JobPeriod[];
   lines: JobLineView[];
   packing: { items: PackingItem[]; packed: boolean; allBack: boolean; scanCount: number };
@@ -387,6 +410,7 @@ export interface JobSummary {
 export interface QuoteLine {
   id: string;
   parentLine: string;
+  subproject?: string;
   lineType: JobLineView["lineType"];
   name: string;
   code: string;
@@ -417,6 +441,8 @@ export interface QuoteSnapshot {
   client: ContactInfo | null;
   venue: VenueInfo | null;
   lines: QuoteLine[];
+  // Quotes from before subprojects don't have these.
+  subprojects?: Pick<Subproject, "id" | "name" | "prepAt" | "returnAt" | "billingStart" | "billingEnd" | "days" | "factor" | "subtotal">[];
   pricing: JobPricing;
   terms: string;
   issuedAt: string;
@@ -436,6 +462,7 @@ export interface Quote extends RecordModel {
 }
 
 export interface NewLine {
+  subproject?: string;
   itemId?: string;
   description?: string;
   quantity: number;
@@ -454,6 +481,7 @@ export type LinePatch = Partial<{
   priceMode: PriceMode;
   notes: string;
   sortOrder: number;
+  subproject: string;
 }>;
 
 // --- availability ---
@@ -732,6 +760,8 @@ export const api = {
   addLine: (jobId: string, line: NewLine) => request<JobSummary>(`/api/jobs/${jobId}/lines`, json("POST", line)),
   updateLine: (lineId: string, patch: LinePatch) => request<JobSummary>(`/api/job-lines/${lineId}`, json("PATCH", patch)),
   deleteLine: (lineId: string) => request<JobSummary>(`/api/job-lines/${lineId}`, json("DELETE")),
+  addSubproject: (jobId: string, body: { name: string; usageStart: string; usageEnd: string; billingStart?: string; billingEnd?: string }) =>
+    request<JobSummary>(`/api/jobs/${jobId}/subprojects`, json("POST", body)),
   issueQuote: (jobId: string) =>
     request<{ quoteId: string; summary: JobSummary }>(`/api/jobs/${jobId}/quotes`, json("POST")),
   getQuote: (id: string) => request<Quote>(`/api/quotes/${id}`),
@@ -764,6 +794,10 @@ export const api = {
     request<{ deleted: number; archived: number; moved: number }>(`/api/folders/${id}/delete`, json("POST", { contents })),
   setOutOfService: (itemId: string, quantity: number, note?: string) =>
     request<Item>(`/api/items/${itemId}/out-of-service`, json("POST", { quantity, note })),
+  // Search online for a photo and let the local vision model pick one; saves
+  // it on the item. See pb_hooks/routes_item_photo.pb.js. Takes a while.
+  findItemPhoto: (itemId: string) =>
+    request<{ item: Item; found: { query: string; source: string; title: string; reason: string } }>(`/api/items/${itemId}/find-photo`, json("POST")),
   // Repairs: see pb_hooks/routes_repairs.pb.js.
   openRepair: (body: { item: string; serials?: string[]; quantity?: number; fault: string; repairer?: string; dueAt?: string; notes?: string }) =>
     request<Repair>("/api/repairs", json("POST", body)),

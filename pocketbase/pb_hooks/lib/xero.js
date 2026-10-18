@@ -70,9 +70,11 @@ function plural(n, word) {
 // it against its own items and rejects codes it doesn't know.
 function invoiceLines(snapshot) {
   const pricing = snapshot.pricing || {};
-  const factor = Number(pricing.factor) || 1;
-  const days = Number(pricing.days) || 1;
   const lines = snapshot.lines || [];
+  // A line on a subproject is charged over the subproject's own days.
+  const charge = { "": { factor: Number(pricing.factor) || 1, days: Number(pricing.days) || 1 } };
+  for (const sp of snapshot.subprojects || []) charge[sp.id] = { factor: Number(sp.factor) || 1, days: Number(sp.days) || 1 };
+  const chargeOf = (line) => charge[line.subproject || ""] || charge[""];
 
   // Free auto-added lines get named in their parent's description instead.
   const included = {};
@@ -86,6 +88,7 @@ function invoiceLines(snapshot) {
   for (const line of lines) {
     if (line.parentLine && !Number(line.unitPrice)) continue;
     const perDay = line.priceMode !== "fixed";
+    const { factor, days } = chargeOf(line);
     let description = line.name;
     if (line.description) description += " — " + line.description;
     if (perDay) description += " (" + plural(days, "day") + ")";

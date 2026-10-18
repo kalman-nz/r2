@@ -210,3 +210,21 @@ test("items with no stock record count as zero owned", () => {
   const r = jobShortages({ id: "this", start: h(0), end: h(10) }, { ghost: 2 }, { stockByItem: {}, bookings: [] });
   assert.equal(r.ghost.short, 2);
 });
+
+test("a subproject's check counts the same job's other sections, but not itself", () => {
+  // Main rig holds 3 of 4 over days 1-3; the finale subproject wants 2 on day 3.
+  const bookings = [
+    { itemId: "desk", qty: 3, start: h(0), end: h(72), jobId: "fest", section: "", status: "confirmed" },
+    { itemId: "desk", qty: 2, start: h(60), end: h(66), jobId: "fest", section: "finale", status: "confirmed" },
+  ];
+  const opts = { stockByItem: { desk: 4 }, bookings };
+  const finale = jobShortages({ id: "fest", start: h(60), end: h(66), section: "finale" }, { desk: 2 }, opts);
+  assert.equal(finale.desk.free, 1);
+  assert.equal(finale.desk.short, 1);
+  const main = jobShortages({ id: "fest", start: h(0), end: h(72), section: "" }, { desk: 3 }, opts);
+  assert.equal(main.desk.free, 2);
+  assert.equal(main.desk.short, 1);
+  // Without a section the whole job is left out, as before.
+  const whole = jobShortages({ id: "fest", start: h(0), end: h(72) }, { desk: 3 }, opts);
+  assert.equal(whole.desk.free, 4);
+});

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
-import type { JobPeriod, JobSummary, PeriodKind } from "../../lib/api";
+import type { JobPeriod, JobSummary, PeriodKind, Subproject } from "../../lib/api";
 import { formatDateTime, formatDuration, formatPeriod, fromLocalInput, parseDate, toLocalInput } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { withOrg } from "../../lib/currentOrg";
@@ -9,6 +9,8 @@ import { PERIOD_KINDS } from "../../lib/statuses";
 import Field from "../Field";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
+import { InlineText } from "../InlineInput";
+import NewSubprojectModal from "./NewSubprojectModal";
 
 const HOUR = 3600000;
 const ms = (value: string) => parseDate(value)?.getTime() ?? NaN;
@@ -33,25 +35,36 @@ function draftOf(p: JobPeriod): Draft {
 // for the plan. The project's dates are worked out from these on the server
 // (pb_hooks/lib/periods.js), so saving one refreshes the whole summary:
 // availability and pricing can both move. Every project keeps at least one
-// usage and one billing period.
+// usage and one billing period. Subprojects (their own equipment, booked and
+// charged over their own times) each have a schedule of the same kind,
+// shown after the main project's.
 export default function JobSchedule({ summary, canEdit }: { summary: JobSummary; canEdit: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const confirm = useConfirm();
-  const { job, periods, pricing } = summary;
+  const { job, periods, pricing, subprojects = [] } = summary;
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [adding, setAdding] = useState<Draft | null>(null);
+  // A new period and the section it goes in ("" for the main project).
+  const [adding, setAdding] = useState<{ section: string; draft: Draft } | null>(null);
+  const [addingSubproject, setAddingSubproject] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const sorted = useMemo(
     () => [...periods].sort((a, b) => RANK[a.kind] - RANK[b.kind] || ms(a.start) - ms(b.start) || ms(a.end) - ms(b.end)),
     [periods],
   );
-  const required = sorted.filter((p) => p.kind !== "other");
-  const others = sorted.filter((p) => p.kind === "other");
-  // The only usage (or billing) period can't be removed or turned into
-  // something else; the server refuses it too.
-  const onlyOfKind = (p: JobPeriod) => p.kind !== "other" && periods.filter((q) => q.kind === p.kind).length === 1;
+  const main = sorted.filter((p) => !p.subproject);
+  const required = main.filter((p) => p.kind !== "other");
+  const others = main.filter((p) => p.kind === "other");
+  // The only usage (or billing) period of the project or a subproject can't
+  // be removed or turned into something else; the server refuses it too.
+  const onlyOfKind = (p: JobPeriod) =>
+    p.kind !== "other" && periods.filter((q) => q.kind === p.kind && (q.subproject || "") === (p.subproject || "")).length === 1;
+  // Timeline labels say whose a subproject's periods are.
+  const subName = (id: string) => subprojects.find((sp) => sp.id === id)?.name ?? "";
+  const timeline = [...main, ...subprojects.flatMap((sp) => sorted.filter((p) => p.subproject === sp.id))].map((p) =>
+    p.subproject ? { ...p, name: `${subName(p.subproject)} · ${p.name}` } : p,
+  );
 
   async function refresh() {
     await Promise.all([
@@ -61,12 +74,12 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     ]);
   }
 
-  async function save(id: string | null, d: Draft) {
+  async function save(id: string | null, d: Draft, section = "") {
     const body = { kind: d.kind, name: d.name.trim(), start: fromLocalInput(d.start), end: fromLocalInput(d.end), notes: d.notes.trim() };
     setBusy(true);
     try {
       if (id) await pb.collection("job_periods").update(id, body);
-      else await pb.collection("job_periods").create(withOrg({ ...body, job: job.id }));
+      else await pb.collection("job_periods").create(withOrg({ ...body, job: job.id, subproject: section }));
       await refresh();
       return true;
     } catch (err) {
@@ -97,15 +110,57 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
   }
 
   // A new billing period starts out over the booking; anything else is a
-  // couple of hours from the start of the project. Quicker to nudge than to
-  // type.
-  function startAdding(kind: PeriodKind) {
-    const from = ms(job.startAt || job.prepAt);
-    const [start, end] = kind === "other" ? [from, from + 2 * HOUR] : [ms(job.prepAt), ms(job.returnAt)];
+  // couple of hours from the start of the project (or subproject). Quicker
+  // to nudge than to type.
+  function startAdding(kind: PeriodKind, section = "") {
+    const owner = subprojects.find((sp) => sp.id === section) ?? { prepAt: job.prepAt, returnAt: job.returnAt };
+    const from = section ? ms(owner.prepAt) : ms(job.startAt || job.prepAt);
+    const [start, end] = kind === "other" ? [from, from + 2 * HOUR] : [ms(owner.prepAt), ms(owner.returnAt)];
     const iso = (t: number) => new Date(t).toISOString();
     setEditingId(null);
-    setAdding({ kind, name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "" });
+    setAdding({ section, draft: { kind, name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "" } });
   }
+
+  async function renameSubproject(sp: Subproject, name: string) {
+    if (!name) return;
+    try {
+      await pb.collection("subprojects").update(sp.id, { name });
+      await refresh();
+    } catch (err) {
+      showToast("error", `Couldn't rename it: ${errorText(err)}`);
+    }
+  }
+
+  async function removeSubproject(sp: Subproject) {
+    const ok = await confirm({
+      title: "Remove subproject",
+      message: `Remove "${sp.name}" and its schedule? Its equipment has to be moved or removed first.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await pb.collection("subprojects").delete(sp.id);
+      await refresh();
+    } catch (err) {
+      showToast("error", `Couldn't remove it: ${errorText(err)}`);
+    }
+  }
+
+  const addForm = (section: string) =>
+    adding &&
+    adding.section === section && (
+      <PeriodForm
+        draft={adding.draft}
+        onChange={(draft) => setAdding({ section, draft })}
+        busy={busy}
+        submitLabel="Add period"
+        onCancel={() => setAdding(null)}
+        onSubmit={async () => {
+          if (await save(null, adding.draft, section)) setAdding(null);
+        }}
+      />
+    );
 
   const rows = (list: JobPeriod[]) =>
     list.map((p) =>
@@ -140,6 +195,9 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
           <h2 className="text-sm font-semibold text-gray-900">Schedule</h2>
           {canEdit && (
             <div className="flex items-center gap-1.5">
+              <button onClick={() => setAddingSubproject(true)} disabled={busy} className="btn-secondary">
+                Add subproject
+              </button>
               <button onClick={() => startAdding("billing")} disabled={busy || adding !== null} className="btn-secondary">
                 Add billing period
               </button>
@@ -150,7 +208,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
           )}
         </div>
         <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Stat label="Project" value={`${formatDateTime(job.startAt)} → ${formatDateTime(job.endAt)}`} />
+          <Stat label={subprojects.length > 0 ? "Whole project" : "Project"} value={`${formatDateTime(job.startAt)} → ${formatDateTime(job.endAt)}`} />
           <Stat label="Equipment booked" value={`${formatDateTime(job.prepAt)} → ${formatDateTime(job.returnAt)}`} bar="bg-data" />
           <Stat
             label="Charged"
@@ -162,23 +220,10 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
             bar="bg-signal"
           />
         </dl>
-        <Timeline periods={sorted} />
+        <Timeline periods={timeline} />
       </section>
 
-      {adding && (
-        <section className="card">
-          <PeriodForm
-            draft={adding}
-            onChange={setAdding}
-            busy={busy}
-            submitLabel="Add period"
-            onCancel={() => setAdding(null)}
-            onSubmit={async () => {
-              if (await save(null, adding)) setAdding(null);
-            }}
-          />
-        </section>
-      )}
+      {adding && adding.section === "" && <section className="card">{addForm("")}</section>}
 
       <section className="card">
         <h3 className="px-4 pt-3 pb-2 eyebrow text-gray-500">Usage &amp; billing</h3>
@@ -194,6 +239,46 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
           )}
         </div>
       </section>
+
+      {subprojects.map((sp) => (
+        <section key={sp.id} className="card">
+          <div className="flex items-start justify-between gap-3 flex-wrap px-4 pt-3 pb-2">
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="eyebrow text-gray-500">Subproject</span>
+              {canEdit ? (
+                <InlineText
+                  value={sp.name}
+                  onCommit={(name) => renameSubproject(sp, name)}
+                  className="font-semibold text-gray-900 w-64 border-transparent hover:border-gray-300 bg-transparent"
+                />
+              ) : (
+                <span className="font-semibold text-gray-900">{sp.name}</span>
+              )}
+              <span className="text-xs text-gray-500">
+                Booked {formatPeriod(sp.prepAt, sp.returnAt)}
+                {sp.days !== undefined && ` · charged ${sp.days} day${sp.days === 1 ? "" : "s"}`}
+              </span>
+            </div>
+            {canEdit && (
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => removeSubproject(sp)} disabled={busy} className="text-xs text-gray-500 hover:text-fault-ink px-1.5 py-1">
+                  Remove
+                </button>
+                <button onClick={() => startAdding("billing", sp.id)} disabled={busy || adding !== null} className="btn-secondary">
+                  Add billing period
+                </button>
+                <button onClick={() => startAdding("other", sp.id)} disabled={busy || adding !== null} className="btn-primary">
+                  Add period
+                </button>
+              </div>
+            )}
+          </div>
+          {addForm(sp.id)}
+          <div className="divide-y divide-gray-100 border-t border-gray-100">{rows(sorted.filter((p) => p.subproject === sp.id))}</div>
+        </section>
+      ))}
+
+      {addingSubproject && <NewSubprojectModal summary={summary} onSaved={() => refresh()} onClose={() => setAddingSubproject(false)} />}
     </div>
   );
 }

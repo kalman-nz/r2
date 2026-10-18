@@ -59,7 +59,7 @@ pocketbase/
     records_validation.pb.js   rules enforced on every save
   tests/             node --test unit tests for the pure modules
 web/                 React + TanStack Query + Tailwind SPA (public/sw.js is the service worker)
-print/               Python helpers: r2_pdf.py (PDFs, with Inter fonts) and print_label.py (Brother QL)
+print/               Python helpers: r2_pdf.py (PDFs, with Inter fonts), print_label.py (Brother QL) and r2_find_photo.py (item photo search)
 scripts/             dev launcher, demo seed, API smoke test
 ```
 
@@ -100,6 +100,10 @@ Adding a permission: add it to `lib/permissions.js`, check it where it applies, 
 - Days come from the show dates, or prep → return for a dry hire, or a per-job override. Each started 24 hours counts as a day.
 - Issuing a quote freezes everything it prints into a numbered snapshot (`Q1042-2`), so later changes never alter it.
 - Quote, packing list and label PDFs are drawn server-side by `print/r2_pdf.py` (fpdf2, with Inter embedded so macrons print). Dates on them use the time zone in Settings → Business.
+
+### Item photos
+
+"Find photo" under an item's photo searches the web (Bing images, no API key) and saves the best match. A local vision model in Ollama does the thinking: it turns the item's name, folder, description and custom fields into a search query, then looks at the top results and picks the one showing exactly that item. `print/r2_find_photo.py` does the work; set `R2_OLLAMA_URL` and `R2_VISION_MODEL` (default `gemma4:12b-it-qat`, any Ollama model with vision works). It takes 5–20 seconds.
 
 ### Labels
 

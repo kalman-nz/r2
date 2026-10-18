@@ -122,6 +122,7 @@ function ScheduleOverview({ summary, onOpen }: { summary: JobSummary; onOpen: ()
           <li key={p.id} className="flex items-center gap-2.5 text-sm">
             <span className={`w-2.5 h-2.5 rounded-sm shrink-0 ${bar(p.kind)}`} />
             <span className="w-48 shrink-0 font-medium text-gray-900 truncate">
+              {p.subproject && <span className="text-gray-500 font-normal">{summary.subprojects?.find((sp) => sp.id === p.subproject)?.name} · </span>}
               {p.name}
               {tag(p.kind) && <span className="ml-1.5 eyebrow text-gray-500">{tag(p.kind)}</span>}
             </span>

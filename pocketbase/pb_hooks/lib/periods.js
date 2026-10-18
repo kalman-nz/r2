@@ -77,12 +77,30 @@ function periodsOf(app, jobId) {
   return app.findRecordsByFilter("job_periods", "job = {:job}", "start", 0, 0, { job: jobId });
 }
 
-function plainPeriods(app, jobId) {
-  return periodsOf(app, jobId).map((p) => ({ kind: p.getString("kind"), start: toMs(p.getString("start")), end: toMs(p.getString("end")) }));
+// The job's periods as plain data. section: a subproject's id for just its
+// periods, "" for the main project's, undefined for all of them.
+function plainPeriods(app, jobId, section) {
+  return periodsOf(app, jobId)
+    .filter((p) => section === undefined || p.getString("subproject") === section)
+    .map((p) => ({ kind: p.getString("kind"), start: toMs(p.getString("start")), end: toMs(p.getString("end")), section: p.getString("subproject") }));
+}
+
+// Sets fields from derived ms values, returning whether any changed.
+function setDates(record, derived, fields) {
+  let changed = false;
+  for (const field of fields) {
+    const value = Number.isFinite(derived[field]) ? toPbDate(derived[field]) : "";
+    if (toMs(record.getString(field)) === toMs(value) || (!record.getString(field) && !value)) continue;
+    record.set(field, value);
+    changed = true;
+  }
+  return changed;
 }
 
 // Re-derives the job's date fields from its periods and saves the job if
-// any changed. Ordinary save, so validateJob still runs on the result.
+// any changed, then each subproject's from its own. The job's booking and
+// billing dates are the main project's; its start and end cover every
+// period, subprojects' included. Ordinary saves, so validateJob still runs.
 function syncJobDates(app, jobId) {
   let job;
   try {
@@ -90,16 +108,18 @@ function syncJobDates(app, jobId) {
   } catch (_) {
     return; // the job itself is being deleted
   }
-  const derived = summarise(plainPeriods(app, jobId));
-  if (!derived) return;
-  let changed = false;
-  for (const field of Object.keys(derived)) {
-    const value = Number.isFinite(derived[field]) ? toPbDate(derived[field]) : "";
-    if (toMs(job.getString(field)) === toMs(value) || (!job.getString(field) && !value)) continue;
-    job.set(field, value);
-    changed = true;
+  const all = plainPeriods(app, jobId);
+  const derived = summarise(all.filter((p) => !p.section));
+  if (derived) {
+    const whole = span(valid(all));
+    derived.startAt = whole.start;
+    derived.endAt = whole.end;
+    if (setDates(job, derived, Object.keys(derived))) app.save(job);
   }
-  if (changed) app.save(job);
+  for (const sub of app.findRecordsByFilter("subprojects", "job = {:job}", "", 0, 0, { job: jobId })) {
+    const own = summarise(all.filter((p) => p.section === sub.id));
+    if (own && setDates(sub, own, ["prepAt", "returnAt", "billingStart", "billingEnd"])) app.save(sub);
+  }
 }
 
 // A new project starts with a usage period over the dates it was created
@@ -115,16 +135,45 @@ function seedPeriods(app, job) {
   add("billing", "Billed", billed ? job.getString("billingStart") : job.getString("prepAt"), billed ? job.getString("billingEnd") : job.getString("returnAt"));
 }
 
-// Refuses a change that would leave the project without a usage or billing
-// period. Called from the request hooks only, so deleting a whole project
-// (which cascades to its periods) isn't caught by it.
-function guardRequired(app, period, newKind) {
+// A new subproject's usage and billing periods. usage/billing: { start, end }.
+function seedSubprojectPeriods(app, sub, usage, billing) {
+  const collection = app.findCollectionByNameOrId("job_periods");
+  const add = (kind, name, p) =>
+    app.save(new Record(collection, { org: sub.getString("org"), job: sub.getString("job"), subproject: sub.id, kind: kind, name: name, start: p.start, end: p.end }));
+  add("usage", "Equipment booked", usage);
+  add("billing", "Billed", billing);
+}
+
+// Refuses a change that would leave the project, or one of its subprojects,
+// without a usage or billing period. Called from the request hooks only, so
+// deleting a whole project or subproject (which cascades to its periods)
+// isn't caught by it. Moving a period to another subproject counts as
+// removing it from where it was.
+function guardRequired(app, period, newKind, newSection) {
   const kind = period.original().getString("kind") || period.getString("kind");
-  if (REQUIRED.indexOf(kind) === -1 || newKind === kind) return;
-  const others = periodsOf(app, period.getString("job")).filter((p) => p.id !== period.id && p.getString("kind") === kind);
+  const section = period.original().getString("subproject");
+  const moving = newSection !== undefined && newSection !== section;
+  if (REQUIRED.indexOf(kind) === -1 || (newKind === kind && !moving)) return;
+  const others = periodsOf(app, period.getString("job")).filter(
+    (p) => p.id !== period.id && p.getString("kind") === kind && p.getString("subproject") === section,
+  );
   if (others.length === 0) {
-    throw new BadRequestError("A project needs at least one " + kind + " period. Add another before removing this one");
+    throw new BadRequestError(
+      (section ? "A subproject" : "A project") + " needs at least one " + kind + " period. Add another before removing this one",
+    );
   }
 }
 
-module.exports = { KINDS, REQUIRED, summarise, chargedDays, chargedHours, periodsOf, plainPeriods, syncJobDates, seedPeriods, guardRequired };
+module.exports = {
+  KINDS,
+  REQUIRED,
+  summarise,
+  chargedDays,
+  chargedHours,
+  periodsOf,
+  plainPeriods,
+  syncJobDates,
+  seedPeriods,
+  seedSubprojectPeriods,
+  guardRequired,
+};
