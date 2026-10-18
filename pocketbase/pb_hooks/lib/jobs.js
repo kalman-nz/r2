@@ -527,14 +527,11 @@ function addLine(jobId, body) {
       if (item.getBool("archived")) throw new BadRequestError(item.getString("name") + " is archived");
       const qty = positiveWhole(body.quantity === undefined ? 1 : body.quantity, "Quantity");
 
-      const existing = tx.findRecordsByFilter(
-        "job_lines",
-        "job = {:job} && item = {:item} && lineType = 'item' && subproject = {:sub}",
-        "created",
-        1,
-        0,
-        { job: job.id, item: item.id, sub: subproject },
-      )[0];
+      // The same item already in the same section gets topped up instead.
+      // (Compared here: an empty subproject doesn't match a bound "" in the filter.)
+      const existing = tx
+        .findRecordsByFilter("job_lines", "job = {:job} && item = {:item} && lineType = 'item'", "created", 0, 0, { job: job.id, item: item.id })
+        .filter((l) => l.getString("subproject") === subproject)[0];
       if (existing) {
         setQuantity(tx, existing, Math.round(existing.getFloat("quantity")) + qty);
         return;

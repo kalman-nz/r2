@@ -48,7 +48,7 @@ export default function JobFields({
             collection="contacts"
             value={draft.client}
             onChange={(id) => set("client", id)}
-            options={contacts}
+            options={contacts.map((c) => ({ id: c.id, name: c.name, archived: c.archived, detail: [c.contactPerson, c.email].filter(Boolean).join(" · ") }))}
             canCreate={can("contacts.create")}
             placeholder="No client"
           />
@@ -62,7 +62,7 @@ export default function JobFields({
             collection="venues"
             value={draft.venue}
             onChange={(id) => set("venue", id)}
-            options={venues}
+            options={venues.map((v) => ({ id: v.id, name: v.name, archived: v.archived, detail: v.address.replace(/\n/g, ", ") }))}
             canCreate={can("venues.create")}
             placeholder="No location"
           />

@@ -58,6 +58,10 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
   const others = main.filter((p) => p.kind === "other");
   // The only usage (or billing) period of the project or a subproject can't
   // be removed or turned into something else; the server refuses it too.
+  // Usage and billing periods a section already has (besides `except`): a
+  // project and each subproject have exactly one of each.
+  const takenIn = (section: string, except?: string) =>
+    periods.filter((q) => (q.subproject || "") === section && q.id !== except && q.kind !== "other").map((q) => q.kind);
   const onlyOfKind = (p: JobPeriod) =>
     p.kind !== "other" && periods.filter((q) => q.kind === p.kind && (q.subproject || "") === (p.subproject || "")).length === 1;
   // Timeline labels say whose a subproject's periods are.
@@ -152,6 +156,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     adding.section === section && (
       <PeriodForm
         draft={adding.draft}
+        taken={takenIn(section)}
         onChange={(draft) => setAdding({ section, draft })}
         busy={busy}
         submitLabel="Add period"
@@ -170,6 +175,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
           period={p}
           busy={busy}
           kindLocked={onlyOfKind(p)}
+          taken={takenIn(p.subproject || "", p.id)}
           onCancel={() => setEditingId(null)}
           onSave={async (d) => (await save(p.id, d)) && setEditingId(null)}
         />
@@ -197,9 +203,6 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
             <div className="flex items-center gap-1.5">
               <button onClick={() => setAddingSubproject(true)} disabled={busy} className="btn-secondary">
                 Add subproject
-              </button>
-              <button onClick={() => startAdding("billing")} disabled={busy || adding !== null} className="btn-secondary">
-                Add billing period
               </button>
               <button onClick={() => startAdding("other")} disabled={busy || adding !== null} className="btn-primary">
                 Add period
@@ -263,9 +266,6 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
               <div className="flex items-center gap-1.5">
                 <button onClick={() => removeSubproject(sp)} disabled={busy} className="text-xs text-gray-500 hover:text-fault-ink px-1.5 py-1">
                   Remove
-                </button>
-                <button onClick={() => startAdding("billing", sp.id)} disabled={busy || adding !== null} className="btn-secondary">
-                  Add billing period
                 </button>
                 <button onClick={() => startAdding("other", sp.id)} disabled={busy || adding !== null} className="btn-primary">
                   Add period
@@ -413,12 +413,14 @@ function EditRow({
   period,
   busy,
   kindLocked,
+  taken,
   onSave,
   onCancel,
 }: {
   period: JobPeriod;
   busy: boolean;
   kindLocked: boolean;
+  taken: PeriodKind[];
   onSave: (d: Draft) => void;
   onCancel: () => void;
 }) {
@@ -430,6 +432,7 @@ function EditRow({
       onChange={setDraft}
       busy={busy}
       kindLocked={kindLocked}
+      taken={taken}
       submitLabel="Save"
       submitDisabled={!dirty}
       onCancel={onCancel}
@@ -443,6 +446,7 @@ function PeriodForm({
   onChange,
   busy,
   kindLocked = false,
+  taken = [],
   submitLabel,
   submitDisabled = false,
   onSubmit,
@@ -452,6 +456,8 @@ function PeriodForm({
   onChange: (d: Draft) => void;
   busy: boolean;
   kindLocked?: boolean;
+  // Kinds this section already has its one of: they can't be picked.
+  taken?: PeriodKind[];
   submitLabel: string;
   submitDisabled?: boolean;
   onSubmit: () => void;
@@ -481,11 +487,21 @@ function PeriodForm({
             className="input py-2"
           />
         </Field>
-        <Field label="Does" hint={kindLocked ? "The project's only one. Add another before changing it" : kindInfo(draft.kind).hint}>
+        <Field
+          label="Does"
+          hint={
+            kindLocked
+              ? "Every project and subproject has one of these. Change its times instead"
+              : draft.kind === "other" && taken.length > 0
+                ? "There's already a usage and billing period: change their times instead"
+                : kindInfo(draft.kind).hint
+          }
+        >
           <select value={draft.kind} onChange={(e) => set("kind", e.target.value as PeriodKind)} disabled={kindLocked} className="input py-2">
             {PERIOD_KINDS.map((k) => (
-              <option key={k.value} value={k.value}>
+              <option key={k.value} value={k.value} disabled={k.value !== draft.kind && taken.includes(k.value)}>
                 {k.label}
+                {k.value !== draft.kind && taken.includes(k.value) ? " (already set)" : ""}
               </option>
             ))}
           </select>
