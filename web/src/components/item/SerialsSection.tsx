@@ -126,6 +126,7 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
       {selectedSerials.length > 0 && (
         <div className="px-4 pb-2">
           <UnitBulkBar
+            item={item}
             units={selectedSerials}
             unitFor={unitFor}
             onClear={() => setSelected(new Set())}
@@ -134,6 +135,8 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
               Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["serials"] }),
                 queryClient.invalidateQueries({ queryKey: ["availability"] }),
+                queryClient.invalidateQueries({ queryKey: ["repairs"] }),
+                queryClient.invalidateQueries({ queryKey: ["item"] }),
               ])
             }
           />

@@ -184,7 +184,8 @@ function StatusCard({ serial, onSaved }: { serial: Serial; onSaved: (s: Serial) 
         <p className="text-xs text-gray-500 mt-0.5">Only active units count as stock or can be scanned out.</p>
       </div>
       <select value={status} onChange={(e) => setStatus(e.target.value as SerialStatus)} className="input py-1.5">
-        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[]).map((s) => (
+        {/* In repair comes from opening a repair, so it's tracked; it only shows while the unit is in one. */}
+        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[]).filter((s) => s !== "repair" || serial.status === "repair").map((s) => (
           <option key={s} value={s}>
             {SERIAL_STATUS_LABELS[s]}
           </option>

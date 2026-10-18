@@ -130,6 +130,26 @@ export interface Serial extends RecordModel {
   rentmanId: string;
 }
 
+export type RepairStatus = "open" | "in_progress" | "completed" | "written_off";
+
+// A repair job (pb_hooks/lib/repairs.js): one item's broken units, or a
+// quantity of a bulk item, out of service until it's closed.
+export interface Repair extends RecordModel {
+  org: string;
+  number: number;
+  item: string;
+  serials: string[];
+  quantity: number;
+  status: RepairStatus;
+  fault: string;
+  repairer: string;
+  cost: number;
+  dueAt: string;
+  closedAt: string;
+  notes: string;
+  createdBy: string;
+}
+
 export interface ItemComponent extends RecordModel {
   org: string;
   parent: string;
@@ -674,8 +694,12 @@ export interface RentmanImportResult {
   runId: string;
   counts: Record<string, number>;
   errors: { resource: string; rentmanId: string; name: string; message: string }[];
+  // The next page of project lines to import, or null when they're done.
+  next: string | null;
   tookMs: number;
 }
+
+export type RentmanImportStep = "equipment" | "contacts" | "projects" | "lines";
 
 // A job that could be invoiced (GET /api/exports/xero/jobs).
 export interface XeroJob {
@@ -740,6 +764,11 @@ export const api = {
     request<{ deleted: number; archived: number; moved: number }>(`/api/folders/${id}/delete`, json("POST", { contents })),
   setOutOfService: (itemId: string, quantity: number, note?: string) =>
     request<Item>(`/api/items/${itemId}/out-of-service`, json("POST", { quantity, note })),
+  // Repairs: see pb_hooks/routes_repairs.pb.js.
+  openRepair: (body: { item: string; serials?: string[]; quantity?: number; fault: string; repairer?: string; dueAt?: string; notes?: string }) =>
+    request<Repair>("/api/repairs", json("POST", body)),
+  updateRepair: (id: string, body: Partial<Pick<Repair, "fault" | "repairer" | "cost" | "dueAt" | "notes" | "status">>) =>
+    request<Repair>(`/api/repairs/${id}`, json("PATCH", body)),
 
   // Global search across items/units/jobs/contacts/label templates — see
   // pocketbase/pb_hooks/routes_search.pb.js.
@@ -747,7 +776,9 @@ export const api = {
     request<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`, { signal }),
 
   // Imports
-  importRentman: () => request<RentmanImportResult>("/api/import/rentman", json("POST")),
+  // One step of a Rentman import: see runRentmanStep in pb_hooks/lib/imports.js.
+  importRentman: (body: { step: RentmanImportStep; runId?: string; cursor?: string | null; final?: boolean }) =>
+    request<RentmanImportResult>("/api/import/rentman", json("POST", body)),
   importCsv: (kind: "items" | "contacts", rows: Record<string, string>[], dryRun: boolean) =>
     request<CsvImportResult>("/api/import/csv", json("POST", { kind, rows, dryRun })),
   listImportRuns: () => request<ImportRun[]>("/api/import/runs"),

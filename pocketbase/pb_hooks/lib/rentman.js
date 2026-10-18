@@ -57,8 +57,9 @@ function createRentmanClient(token) {
 
   // Rentman caps every list request at 1500 items and cursor-paginates beyond
   // that (next_page_url) — walk every page rather than just the first.
-  function listAll(resource) {
-    let page = rentmanFetch("/" + resource, { limit: 1500 });
+  // fields: optional comma-separated list, to keep big lists quick.
+  function listAll(resource, fields) {
+    let page = rentmanFetch("/" + resource, { limit: 1500, fields: fields });
     const all = page.data.slice();
     while (page.next_page_url) {
       page = rentmanFetch(page.next_page_url);
@@ -67,7 +68,20 @@ function createRentmanClient(token) {
     return all;
   }
 
+  // One page: the first (cursor null) or the one a previous page's `next`
+  // pointed at. Cursors come back from the browser, and the token goes
+  // wherever they point, so only Rentman's own addresses are followed.
+  function page(resource, cursor) {
+    if (cursor && String(cursor).indexOf(BASE_URL.replace(/\/$/, "") + "/" + resource + "?") !== 0) {
+      throw new BadRequestError("That isn't a Rentman page address");
+    }
+    const result = cursor ? rentmanFetch(String(cursor)) : rentmanFetch("/" + resource, { limit: 1500 });
+    return { data: result.data, next: result.next_page_url || null };
+  }
+
   return {
+    listAll: listAll,
+    page: page,
     listAllEquipment: () => listAll("equipment"),
     listAllSerialNumbers: () => listAll("serialnumbers"),
     listAllStockLocations: () => listAll("stocklocations"),

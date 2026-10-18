@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { pb } from "../../lib/pocketbase";
-import { api, type Serial, type SerialStatus } from "../../lib/api";
+import { api, type Item, type Serial, type SerialStatus } from "../../lib/api";
 import { useLocations } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import { fromDateInput } from "../../lib/format";
@@ -14,17 +14,20 @@ import Modal from "../Modal";
 import NumberInput from "../NumberInput";
 import { useToast } from "../ToastProvider";
 import { updateEach } from "./BulkEditModal";
+import NewRepairModal from "../repair/NewRepairModal";
 
 // The units tab's selection bar: the same actions as the inventory list's,
 // for units. Status goes through the status route (it logs the change and
 // the note) rather than a plain update, like on a unit's own page.
 export default function UnitBulkBar({
+  item,
   units,
   unitFor,
   onClear,
   onChanged,
   setSelected,
 }: {
+  item: Item;
   units: Serial[];
   unitFor: (serial: Serial) => LabelUnit;
   onClear: () => void;
@@ -35,7 +38,7 @@ export default function UnitBulkBar({
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { data: locations = [] } = useLocations();
-  const [open, setOpen] = useState<"edit" | "move" | "status" | null>(null);
+  const [open, setOpen] = useState<"edit" | "move" | "repair" | "status" | null>(null);
   const [busy, setBusy] = useState(false);
   const what = `${units.length} unit${units.length === 1 ? "" : "s"}`;
 
@@ -115,9 +118,14 @@ export default function UnitBulkBar({
         onDone={onClear}
       />
       {can("units.flag") && (
-        <button onClick={() => setOpen("status")} disabled={busy} className="btn-secondary">
-          Status
-        </button>
+        <>
+          <button onClick={() => setOpen("repair")} disabled={busy} className="btn-secondary">
+            Repair
+          </button>
+          <button onClick={() => setOpen("status")} disabled={busy} className="btn-secondary">
+            Status
+          </button>
+        </>
       )}
       {can("units.delete") && (
         <button onClick={remove} disabled={busy} className="btn-secondary hover:text-fault-ink">
@@ -148,6 +156,19 @@ export default function UnitBulkBar({
               `Moved ${what} to ${locations.find((l) => l.id === location)?.name ?? "no location"}`,
             )
           }
+        />
+      )}
+      {open === "repair" && (
+        <NewRepairModal
+          item={item}
+          serials={units.filter((u) => u.status === "active").map((u) => u.id)}
+          onClose={() => setOpen(null)}
+          onCreated={async (repair) => {
+            setOpen(null);
+            await onChanged();
+            onClear();
+            showToast("success", `Opened repair R${repair.number}`);
+          }}
         />
       )}
       {open === "status" && <StatusModal what={what} busy={busy} onClose={() => setOpen(null)} onApply={setStatus} />}
@@ -298,16 +319,19 @@ function StatusModal({
   onClose: () => void;
   onApply: (status: SerialStatus, note: string) => void;
 }) {
-  const [status, setStatus] = useState<SerialStatus>("repair");
+  const [status, setStatus] = useState<SerialStatus>("lost");
   const [note, setNote] = useState("");
   return (
     <Modal title={`Set status of ${what}`} onClose={busy ? () => {} : onClose}>
       <select value={status} onChange={(e) => setStatus(e.target.value as SerialStatus)} className="input py-1.5">
-        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[]).map((s) => (
-          <option key={s} value={s}>
-            {SERIAL_STATUS_LABELS[s]}
-          </option>
-        ))}
+        {/* In repair comes from opening a repair (the Repair button), so it's tracked. */}
+        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[])
+          .filter((s) => s !== "repair")
+          .map((s) => (
+            <option key={s} value={s}>
+              {SERIAL_STATUS_LABELS[s]}
+            </option>
+          ))}
       </select>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's wrong? (optional)" className="input py-1.5" />
       <div className="flex items-center gap-2">

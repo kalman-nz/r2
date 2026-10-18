@@ -10,6 +10,8 @@ import QuoteView from "./pages/QuoteView";
 import PackingList from "./pages/PackingList";
 import ItemsList from "./pages/ItemsList";
 import ItemDetail from "./pages/ItemDetail";
+import RepairsList from "./pages/RepairsList";
+import RepairDetail from "./pages/RepairDetail";
 import SerialDetail from "./pages/SerialDetail";
 import { ContactDetail, ContactsList, VenueDetail, VenuesList } from "./pages/Directory";
 import SettingsPage, { useSettingsAccess } from "./pages/SettingsPage";
@@ -47,6 +49,11 @@ const icons = {
     <Icon>
       <rect x="3" y="4" width="18" height="17" rx="2" />
       <path d="M8 2v4M16 2v4M3 10h18" />
+    </Icon>
+  ),
+  repairs: (
+    <Icon>
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
     </Icon>
   ),
   inventory: (
@@ -283,6 +290,7 @@ function AppShell() {
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
                 {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Check in & out" />}
+                <NavItem to="/repairs" icon={icons.repairs} label="Repairs" />
                 {can("labels.print") && <NavItem to="/label-printing" icon={icons.label} label="Label printing" />}
               </NavSection>
               <NavSection title="Relations">
@@ -348,6 +356,8 @@ function AppShell() {
                   <Route path="/inventory" element={<ItemsList />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />
                   <Route path="/assets/:id" element={<SerialDetail />} />
+                  <Route path="/repairs" element={<RepairsList />} />
+                  <Route path="/repairs/:id" element={<RepairDetail />} />
                   <Route path="/contacts" element={<ContactsList />} />
                   <Route path="/contacts/:id" element={<ContactDetail />} />
                   <Route path="/locations" element={<VenuesList />} />
