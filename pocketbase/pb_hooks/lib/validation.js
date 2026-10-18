@@ -183,6 +183,23 @@ function validatePeriod(app, record) {
   const start = toMs(record.getString("start"));
   const end = toMs(record.getString("end"));
   if (!(start < end)) throw new BadRequestError("A period has to end after it starts");
+
+  // A project and each subproject have exactly one usage and one billing
+  // period. Checked when one is added or turned into either, so projects
+  // from before the rule with more than one can still be edited.
+  const kind = record.getString("kind");
+  const becomes = record.isNew() || record.original().getString("kind") !== kind || record.original().getString("subproject") !== record.getString("subproject");
+  if ((kind === "usage" || kind === "billing") && becomes) {
+    // Compared here rather than in the filter: an empty subproject doesn't
+    // match a bound "" parameter there. A job only has a few periods.
+    const sub = record.getString("subproject");
+    const others = app
+      .findRecordsByFilter("job_periods", "job = {:job}", "", 0, 0, { job: record.getString("job") })
+      .filter((p) => p.id !== record.id && p.getString("kind") === kind && p.getString("subproject") === sub);
+    if (others.length > 0) {
+      throw new BadRequestError((record.getString("subproject") ? "This subproject" : "This project") + " already has its " + kind + " period: change its times instead");
+    }
+  }
 }
 
 function validateMembership(app, record) {
