@@ -246,6 +246,42 @@ def group_lines(lines):
     return groups
 
 
+def render_groups(doc, table, lines):
+    """Lines under their quote headings, auto-added lines under their parent."""
+    for group in group_lines(lines):
+        if group["name"]:
+            subtotal = sum(((l.get("amount") or {}).get("net") or 0) for l in group["lines"])
+            # Keep a heading with at least its first line.
+            doc.ensure_space(17, table.header)
+            table.row(
+                {"desc": {"text": group["name"], "semibold": True}, "amount": {"text": money(subtotal), "color": MUTED, "size": 8.5}},
+                padding=0.6,
+                pad_top=3,
+                rule=False,
+            )
+        for line in group["lines"]:
+            child = bool(line.get("parentLine"))
+            free_child = child and not line.get("unitPrice")
+            unit = "incl." if free_child else money(line.get("unitPrice"))
+            if not free_child:
+                unit += MODE_SUFFIX.get(line.get("priceMode"), "")
+            amount = (line.get("amount") or {}).get("net") or 0
+            table.row(
+                {
+                    "desc": {
+                        "text": ("– " if child else "") + (line.get("name") or ""),
+                        "indent": 5 if child else 0,
+                        "color": MUTED if child else INK,
+                        "sub": line.get("description") or "",
+                    },
+                    "qty": {"text": number(line.get("quantity")), "color": MUTED if child else INK},
+                    "rate": {"text": unit, "color": MUTED if child else INK},
+                    "disc": {"text": f"{number(line.get('discountPct'))}%" if line.get("discountPct") else ""},
+                    "amount": {"text": "" if free_child else money(amount), "color": MUTED if child else INK},
+                }
+            )
+
+
 def render_quote(data, tz):
     s = data["snapshot"]
     business = s.get("business") or {}
@@ -314,38 +350,33 @@ def render_quote(data, tz):
     # Lines.
     table = Table(doc, [("desc", "Description", 88, "L"), ("qty", "Qty", 14, "R"), ("rate", "Rate", 36, "R"), ("disc", "Disc", 14, "R"), ("amount", "Amount", 28, "R")])
     table.header()
-    for group in group_lines(s.get("lines") or []):
-        if group["name"]:
-            subtotal = sum(((l.get("amount") or {}).get("net") or 0) for l in group["lines"])
-            # Keep a heading with at least its first line.
-            doc.ensure_space(17, table.header)
-            table.row(
-                {"desc": {"text": group["name"], "semibold": True}, "amount": {"text": money(subtotal), "color": MUTED, "size": 8.5}},
-                padding=0.6,
-                pad_top=3,
-                rule=False,
-            )
-        for line in group["lines"]:
-            child = bool(line.get("parentLine"))
-            free_child = child and not line.get("unitPrice")
-            unit = "incl." if free_child else money(line.get("unitPrice"))
-            if not free_child:
-                unit += MODE_SUFFIX.get(line.get("priceMode"), "")
-            amount = (line.get("amount") or {}).get("net") or 0
+    lines = s.get("lines") or []
+    # The main project's lines, then each subproject's under its own heading
+    # with its dates and charge (quotes from before subprojects have none).
+    subprojects = [sp for sp in (s.get("subprojects") or []) if any(l.get("subproject") == sp.get("id") for l in lines)]
+    known = {sp.get("id") for sp in subprojects}
+    sections = [(None, [l for l in lines if l.get("subproject") not in known])]
+    sections += [(sp, [l for l in lines if l.get("subproject") == sp.get("id")]) for sp in subprojects]
+
+    def charged(days, factor):
+        return f"{days} day{'s' if days != 1 else ''} at {number(factor)}× the day rate"
+
+    for sp, section_lines in sections:
+        if sp:
+            doc.ensure_space(22, table.header)
             table.row(
                 {
                     "desc": {
-                        "text": ("– " if child else "") + (line.get("name") or ""),
-                        "indent": 5 if child else 0,
-                        "color": MUTED if child else INK,
-                        "sub": line.get("description") or "",
+                        "text": sp.get("name") or "",
+                        "semibold": True,
+                        "sub": f"{fmt_range(sp.get('billingStart'), sp.get('billingEnd'), tz)} · charged {charged(sp.get('days', 1), sp.get('factor', 1))}",
                     },
-                    "qty": {"text": number(line.get("quantity")), "color": MUTED if child else INK},
-                    "rate": {"text": unit, "color": MUTED if child else INK},
-                    "disc": {"text": f"{number(line.get('discountPct'))}%" if line.get("discountPct") else ""},
-                    "amount": {"text": "" if free_child else money(amount), "color": MUTED if child else INK},
-                }
+                    "amount": {"text": money(sp.get("subtotal") or 0), "semibold": True},
+                },
+                padding=0.6,
+                pad_top=6,
             )
+        render_groups(doc, table, section_lines)
 
     # Totals, kept together on one page with the pricing note beside them.
     rows_before_total = 2 if totals.get("jobDiscount") else 1
@@ -353,7 +384,12 @@ def render_quote(data, tz):
     y = doc.get_y() + 4
     days = pricing.get("days", 1)
     note = (
-        f"Equipment rates are per day. This hire is charged as {days} day{'s' if days != 1 else ''} "
+        (
+            f"Equipment rates are per day. The main project is charged as {charged(days, pricing.get('factor', 1))}; "
+            "each part below it as shown with it. Prices are in NZD."
+        )
+        if subprojects
+        else f"Equipment rates are per day. This hire is charged as {days} day{'s' if days != 1 else ''} "
         f"at {number(pricing.get('factor', 1))}× the day rate. Prices are in NZD."
     )
     doc.text_block(MARGIN, y, 92, note, size=8, color=MUTED, line=3.8)

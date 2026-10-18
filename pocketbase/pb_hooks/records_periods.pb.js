@@ -12,7 +12,7 @@ onRecordValidate((e) => {
 // Every project keeps at least one usage and one billing period.
 onRecordUpdateRequest((e) => {
   const { guardRequired } = require(`${__hooks}/lib/periods.js`);
-  guardRequired(e.app, e.record, e.record.getString("kind"));
+  guardRequired(e.app, e.record, e.record.getString("kind"), e.record.getString("subproject"));
   e.next();
 }, "job_periods");
 

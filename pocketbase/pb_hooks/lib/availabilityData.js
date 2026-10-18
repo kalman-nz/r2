@@ -46,15 +46,20 @@ function loadStock(app, org, globalBufferHours) {
 // allowing for the longest buffer. Kit parent lines aren't bookings — their
 // component lines are.
 function loadBookings(app, org, fromMs, untilMs, maxBufferMs) {
-  const rows = arrayOf(new DynamicModel({ item: "", qty: -0, job: "", status: "", prepAt: "", returnAt: "" }));
+  // A line on a subproject is booked over the subproject's own window, the
+  // rest over the main project's.
+  const rows = arrayOf(new DynamicModel({ item: "", qty: -0, job: "", section: "", status: "", prepAt: "", returnAt: "" }));
   app
     .db()
     .newQuery(
-      "SELECT jl.item AS item, jl.quantity AS qty, j.id AS job, j.status AS status, j.prepAt AS prepAt, j.returnAt AS returnAt " +
+      "SELECT item, qty, job, section, status, prepAt, returnAt FROM (" +
+        "SELECT jl.item AS item, jl.quantity AS qty, j.id AS job, COALESCE(sp.id, '') AS section, j.status AS status, " +
+        "COALESCE(sp.prepAt, j.prepAt) AS prepAt, COALESCE(sp.returnAt, j.returnAt) AS returnAt " +
         "FROM job_lines jl JOIN jobs j ON j.id = jl.job JOIN items i ON i.id = jl.item " +
+        "LEFT JOIN subprojects sp ON sp.id = jl.subproject AND jl.subproject != '' " +
         "WHERE j.org = {:org} AND i.kind = 'item' AND j.status IN " +
         RESERVING_SQL +
-        " AND j.prepAt < {:to} AND j.returnAt > {:from}",
+        ") WHERE prepAt < {:to} AND returnAt > {:from}",
     )
     .bind({ org: org, to: toPbDate(untilMs), from: toPbDate(fromMs - maxBufferMs) })
     .all(rows);
@@ -64,6 +69,7 @@ function loadBookings(app, org, fromMs, untilMs, maxBufferMs) {
     start: toMs(r.prepAt),
     end: toMs(r.returnAt),
     jobId: r.job,
+    section: r.section,
     status: r.status,
   }));
 }
@@ -164,15 +170,25 @@ function itemTimeline(app, item, fromMs, untilMs, globalBufferHours) {
   };
 }
 
-// Shortages for one job's physical items. needs: { [itemId]: qty }.
-function jobAvailability(app, org, jobId, startMs, endMs, needs, globalBufferHours) {
+// Shortages for each part of a job. sections: [{ section ("" for the main
+// project, else a subproject id), start, end, needs }]. Returns
+// { [section]: { [itemId]: shortage } }; each section counts the job's
+// other sections against it (see engine.jobShortages).
+function jobAvailability(app, org, jobId, sections, globalBufferHours) {
+  const result = {};
+  if (sections.length === 0) return result;
   const stock = loadStock(app, org, globalBufferHours);
-  const bookings = loadBookings(app, org, startMs, endMs + stock.maxBufferMs, stock.maxBufferMs);
-  return engine.jobShortages({ id: jobId, start: startMs, end: endMs }, needs, {
-    stockByItem: stock.stockByItem,
-    bufferMsByItem: stock.bufferMsByItem,
-    bookings: bookings,
-  });
+  const from = Math.min(...sections.map((s) => s.start));
+  const to = Math.max(...sections.map((s) => s.end));
+  const bookings = loadBookings(app, org, from, to + stock.maxBufferMs, stock.maxBufferMs);
+  for (const s of sections) {
+    result[s.section] = engine.jobShortages({ id: jobId, start: s.start, end: s.end, section: s.section }, s.needs, {
+      stockByItem: stock.stockByItem,
+      bufferMsByItem: stock.bufferMsByItem,
+      bookings: bookings,
+    });
+  }
+  return result;
 }
 
 module.exports = { availabilityForWindow, itemTimeline, jobAvailability };

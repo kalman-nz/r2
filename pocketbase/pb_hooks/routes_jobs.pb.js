@@ -37,6 +37,22 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
+// A subproject: part of the project with its own schedule (lib/jobs.js
+// addSubproject). Renaming and deleting go through the collection.
+routerAdd(
+  "POST",
+  "/api/jobs/{id}/subprojects",
+  (e) => {
+    const { addSubproject, buildSummary, requireJob } = require(`${__hooks}/lib/jobs.js`);
+    const { requireRecordOrg, summaryAccess } = require(`${__hooks}/lib/orgs.js`);
+    const id = e.request.pathValue("id");
+    const ctx = requireRecordOrg(e, requireJob($app, id), "jobs.edit");
+    addSubproject(id, e.requestInfo().body || {});
+    return e.json(200, buildSummary($app, id, summaryAccess(ctx)));
+  },
+  $apis.requireAuth("users"),
+);
+
 routerAdd(
   "PATCH",
   "/api/job-lines/{id}",

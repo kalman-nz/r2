@@ -77,16 +77,21 @@ function minFree(segments) {
 }
 
 // Turns bookings + stock changes for one item into freeSegments() deltas.
-// bookings: [{ itemId, qty, start, end, jobId, status }] where start/end are
-// the job's own prep/return times; bufferMs is added to every booking's end
-// here rather than by the caller, so it can't be applied twice.
+// bookings: [{ itemId, qty, start, end, jobId, section, status }] where
+// start/end are the prep/return times of the part of the job the line is on
+// (section: its subproject, "" for the main project); bufferMs is added to
+// every booking's end here rather than by the caller, so it can't be applied
+// twice. excludeJobId leaves out the job's bookings, all of them, or only
+// one section's when excludeSection is given.
 function deltasFor(itemId, opts) {
   const bufferMs = opts.bufferMs || 0;
   const firmOnly = opts.firmOnly === true;
   const deltas = [];
   for (const b of opts.bookings || []) {
     if (b.itemId !== itemId) continue;
-    if (opts.excludeJobId && b.jobId === opts.excludeJobId) continue;
+    if (opts.excludeJobId && b.jobId === opts.excludeJobId) {
+      if (opts.excludeSection === undefined || (b.section || "") === opts.excludeSection) continue;
+    }
     if (RESERVING_STATUSES.indexOf(b.status) === -1) continue;
     if (firmOnly && FIRM_STATUSES.indexOf(b.status) === -1) continue;
     deltas.push({ start: b.start, end: b.end + bufferMs, qty: -b.qty });
@@ -99,7 +104,7 @@ function deltasFor(itemId, opts) {
 }
 
 // Free units of one physical item across [from, to).
-// opts: { stock, bufferMs, bookings, stockChanges, excludeJobId }
+// opts: { stock, bufferMs, bookings, stockChanges, excludeJobId, excludeSection }
 // Returns { free, freeFirm, segments } — free counts every reserving
 // booking, freeFirm only confirmed/out ones.
 function itemAvailability(itemId, from, to, opts) {
@@ -161,7 +166,10 @@ function kitSegments(components, from, to) {
 // of it, buffer included — another job prepping during our turnaround is a
 // real clash — and the job's own bookings are excluded so it isn't counted
 // against itself.
-// job: { id, start, end }; needs: { [itemId]: qty }
+// job: { id, start, end, section? }; needs: { [itemId]: qty }. With a
+// section (a subproject's id, "" for the main project) only that section's
+// own bookings are left out, so the job's other sections count against it:
+// a subproject on the last show day competes with the main rig for stock.
 // opts: { stockByItem, bufferMsByItem, bookings, stockChanges }
 // Returns { [itemId]: { needed, free, freeFirm, short, shortFirm } } where
 // short is how many units can't be covered (0 = fine) and shortFirm is the
@@ -177,6 +185,7 @@ function jobShortages(job, needs, opts) {
       bookings: opts.bookings,
       stockChanges: opts.stockChanges,
       excludeJobId: job.id,
+      excludeSection: job.section,
     });
     result[itemId] = {
       needed: needed,

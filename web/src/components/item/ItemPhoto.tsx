@@ -1,15 +1,19 @@
 import { useRef, useState } from "react";
 import { pb } from "../../lib/pocketbase";
-import type { Item } from "../../lib/api";
+import { api, type Item } from "../../lib/api";
 import { errorText } from "../../lib/errors";
+import { useConfirm } from "../ConfirmProvider";
 import { useToast } from "../ToastProvider";
 
 // The item's photo at the top of its page. Click to add or change it;
-// remove it from the corner. Saves straight away.
+// remove it from the corner; "Find photo" searches online and has the
+// server's local AI model pick the best match. Saves straight away.
 export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canEdit: boolean; onSaved: (item: Item) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [finding, setFinding] = useState(false);
   const { showToast } = useToast();
+  const confirm = useConfirm();
 
   async function upload(file: File | null | undefined) {
     if (!file) return;
@@ -37,6 +41,35 @@ export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canE
     }
   }
 
+  async function find() {
+    if (item.photo) {
+      const ok = await confirm({
+        title: "Find a new photo",
+        message: "Search online for a photo of this item and replace the current one?",
+        confirmLabel: "Find photo",
+      });
+      if (!ok) return;
+    }
+    setBusy(true);
+    setFinding(true);
+    try {
+      const { item: updated, found } = await api.findItemPhoto(item.id);
+      onSaved(updated);
+      let site = found.source;
+      try {
+        site = new URL(found.source).hostname.replace(/^www\./, "");
+      } catch {
+        // not a URL — show it as is
+      }
+      showToast("success", `Photo added from ${site} (searched "${found.query}")`);
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setBusy(false);
+      setFinding(false);
+    }
+  }
+
   const frame = "relative w-24 h-24 sm:w-28 sm:h-28 shrink-0 rounded-lg overflow-hidden border border-gray-200 bg-white";
   return (
     <div className="group relative shrink-0">
@@ -48,7 +81,7 @@ export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canE
             <span className="w-full h-full flex items-center justify-center text-xs text-gray-400 bg-gray-50">Add photo</span>
           )}
           <span className="absolute inset-x-0 bottom-0 py-1 text-[11px] font-medium text-white bg-carbon/70 opacity-0 group-hover:opacity-100 transition-opacity">
-            {busy ? "Saving…" : item.photo ? "Change" : "Upload"}
+            {finding ? "Searching…" : busy ? "Saving…" : item.photo ? "Change" : "Upload"}
           </span>
         </button>
       ) : (
@@ -65,6 +98,16 @@ export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canE
           title="Remove photo"
         >
           ×
+        </button>
+      )}
+      {canEdit && (
+        <button
+          onClick={find}
+          disabled={busy}
+          className="mt-1 block w-full text-center text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50"
+          title="Search online for a photo of this item; the AI model picks the best match"
+        >
+          {finding ? "Searching…" : "Find photo"}
         </button>
       )}
       <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(e) => upload(e.target.files?.[0])} />
