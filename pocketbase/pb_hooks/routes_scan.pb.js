@@ -94,6 +94,12 @@ routerAdd(
     const body = e.requestInfo().body || {};
     const qty = Number(body.quantity);
     if (!Number.isInteger(qty) || qty < 0) throw new BadRequestError("Quantity must be a whole number, 0 or more");
+    // Repairs keep their kit out of service until they're closed.
+    let repairing = 0;
+    for (const r of $app.findRecordsByFilter("repairs", "item = {:item} && (status = 'open' || status = 'in_progress')", "", 0, 0, { item: item.id })) {
+      repairing += r.getInt("quantity");
+    }
+    if (qty < repairing) throw new BadRequestError(repairing + " are on open repairs: close those to put them back in service");
     const previous = item.getInt("outOfServiceQty");
     item.set("outOfServiceQty", qty);
     $app.save(item);

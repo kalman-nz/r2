@@ -82,6 +82,11 @@ function summarizeLogs(rows, opts) {
       summary = "Scanned " + (details.message || details.code) + " · " + jobLabel(details.job);
     } else if (entry.type === "serial_status") {
       summary = "Flagged " + (details.barcode || details.serial) + " as " + details.to + (details.note ? ': "' + details.note + '"' : "");
+    } else if (entry.type === "repair_open") {
+      summary = "Opened repair R" + details.number + ": " + details.fault;
+    } else if (entry.type === "repair_status") {
+      const label = { open: "reported", in_progress: "being repaired", completed: "fixed", written_off: "written off" };
+      summary = "Marked repair R" + details.number + " " + (label[details.to] || details.to);
     } else if (entry.type === "item_out_of_service") {
       summary = "Set " + details.name + " out of service: " + details.to + (details.note ? ' ("' + details.note + '")' : "");
     } else if (entry.type === "import_rentman") {

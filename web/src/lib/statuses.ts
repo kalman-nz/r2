@@ -1,4 +1,4 @@
-import type { JobStatus, PeriodKind, SerialStatus } from "./api";
+import type { JobStatus, PeriodKind, RepairStatus, SerialStatus } from "./api";
 
 export const JOB_STATUSES: { value: JobStatus; label: string; hint: string }[] = [
   { value: "enquiry", label: "Enquiry", hint: "Price check only — holds no stock" },
@@ -7,6 +7,14 @@ export const JOB_STATUSES: { value: JobStatus; label: string; hint: string }[] =
   { value: "out", label: "Out", hint: "Kit has left the warehouse" },
   { value: "returned", label: "Returned", hint: "Done — stock released" },
   { value: "cancelled", label: "Cancelled", hint: "Stock released" },
+];
+
+// open and in_progress keep the kit out of service; the other two close it.
+export const REPAIR_STATUSES: { value: RepairStatus; label: string; hint: string }[] = [
+  { value: "open", label: "Reported", hint: "Out of service, waiting to be looked at" },
+  { value: "in_progress", label: "Being repaired", hint: "Out of service, being worked on" },
+  { value: "completed", label: "Fixed", hint: "Back in service" },
+  { value: "written_off", label: "Written off", hint: "Beyond repair: units retired, stock reduced" },
 ];
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {

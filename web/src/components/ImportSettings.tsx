@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CsvImportResult, type RentmanImportResult } from "../lib/api";
+import { api, type CsvImportResult, type RentmanImportResult, type RentmanImportStep } from "../lib/api";
 import { normaliseHeader, parseCsv } from "../lib/csv";
 import { formatDateTime } from "../lib/format";
 import { errorText } from "../lib/errors";
@@ -58,7 +58,9 @@ function RentmanImport() {
   const [token, setToken] = useState("");
   const [savingToken, setSavingToken] = useState(false);
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState("");
   const [result, setResult] = useState<RentmanImportResult | null>(null);
+  const [what, setWhat] = useState({ equipment: true, contacts: false, projects: false });
 
   async function saveToken(value: string) {
     setSavingToken(true);
@@ -74,21 +76,48 @@ function RentmanImport() {
     }
   }
 
+  // Projects need their clients and locations, so they bring contacts with them.
+  const steps: RentmanImportStep[] = [
+    ...(what.equipment ? (["equipment"] as const) : []),
+    ...(what.contacts || what.projects ? (["contacts"] as const) : []),
+    ...(what.projects ? (["projects", "lines"] as const) : []),
+  ];
+  const STEP_LABEL: Record<RentmanImportStep, string> = {
+    equipment: "equipment",
+    contacts: "contacts and locations",
+    projects: "projects",
+    lines: "project equipment",
+  };
+
+  // A step at a time (project equipment a page at a time), so no one
+  // request runs long. Everything goes in the same import run.
   async function runImport() {
+    const parts = [what.equipment && "equipment, serial numbers, folders and stock locations", (what.contacts || what.projects) && "contacts and locations", what.projects && "projects with their equipment"].filter(Boolean);
     const ok = await confirm({
       title: "Import from Rentman",
-      message:
-        "Copy equipment, serial numbers, folders and stock locations from Rentman into R2? Running it again later updates what it imported before (overwriting edits made in R2 to those fields) and never deletes anything.",
+      message: `Copy ${parts.join(", ")} from Rentman into R2? Running it again later updates what it imported before (overwriting edits made in R2 to those fields) and never deletes anything.`,
       confirmLabel: "Import",
     });
     if (!ok) return;
     setRunning(true);
     setResult(null);
+    const startedAt = Date.now();
+    let runId: string | undefined;
     try {
-      const r = await api.importRentman();
-      setResult(r);
+      let last: RentmanImportResult | null = null;
+      for (const [i, step] of steps.entries()) {
+        const final = i === steps.length - 1;
+        let cursor: string | null = null;
+        do {
+          setProgress(`Importing ${STEP_LABEL[step]}…${step === "lines" && last?.counts.lines ? ` ${last.counts.lines.toLocaleString()} lines so far` : ""}`);
+          last = await api.importRentman({ step, runId, cursor, final });
+          runId = last.runId;
+          cursor = last.next;
+        } while (cursor);
+      }
+      if (last) setResult({ ...last, tookMs: Date.now() - startedAt });
       await Promise.all(
-        ["items", "categories", "locations", "availability", "customFields", "import-runs"].map((key) =>
+        ["items", "categories", "locations", "availability", "customFields", "import-runs", "contacts", "venues", "jobs"].map((key) =>
           queryClient.invalidateQueries({ queryKey: [key] }),
         ),
       );
@@ -98,6 +127,7 @@ function RentmanImport() {
       await queryClient.invalidateQueries({ queryKey: ["import-runs"] });
     } finally {
       setRunning(false);
+      setProgress("");
     }
   }
 
@@ -106,8 +136,8 @@ function RentmanImport() {
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Import from Rentman</h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          Pulls your equipment, serial numbers, folders (as categories), stock locations and custom field names out of your own
-          Rentman account. Contacts and projects aren't imported from Rentman yet — export contacts to CSV and use the import below.
+          Pulls your equipment, contacts and projects out of your own Rentman account. Projects come with their equipment lines,
+          priced as Rentman priced them. Crew, transport and other costs stay in Rentman.
         </p>
       </div>
       <div className="card p-4 flex flex-col gap-4">
@@ -138,15 +168,48 @@ function RentmanImport() {
             Create one in Rentman's API settings. It's stored on the server and never shown in the browser again.
           </p>
         </div>
-        <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
-          <button onClick={runImport} disabled={running || !settings?.rentmanApiTokenSet} className="btn-primary py-2">
-            {running ? "Importing… (this can take a few minutes)" : "Import now"}
+        <div className="flex flex-col gap-2 pt-3 border-t border-gray-100 text-sm">
+          <span className="text-gray-500">What to import</span>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={what.equipment} onChange={(e) => setWhat((w) => ({ ...w, equipment: e.target.checked }))} disabled={running} className="mt-0.5" />
+            <span>
+              Equipment
+              <span className="block text-xs text-gray-500">Items, serial numbers, folders, stock locations and custom fields</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={what.contacts || what.projects}
+              onChange={(e) => setWhat((w) => ({ ...w, contacts: e.target.checked }))}
+              disabled={running || what.projects}
+              className="mt-0.5"
+            />
+            <span>
+              Contacts and locations
+              <span className="block text-xs text-gray-500">Clients become contacts; the places projects happen become locations</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={what.projects} onChange={(e) => setWhat((w) => ({ ...w, projects: e.target.checked }))} disabled={running} className="mt-0.5" />
+            <span>
+              Projects
+              <span className="block text-xs text-gray-500">
+                With their dates, status and equipment. Brings contacts too. Import equipment first, or its lines come in as plain text lines.
+              </span>
+            </span>
+          </label>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={runImport} disabled={running || !settings?.rentmanApiTokenSet || steps.length === 0} className="btn-primary py-2">
+            {running ? "Importing…" : "Import now"}
           </button>
+          {running && <span className="text-sm text-gray-500">{progress}</span>}
         </div>
         {result && (
           <div className="text-sm flex flex-col gap-2">
             <p className="text-gray-700">
-              Imported {Object.entries(result.counts).map(([k, v]) => `${v} ${k}`).join(", ")} in {(result.tookMs / 1000).toFixed(1)}s.
+              Imported {Object.entries(result.counts).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(", ")} in {(result.tookMs / 1000).toFixed(0)}s.
             </p>
             {result.errors.length > 0 && (
               <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-amber-800 max-h-48 overflow-y-auto">

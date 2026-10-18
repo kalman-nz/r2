@@ -22,6 +22,8 @@ import NumberInput from "../components/NumberInput";
 import { useToast } from "../components/ToastProvider";
 import { useFollowOrg } from "../lib/org";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
+import NewRepairModal from "../components/repair/NewRepairModal";
+import { invalidateRepairs } from "./RepairsList";
 
 type Tab = "general" | "units" | "contents" | "accessories" | "history";
 // Every tab any item can have; each item shows the ones that fit it.
@@ -66,6 +68,7 @@ export default function ItemDetail() {
   const { data: projects } = useItemHistory(isNew ? "" : id);
   const [requestedTab, openTab] = useTab(ALL_TABS);
   const [archiving, setArchiving] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const { showToast } = useToast();
   const confirm = useConfirm();
 
@@ -203,6 +206,11 @@ export default function ItemDetail() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {item.kind === "item" && can("units.flag") && (
+            <button onClick={() => setRepairing(true)} className="btn-secondary">
+              Repair
+            </button>
+          )}
           {can("items.edit") && !item.archived && (
             <button onClick={() => setArchived(true)} disabled={archiving} className="btn-secondary">
               Archive
@@ -234,6 +242,18 @@ export default function ItemDetail() {
             </button>
           )}
         </div>
+      )}
+
+      {repairing && (
+        <NewRepairModal
+          item={item}
+          onClose={() => setRepairing(false)}
+          onCreated={async (repair) => {
+            setRepairing(false);
+            await invalidateRepairs(queryClient);
+            showToast("success", `Opened repair R${repair.number}`);
+          }}
+        />
       )}
 
       <TabBar label="Item sections" tabs={tabs} current={tab} onOpen={openTab} />
