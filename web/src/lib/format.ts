@@ -34,6 +34,14 @@ export function formatDateTime(value: string | null | undefined): string {
     : "—";
 }
 
+// The same with the year, for lists that span years ("Tue 3 Mar 2026, 8:00 am").
+export function formatDateTimeYear(value: string | null | undefined): string {
+  const d = parseDate(value);
+  return d
+    ? d.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })
+    : "—";
+}
+
 export function formatTime(value: string | null | undefined): string {
   const d = parseDate(value);
   return d ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";

@@ -6,6 +6,7 @@ import QuickCreateSelect from "../QuickCreateSelect";
 import { JOB_STATUSES } from "../../lib/statuses";
 import NumberInput from "../NumberInput";
 import { useCan } from "../../lib/roles";
+import { JobStatusBadge } from "../StatusBadge";
 
 export default function JobFields({
   draft,
@@ -23,6 +24,10 @@ export default function JobFields({
   const { data: contacts = [] } = useContacts();
   const { data: venues = [] } = useVenues();
   const set = <K extends keyof JobDraft>(key: K, value: JobDraft[K]) => onChange({ ...draft, [key]: value });
+  // Out of edit mode the choices read as plain values, not disabled dropdowns.
+  const plain = (value: string | undefined, empty: string) => (
+    <span className={`py-2 text-sm ${value ? "text-gray-900" : "text-gray-400"}`}>{value || empty}</span>
+  );
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
@@ -36,43 +41,54 @@ export default function JobFields({
         />
       </Field>
       <Field label="Client">
-        <QuickCreateSelect
-          collection="contacts"
-          value={draft.client}
-          onChange={(id) => set("client", id)}
-          options={contacts}
-          disabled={readOnly}
-          canCreate={can("contacts.create")}
-          placeholder="No client"
-        />
+        {readOnly ? (
+          plain(contacts.find((c) => c.id === draft.client)?.name, "No client")
+        ) : (
+          <QuickCreateSelect
+            collection="contacts"
+            value={draft.client}
+            onChange={(id) => set("client", id)}
+            options={contacts}
+            canCreate={can("contacts.create")}
+            placeholder="No client"
+          />
+        )}
       </Field>
       <Field label="Location">
-        <QuickCreateSelect
-          collection="venues"
-          value={draft.venue}
-          onChange={(id) => set("venue", id)}
-          options={venues}
-          disabled={readOnly}
-          canCreate={can("venues.create")}
-          placeholder="No location"
-        />
+        {readOnly ? (
+          plain(venues.find((v) => v.id === draft.venue)?.name, "No location")
+        ) : (
+          <QuickCreateSelect
+            collection="venues"
+            value={draft.venue}
+            onChange={(id) => set("venue", id)}
+            options={venues}
+            canCreate={can("venues.create")}
+            placeholder="No location"
+          />
+        )}
       </Field>
       <Field label="Status" hint={JOB_STATUSES.find((s) => s.value === draft.status)?.hint}>
-        <select
-          value={draft.status}
-          onChange={(e) => set("status", e.target.value as JobStatus)}
-          disabled={readOnly}
-          className="input py-2"
-        >
-          {JOB_STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+        {readOnly ? (
+          <span className="py-2">
+            <JobStatusBadge status={draft.status} />
+          </span>
+        ) : (
+          <select value={draft.status} onChange={(e) => set("status", e.target.value as JobStatus)} className="input py-2">
+            {JOB_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        )}
       </Field>
       <Field label="Client reference" hint="Their PO number, if they have one">
-        <input value={draft.reference} onChange={(e) => set("reference", e.target.value)} disabled={readOnly} className="input py-2" />
+        {readOnly ? (
+          plain(draft.reference, "None")
+        ) : (
+          <input value={draft.reference} onChange={(e) => set("reference", e.target.value)} className="input py-2" />
+        )}
       </Field>
       {withDates && (
         <>

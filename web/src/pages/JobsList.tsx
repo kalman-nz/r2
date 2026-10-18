@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import type { Contact, Job, Venue } from "../lib/api";
-import { formatDateTime, parseDate } from "../lib/format";
+import { formatDateTimeYear, parseDate } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge } from "../components/StatusBadge";
 import { JOB_STATUSES, type ProjectView } from "../lib/statuses";
@@ -114,12 +114,12 @@ export default function JobsList() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-gray-600 hidden md:table-cell">{job.expand?.venue?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDateTime(job.startAt)}</td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDateTimeYear(job.startAt)}</td>
                   <td
                     className={`px-3 py-2 whitespace-nowrap hidden sm:table-cell ${overdue ? "text-fault-ink font-medium" : "text-gray-600"}`}
                     title={overdue ? "Overdue back" : undefined}
                   >
-                    {formatDateTime(job.endAt)}
+                    {formatDateTimeYear(job.endAt)}
                   </td>
                   <td className="px-3 py-2">
                     <JobStatusBadge status={job.status} />
