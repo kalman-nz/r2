@@ -11,8 +11,22 @@ import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import { InlineText } from "../InlineInput";
 import NewSubprojectModal from "./NewSubprojectModal";
+import ScheduleCalendar from "./ScheduleCalendar";
+import Segmented from "../Segmented";
+import Modal from "../Modal";
 
 const HOUR = 3600000;
+const VIEW_KEY = "schedule.view";
+type View = "list" | "calendar";
+
+// List or calendar, remembered per browser.
+function loadView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "list";
+  } catch {
+    return "list";
+  }
+}
 const ms = (value: string) => parseDate(value)?.getTime() ?? NaN;
 const kindInfo = (kind: PeriodKind) => PERIOD_KINDS.find((k) => k.value === kind) ?? PERIOD_KINDS[PERIOD_KINDS.length - 1];
 // Usage and billing first, then the rest; each in time order.
@@ -48,6 +62,19 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
   const [adding, setAdding] = useState<{ section: string; draft: Draft } | null>(null);
   const [addingSubproject, setAddingSubproject] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [view, setViewState] = useState<View>(loadView);
+  // From the calendar: a period being made (and which section it's for) or opened.
+  const [calendarAdd, setCalendarAdd] = useState<{ section: string; draft: Draft } | null>(null);
+  const [calendarEdit, setCalendarEdit] = useState<JobPeriod | null>(null);
+
+  function setView(next: View) {
+    setViewState(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // not remembered, that's all
+    }
+  }
 
   const sorted = useMemo(
     () => [...periods].sort((a, b) => RANK[a.kind] - RANK[b.kind] || ms(a.start) - ms(b.start) || ms(a.end) - ms(b.end)),
@@ -198,7 +225,19 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     <div className="flex flex-col gap-4">
       <section className="card p-4 flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-semibold text-gray-900">Schedule</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-gray-900">Schedule</h2>
+            <Segmented
+              label="Schedule view"
+              compact
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "list", label: "List" },
+                { value: "calendar", label: "Calendar" },
+              ]}
+            />
+          </div>
           {canEdit && (
             <div className="flex items-center gap-1.5">
               <button onClick={() => setAddingSubproject(true)} disabled={busy} className="btn-secondary">
@@ -223,60 +262,158 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
             bar="bg-signal"
           />
         </dl>
-        <Timeline periods={timeline} />
+        {view === "list" && <Timeline periods={timeline} />}
       </section>
 
       {adding && adding.section === "" && <section className="card">{addForm("")}</section>}
 
-      <section className="card">
-        <h3 className="px-4 pt-3 pb-2 eyebrow text-gray-500">Usage &amp; billing</h3>
-        <div className="divide-y divide-gray-100 border-t border-gray-100">{rows(required)}</div>
-      </section>
-
-      <section className="card">
-        <h3 className="px-4 pt-3 pb-2 eyebrow text-gray-500">Other times</h3>
-        <div className="divide-y divide-gray-100 border-t border-gray-100">
-          {rows(others)}
-          {others.length === 0 && (
-            <p className="px-4 py-5 text-sm text-gray-500">Pack in, crew calls, rehearsals, anything else worth planning. These don't book or charge anything.</p>
-          )}
-        </div>
-      </section>
-
-      {subprojects.map((sp) => (
-        <section key={sp.id} className="card">
-          <div className="flex items-start justify-between gap-3 flex-wrap px-4 pt-3 pb-2">
-            <div className="flex flex-col gap-0.5 min-w-0">
-              <span className="eyebrow text-gray-500">Subproject</span>
-              {canEdit ? (
-                <InlineText
-                  value={sp.name}
-                  onCommit={(name) => renameSubproject(sp, name)}
-                  className="font-semibold text-gray-900 w-64 border-transparent hover:border-gray-300 bg-transparent"
-                />
-              ) : (
-                <span className="font-semibold text-gray-900">{sp.name}</span>
-              )}
-              <span className="text-xs text-gray-500">
-                Booked {formatPeriod(sp.prepAt, sp.returnAt)}
-                {sp.days !== undefined && ` · charged ${sp.days} day${sp.days === 1 ? "" : "s"}`}
-              </span>
-            </div>
-            {canEdit && (
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => removeSubproject(sp)} disabled={busy} className="text-xs text-gray-500 hover:text-fault-ink px-1.5 py-1">
-                  Remove
-                </button>
-                <button onClick={() => startAdding("other", sp.id)} disabled={busy || adding !== null} className="btn-primary">
-                  Add period
-                </button>
-              </div>
-            )}
-          </div>
-          {addForm(sp.id)}
-          <div className="divide-y divide-gray-100 border-t border-gray-100">{rows(sorted.filter((p) => p.subproject === sp.id))}</div>
+      {view === "calendar" && (
+        <section className="card p-4">
+          <ScheduleCalendar
+            periods={periods}
+            sections={[{ id: "", name: "Main project" }, ...subprojects.map((sp) => ({ id: sp.id, name: sp.name }))]}
+            sectionName={subName}
+            firstDay={ms(job.startAt || job.prepAt)}
+            canEdit={canEdit}
+            onCreate={(start, end) => {
+              const iso = (t: number) => new Date(t).toISOString();
+              setCalendarAdd({ section: "", draft: { kind: "other", name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "" } });
+            }}
+            onOpen={(p) => setCalendarEdit(p)}
+            onChange={(p, start, end) =>
+              save(p.id, { ...draftOf(p), start: toLocalInput(new Date(start).toISOString()), end: toLocalInput(new Date(end).toISOString()) })
+            }
+          />
         </section>
-      ))}
+      )}
+
+      {calendarAdd && (
+        <Modal title="Add a period" onClose={() => setCalendarAdd(null)} wide>
+          {subprojects.length > 0 && (
+            <Field label="Part of">
+              <select
+                value={calendarAdd.section}
+                onChange={(e) => setCalendarAdd({ ...calendarAdd, section: e.target.value })}
+                className="input py-2"
+              >
+                <option value="">Main project</option>
+                {subprojects.map((sp) => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <div className="-mx-5">
+            <PeriodForm
+              draft={calendarAdd.draft}
+              taken={takenIn(calendarAdd.section)}
+              onChange={(draft) => setCalendarAdd({ ...calendarAdd, draft })}
+              busy={busy}
+              submitLabel="Add period"
+              onCancel={() => setCalendarAdd(null)}
+              onSubmit={async () => {
+                if (await save(null, calendarAdd.draft, calendarAdd.section)) setCalendarAdd(null);
+              }}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {calendarEdit && (
+        <Modal
+          title={calendarEdit.subproject ? `${subName(calendarEdit.subproject)} · ${calendarEdit.name}` : calendarEdit.name}
+          onClose={() => setCalendarEdit(null)}
+          wide
+        >
+          {canEdit ? (
+            <>
+              <div className="-mx-5">
+                <EditRow
+                  period={calendarEdit}
+                  busy={busy}
+                  kindLocked={onlyOfKind(calendarEdit)}
+                  taken={takenIn(calendarEdit.subproject || "", calendarEdit.id)}
+                  onCancel={() => setCalendarEdit(null)}
+                  onSave={async (d) => (await save(calendarEdit.id, d)) && setCalendarEdit(null)}
+                />
+              </div>
+              {!onlyOfKind(calendarEdit) && (
+                <button
+                  onClick={async () => {
+                    await remove(calendarEdit);
+                    setCalendarEdit(null);
+                  }}
+                  disabled={busy}
+                  className="text-xs text-gray-500 hover:text-fault-ink w-fit"
+                >
+                  Remove this period
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="text-sm flex flex-col gap-1">
+              <span className="text-gray-900">{formatPeriod(calendarEdit.start, calendarEdit.end)}</span>
+              {calendarEdit.notes && <span className="text-gray-500 whitespace-pre-line">{calendarEdit.notes}</span>}
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {view === "list" && (
+        <>
+          <section className="card">
+            <h3 className="px-4 pt-3 pb-2 eyebrow text-gray-500">Usage &amp; billing</h3>
+            <div className="divide-y divide-gray-100 border-t border-gray-100">{rows(required)}</div>
+          </section>
+
+          <section className="card">
+            <h3 className="px-4 pt-3 pb-2 eyebrow text-gray-500">Other times</h3>
+            <div className="divide-y divide-gray-100 border-t border-gray-100">
+              {rows(others)}
+              {others.length === 0 && (
+                <p className="px-4 py-5 text-sm text-gray-500">Pack in, crew calls, rehearsals, anything else worth planning. These don't book or charge anything.</p>
+              )}
+            </div>
+          </section>
+
+          {subprojects.map((sp) => (
+            <section key={sp.id} className="card">
+              <div className="flex items-start justify-between gap-3 flex-wrap px-4 pt-3 pb-2">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="eyebrow text-gray-500">Subproject</span>
+                  {canEdit ? (
+                    <InlineText
+                      value={sp.name}
+                      onCommit={(name) => renameSubproject(sp, name)}
+                      className="font-semibold text-gray-900 w-64 border-transparent hover:border-gray-300 bg-transparent"
+                    />
+                  ) : (
+                    <span className="font-semibold text-gray-900">{sp.name}</span>
+                  )}
+                  <span className="text-xs text-gray-500">
+                    Booked {formatPeriod(sp.prepAt, sp.returnAt)}
+                    {sp.days !== undefined && ` · charged ${sp.days} day${sp.days === 1 ? "" : "s"}`}
+                  </span>
+                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => removeSubproject(sp)} disabled={busy} className="text-xs text-gray-500 hover:text-fault-ink px-1.5 py-1">
+                      Remove
+                    </button>
+                    <button onClick={() => startAdding("other", sp.id)} disabled={busy || adding !== null} className="btn-primary">
+                      Add period
+                    </button>
+                  </div>
+                )}
+              </div>
+              {addForm(sp.id)}
+              <div className="divide-y divide-gray-100 border-t border-gray-100">{rows(sorted.filter((p) => p.subproject === sp.id))}</div>
+            </section>
+          ))}
+        </>
+      )}
 
       {addingSubproject && <NewSubprojectModal summary={summary} onSaved={() => refresh()} onClose={() => setAddingSubproject(false)} />}
     </div>
