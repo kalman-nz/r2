@@ -9,7 +9,7 @@
 // runInTransaction() with the transaction's app.
 const { toMs } = require("./time.js");
 const pricing = require("./pricing.js");
-const { findOrNull } = require("./records.js");
+const { findOrNull, decodeJson } = require("./records.js");
 
 const LINE_TYPES_FOLLOWING_PARENT = ["component", "accessory"];
 // Done jobs don't hold stock, so there's nothing to warn about.
@@ -103,6 +103,7 @@ function jobInfo(app, job) {
     reference: job.getString("reference"),
     quoteNotes: job.getString("quoteNotes"),
     notes: job.getString("notes"),
+    headings: headingsOf(job),
     created: job.getString("created"),
     updated: job.getString("updated"),
     clientInfo: contactInfo(findOrNull(app, "contacts", job.getString("client"))),
@@ -110,13 +111,12 @@ function jobInfo(app, job) {
   };
 }
 
-// What the project charges for: days (an explicit override wins, then the
-// billing periods, each counted on its own, then, if a project has somehow
-// lost them all, the whole time the kit is booked), hours (the billing
-// periods' total time, or the booked window) and weeks (from the days).
-// What the main project (sub omitted) or one of its subprojects is charged
-// for, from its own billing periods. The project's day override applies to
-// the main project only.
+// What the main project (sub omitted) or one of its subprojects charges
+// for, from its own periods: days (an explicit override wins, then the
+// billing periods, each counted on its own, then, if it has somehow lost
+// them all, the whole time the kit is booked), hours (the billing periods'
+// total time, or the booked window) and weeks (from the days). The
+// project's day override applies to the main project only.
 function chargeDaysFor(app, job, sub) {
   const { chargedDays, chargedHours, plainPeriods } = require(`${__hooks}/lib/periods.js`);
   const owner = sub || job;
@@ -152,6 +152,51 @@ function orderLines(lines) {
 
 function loadLines(app, jobId) {
   return orderLines(app.findRecordsByFilter("job_lines", "job = {:job}", "", 0, 0, { job: jobId }));
+}
+
+// The job's heading list, [{ section, name }] (pb_migrations/0031).
+function headingsOf(job) {
+  return decodeJson(job.get("headings"), [])
+    .filter((h) => h && typeof h.name === "string")
+    .map((h) => ({ section: String(h.section || ""), name: h.name }));
+}
+
+// Lines in the order the page and quote show them: the main project, then
+// each subproject in order; within each, unheaded lines, then the listed
+// headings in their order, then any other headings as they first appear;
+// within a heading by sortOrder. Auto-added lines stay under their parent.
+function orderByHeadings(lines, headings, subs) {
+  const sectionRank = { "": 0 };
+  subs.forEach((sub, i) => (sectionRank[sub.id] = i + 1));
+  const sectionOf = (l) => (sectionRank[l.getString("subproject")] !== undefined ? l.getString("subproject") : "");
+  const listed = {};
+  headings.forEach((h, i) => (listed[h.section + "\u0000" + h.name] = i + 1));
+  const firstSeen = {};
+  lines.forEach((l, i) => {
+    const key = sectionOf(l) + "\u0000" + l.getString("group");
+    if (firstSeen[key] === undefined) firstSeen[key] = i;
+  });
+  const rank = (l) => {
+    const key = sectionOf(l) + "\u0000" + l.getString("group");
+    const heading = !l.getString("group") ? 0 : listed[key] !== undefined ? listed[key] : 100000 + firstSeen[key];
+    return [sectionRank[sectionOf(l)], heading];
+  };
+  const top = lines.filter((l) => !l.getString("parentLine"));
+  const position = {};
+  top.forEach((l, i) => (position[l.id] = i));
+  top.sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra[0] - rb[0] || ra[1] - rb[1] || position[a.id] - position[b.id];
+  });
+  const children = {};
+  for (const l of lines) if (l.getString("parentLine")) (children[l.getString("parentLine")] = children[l.getString("parentLine")] || []).push(l);
+  const out = [];
+  for (const l of top) {
+    out.push(l);
+    for (const c of children[l.id] || []) out.push(c);
+  }
+  return out;
 }
 
 function loadSubprojects(app, jobId) {
@@ -255,7 +300,7 @@ function buildSummary(app, jobId, show) {
   const job = requireJob(app, jobId);
   const org = job.getString("org");
   const settings = pricingSettings(org);
-  const lines = loadLines(app, job.id);
+  const lines = orderByHeadings(loadLines(app, job.id), headingsOf(job), loadSubprojects(app, job.id));
   const itemsById = loadItems(app, lines);
 
   // The main project ("") and each subproject: its own booking window and
@@ -769,6 +814,73 @@ function addSubproject(jobId, body) {
   return id;
 }
 
+// Changes the job's equipment headings. body: { action, section, name, to?,
+// direction? }:
+//   add     a new, empty heading at the end of its section
+//   rename  name -> to, on the list and on every line under it
+//   remove  off the list; its lines move to no heading
+//   move    up (direction -1) or down (1) the list
+// section is "" for the main project or a subproject id.
+function headingAction(jobId, body) {
+  $app.runInTransaction((tx) => {
+    const job = requireJob(tx, jobId);
+    const section = subprojectFor(tx, job, body.section);
+    const name = typeof body.name === "string" ? body.name.trim().slice(0, 200) : "";
+    if (!name) throw new BadRequestError("Give the heading a name");
+    const headings = headingsOf(job);
+    // Headings lines use but the list doesn't have yet join it first, so
+    // every heading can be moved, renamed and removed the same way.
+    const lines = tx.findRecordsByFilter("job_lines", "job = {:job}", "sortOrder,created", 0, 0, { job: job.id });
+    const inSection = (l) => l.getString("subproject") === section;
+    for (const l of lines) {
+      const g = l.getString("group");
+      if (g && inSection(l) && !headings.some((h) => h.section === section && h.name === g)) headings.push({ section: section, name: g });
+    }
+    const index = headings.findIndex((h) => h.section === section && h.name === name);
+    const action = String(body.action || "");
+
+    if (action === "add") {
+      if (index !== -1) throw new BadRequestError("There's already a heading called " + name);
+      headings.push({ section: section, name: name });
+    } else if (index === -1) {
+      throw new BadRequestError("There's no heading called " + name);
+    } else if (action === "rename") {
+      const to = typeof body.to === "string" ? body.to.trim().slice(0, 200) : "";
+      if (!to) throw new BadRequestError("Give the heading a name");
+      if (to !== name && headings.some((h) => h.section === section && h.name === to)) throw new BadRequestError("There's already a heading called " + to);
+      headings[index].name = to;
+      for (const l of lines) {
+        if (inSection(l) && l.getString("group") === name) {
+          l.set("group", to);
+          tx.save(l);
+        }
+      }
+    } else if (action === "remove") {
+      headings.splice(index, 1);
+      for (const l of lines) {
+        if (inSection(l) && l.getString("group") === name) {
+          l.set("group", "");
+          tx.save(l);
+        }
+      }
+    } else if (action === "move") {
+      // Swap with the neighbouring heading in the same section.
+      const step = Number(body.direction) < 0 ? -1 : 1;
+      let other = index + step;
+      while (other >= 0 && other < headings.length && headings[other].section !== section) other += step;
+      if (other >= 0 && other < headings.length) {
+        const swap = headings[other];
+        headings[other] = headings[index];
+        headings[index] = swap;
+      }
+    } else {
+      throw new BadRequestError("Unknown heading action");
+    }
+    job.set("headings", headings);
+    tx.save(job);
+  });
+}
+
 // Setting a price or discount on a line needs permission to see prices.
 function checkPriceFields(ctx, body) {
   const touchesMoney = ["unitPrice", "discountPct", "priceMode"].some((k) => body && body[k] !== undefined);
@@ -776,4 +888,4 @@ function checkPriceFields(ctx, body) {
 }
 
 module.exports = {
-  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject, issueQuote, packingState, loadLines, loadItems };
+  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject, headingAction, issueQuote, packingState, loadLines, loadItems };

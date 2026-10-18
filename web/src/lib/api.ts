@@ -315,6 +315,8 @@ export interface JobInfo {
   reference: string;
   quoteNotes: string;
   notes: string;
+  // Equipment headings in order, per part ("" = the main project).
+  headings?: { section: string; name: string }[];
   created: string;
   updated: string;
   clientInfo: ContactInfo | null;
@@ -760,6 +762,10 @@ export const api = {
   addLine: (jobId: string, line: NewLine) => request<JobSummary>(`/api/jobs/${jobId}/lines`, json("POST", line)),
   updateLine: (lineId: string, patch: LinePatch) => request<JobSummary>(`/api/job-lines/${lineId}`, json("PATCH", patch)),
   deleteLine: (lineId: string) => request<JobSummary>(`/api/job-lines/${lineId}`, json("DELETE")),
+  headingAction: (
+    jobId: string,
+    body: { action: "add" | "rename" | "remove" | "move"; section: string; name: string; to?: string; direction?: -1 | 1 },
+  ) => request<JobSummary>(`/api/jobs/${jobId}/headings`, json("POST", body)),
   addSubproject: (jobId: string, body: { name: string; usageStart: string; usageEnd: string; billingStart?: string; billingEnd?: string }) =>
     request<JobSummary>(`/api/jobs/${jobId}/subprojects`, json("POST", body)),
   issueQuote: (jobId: string) =>

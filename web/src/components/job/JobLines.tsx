@@ -55,11 +55,13 @@ function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boole
 // sets it later).
 function CustomLineModal({
   groups,
+  initialGroup = "",
   showPrices,
   onAdd,
   onClose,
 }: {
   groups: string[];
+  initialGroup?: string;
   showPrices: boolean;
   onAdd: (line: NewLine) => Promise<void>;
   onClose: () => void;
@@ -68,7 +70,7 @@ function CustomLineModal({
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(0);
   const [priceMode, setPriceMode] = useState<PriceMode>("fixed");
-  const [group, setGroup] = useState("");
+  const [group, setGroup] = useState(initialGroup);
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -146,6 +148,13 @@ interface Section {
   subtotal?: number;
 }
 
+// Where a line can go: a part of the project and the headings in it.
+interface Target {
+  section: string;
+  name: string;
+  headings: string[];
+}
+
 export default function JobLines({
   summary,
   canEdit,
@@ -155,9 +164,13 @@ export default function JobLines({
   canEdit: boolean;
   onSummary: (summary: JobSummary) => void;
 }) {
-  // The section being added to: an id ("" for the main project), or null.
-  const [picking, setPicking] = useState<string | null>(null);
-  const [addingCustom, setAddingCustom] = useState<string | null>(null);
+  // Where new lines go: a section ("" for the main project) and, from a
+  // heading's own button, that heading; null when not adding.
+  const [picking, setPicking] = useState<{ section: string; group?: string } | null>(null);
+  const [addingCustom, setAddingCustom] = useState<{ section: string; group?: string } | null>(null);
+  // The section a new heading is being typed into.
+  const [addingHeading, setAddingHeading] = useState<string | null>(null);
+  const [headingName, setHeadingName] = useState("");
   const [addingSubproject, setAddingSubproject] = useState(false);
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -203,30 +216,54 @@ export default function JobLines({
   }
 
   async function addItem(itemId: string, quantity: number) {
-    onSummary(await api.addLine(job.id, { itemId, quantity, subproject: picking ?? "" }));
+    onSummary(
+      await api.addLine(job.id, { itemId, quantity, subproject: picking?.section ?? "", ...(picking?.group !== undefined ? { group: picking.group } : {}) }),
+    );
   }
 
   async function addCustom(line: NewLine) {
     try {
-      onSummary(await api.addLine(job.id, { ...line, subproject: addingCustom ?? "" }));
+      onSummary(await api.addLine(job.id, { ...line, subproject: addingCustom?.section ?? "" }));
     } catch (err) {
       showToast("error", `Couldn't add: ${errorText(err)}`);
       throw err;
     }
   }
 
-  // Renaming a heading moves every top-level line under it (in the same
-  // section); their auto-added lines follow on the server.
-  async function renameGroup(section: string, from: string, to: string) {
-    let latest: JobSummary | null = null;
-    try {
-      for (const line of lines.filter((l) => !l.parentLine && l.subproject === section && l.group === from)) {
-        latest = await api.updateLine(line.id, { group: to });
-      }
-      if (latest) onSummary(latest);
-    } catch (err) {
-      showToast("error", `Couldn't rename: ${errorText(err)}`);
+  // Headings: renaming takes their lines with them; removing one leaves its
+  // lines under no heading (pb_hooks/lib/jobs.js headingAction).
+  const heading = (body: Parameters<typeof api.headingAction>[1], failure: string) => run(() => api.headingAction(job.id, body), failure);
+  const renameGroup = (section: string, from: string, to: string) =>
+    to && to !== from ? heading({ action: "rename", section, name: from, to }, "Couldn't rename") : undefined;
+  async function removeGroup(section: string, name: string, count: number) {
+    if (count > 0) {
+      const ok = await confirm({
+        title: "Remove heading",
+        message: `Remove the "${name}" heading? Its ${count} line${count === 1 ? "" : "s"} stay on the project, under no heading.`,
+        confirmLabel: "Remove",
+      });
+      if (!ok) return;
     }
+    await heading({ action: "remove", section, name }, "Couldn't remove");
+  }
+  async function addHeading(section: string) {
+    const name = headingName.trim();
+    if (!name) return;
+    await heading({ action: "add", section, name }, "Couldn't add the heading");
+    setHeadingName("");
+    setAddingHeading(null);
+  }
+
+  // A section's headings in order: lines with no heading, then the listed
+  // headings (even empty ones), then any others its lines use.
+  function sectionGroups(section: string, own: JobLineView[]) {
+    const byName = new Map(groupsOf(own).map((g) => [g.name, g.lines]));
+    const names = [
+      ...(byName.has("") ? [""] : []),
+      ...(job.headings ?? []).filter((h) => h.section === section).map((h) => h.name),
+      ...[...byName.keys()].filter((n) => n !== ""),
+    ];
+    return [...new Set(names)].map((name) => ({ name, lines: byName.get(name) ?? [] }));
   }
 
   async function move(line: JobLineView, direction: -1 | 1) {
@@ -241,21 +278,41 @@ export default function JobLines({
     }, "Couldn't reorder");
   }
 
-  const groupNames = [...new Set(lines.map((l) => l.group).filter(Boolean))];
+  const groupNames = [...new Set([...lines.map((l) => l.group), ...(job.headings ?? []).map((h) => h.name)].filter(Boolean))];
   const columns = showPrices ? 7 : 3;
   const split = subprojects.length > 0;
   const addButtons = (section: string) =>
     canEdit && (
       <div className="flex items-center gap-1.5">
-        <button onClick={() => setAddingCustom(section)} className="btn-secondary">
+        <button
+          onClick={() => {
+            setHeadingName("");
+            setAddingHeading(section);
+          }}
+          className="btn-secondary"
+        >
+          Add heading
+        </button>
+        <button onClick={() => setAddingCustom({ section })} className="btn-secondary">
           Custom line
         </button>
-        <button onClick={() => setPicking(section)} className="btn-primary">
+        <button onClick={() => setPicking({ section })} className="btn-primary">
           Add equipment
         </button>
       </div>
     );
-  const pickingSection = picking === null ? null : sectionById(picking);
+  const pickingSection = picking === null ? null : sectionById(picking.section);
+  // Every heading in every part of the project, for moving a line.
+  const targets: Target[] = sections.map((sec) => ({
+    section: sec.id,
+    name: sec.name,
+    headings: sectionGroups(
+      sec.id,
+      lines.filter((l) => (l.subproject || "") === sec.id),
+    )
+      .map((g) => g.name)
+      .filter(Boolean),
+  }));
 
   return (
     <section className="card overflow-hidden">
@@ -310,21 +367,59 @@ export default function JobLines({
                     </td>
                   </tr>
                 )}
-                {groupsOf(own).map((group) => (
-                  <GroupRows
-                    key={group.name || "(none)"}
-                    group={group}
-                    columns={columns}
-                    canEdit={canEdit}
-                    showPrices={showPrices}
-                    jobDone={jobDone}
-                    sections={split ? sections : []}
-                    onRenameGroup={(from, to) => renameGroup(section.id, from, to)}
-                    onPatch={patch}
-                    onRemove={remove}
-                    onMove={move}
-                  />
-                ))}
+                {(() => {
+                  const groups = sectionGroups(section.id, own);
+                  const named = groups.filter((g) => g.name);
+                  return groups.map((group) => (
+                    <GroupRows
+                      key={group.name || "(none)"}
+                      group={group}
+                      columns={columns}
+                      canEdit={canEdit}
+                      showPrices={showPrices}
+                      jobDone={jobDone}
+                      targets={targets}
+                      first={named[0]?.name === group.name}
+                      last={named[named.length - 1]?.name === group.name}
+                      onRenameGroup={(from, to) => renameGroup(section.id, from, to)}
+                      onRemoveGroup={() => removeGroup(section.id, group.name, group.lines.filter((l) => !l.parentLine).length)}
+                      onMoveGroup={(direction) => heading({ action: "move", section: section.id, name: group.name, direction }, "Couldn't reorder")}
+                      onAddTo={() => setPicking({ section: section.id, group: group.name })}
+                      onPatch={patch}
+                      onRemove={remove}
+                      onMove={move}
+                    />
+                  ));
+                })()}
+                {addingHeading === section.id && (
+                  <tr>
+                    <td colSpan={columns} className="px-4 py-2">
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          addHeading(section.id);
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <input
+                          autoFocus
+                          value={headingName}
+                          onChange={(e) => setHeadingName(e.target.value)}
+                          onKeyDown={(e) => e.key === "Escape" && setAddingHeading(null)}
+                          maxLength={200}
+                          placeholder="e.g. Audio, Lighting, Stage"
+                          className="input py-1.5 w-64"
+                        />
+                        <button type="submit" disabled={!headingName.trim()} className="btn-primary py-1.5">
+                          Add heading
+                        </button>
+                        <button type="button" onClick={() => setAddingHeading(null)} className="btn-secondary py-1.5">
+                          Cancel
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                )}
                 {split && own.length === 0 && (
                   <tr>
                     <td colSpan={columns} className="px-4 py-3 text-gray-400 text-sm">
@@ -347,7 +442,13 @@ export default function JobLines({
         <ItemPicker jobId={job.id} start={pickingSection.prepAt} end={pickingSection.returnAt} onAdd={addItem} onClose={() => setPicking(null)} />
       )}
       {addingCustom !== null && (
-        <CustomLineModal groups={groupNames} showPrices={showPrices} onAdd={addCustom} onClose={() => setAddingCustom(null)} />
+        <CustomLineModal
+          groups={groupNames}
+          initialGroup={addingCustom.group}
+          showPrices={showPrices}
+          onAdd={addCustom}
+          onClose={() => setAddingCustom(null)}
+        />
       )}
       {addingSubproject && <NewSubprojectModal summary={summary} onSaved={onSummary} onClose={() => setAddingSubproject(false)} />}
     </section>
@@ -375,8 +476,13 @@ function GroupRows({
   canEdit,
   showPrices,
   jobDone,
-  sections,
+  targets,
+  first,
+  last,
   onRenameGroup,
+  onRemoveGroup,
+  onMoveGroup,
+  onAddTo,
   onPatch,
   onRemove,
   onMove,
@@ -386,8 +492,13 @@ function GroupRows({
   canEdit: boolean;
   showPrices: boolean;
   jobDone: boolean;
-  sections: Section[];
+  targets: Target[];
+  first: boolean;
+  last: boolean;
   onRenameGroup: (from: string, to: string) => void;
+  onRemoveGroup: () => void;
+  onMoveGroup: (direction: -1 | 1) => void;
+  onAddTo: () => void;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
   onMove: (line: JobLineView, direction: -1 | 1) => void;
@@ -398,20 +509,44 @@ function GroupRows({
       <tr className="border-b border-gray-100">
         <td colSpan={columns} className="px-4 pt-3 pb-1">
           <div className="flex items-center justify-between gap-3">
-            {canEdit ? (
+            {canEdit && group.name ? (
               <InlineText
                 value={group.name}
                 onCommit={(to) => onRenameGroup(group.name, to)}
-                placeholder="No heading"
                 className="font-semibold text-gray-800 w-64 border-transparent hover:border-gray-300 bg-transparent"
               />
             ) : (
-              <span className="font-semibold text-gray-800">{group.name || "Other"}</span>
+              <span className={group.name ? "font-semibold text-gray-800" : "text-gray-400 text-xs uppercase tracking-wide"}>{group.name || "No heading"}</span>
             )}
-            {showPrices && <span className="text-xs text-gray-500 tabular-nums">{nzd(subtotal)}</span>}
+            <span className="flex items-center gap-2">
+              {canEdit && group.name && (
+                <span className="inline-flex items-center gap-0.5 text-gray-400 text-xs">
+                  <button onClick={onAddTo} className="text-signal-ink hover:text-signal-ink-hover font-medium px-1" title={`Add equipment under ${group.name}`}>
+                    + Add
+                  </button>
+                  <button onClick={() => onMoveGroup(-1)} disabled={first} className="hover:text-gray-700 px-0.5 disabled:opacity-30" title="Move heading up">
+                    ↑
+                  </button>
+                  <button onClick={() => onMoveGroup(1)} disabled={last} className="hover:text-gray-700 px-0.5 disabled:opacity-30" title="Move heading down">
+                    ↓
+                  </button>
+                  <button onClick={onRemoveGroup} className="hover:text-red-500 px-1 text-base leading-none" title="Remove heading">
+                    ×
+                  </button>
+                </span>
+              )}
+              {showPrices && group.lines.length > 0 && <span className="text-xs text-gray-500 tabular-nums">{nzd(subtotal)}</span>}
+            </span>
           </div>
         </td>
       </tr>
+      {group.lines.length === 0 && (
+        <tr className="border-b border-gray-50">
+          <td colSpan={columns} className="pl-4 py-1.5 text-xs text-gray-400">
+            Nothing under this heading yet.
+          </td>
+        </tr>
+      )}
       {group.lines.map((line) => (
         <LineRow
           key={line.id}
@@ -419,7 +554,7 @@ function GroupRows({
           canEdit={canEdit}
           showPrices={showPrices}
           jobDone={jobDone}
-          sections={sections}
+          targets={targets}
           onPatch={onPatch}
           onRemove={onRemove}
           onMove={onMove}
@@ -434,7 +569,7 @@ function LineRow({
   canEdit,
   showPrices,
   jobDone,
-  sections,
+  targets,
   onPatch,
   onRemove,
   onMove,
@@ -443,8 +578,8 @@ function LineRow({
   canEdit: boolean;
   showPrices: boolean;
   jobDone: boolean;
-  // Where the line can be moved to; empty without subprojects.
-  sections: Section[];
+  // Where the line can be moved to: each part of the project and its headings.
+  targets: Target[];
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
   onMove: (line: JobLineView, direction: -1 | 1) => void;
@@ -521,21 +656,33 @@ function LineRow({
           <td className="px-1 py-1.5 text-right whitespace-nowrap">
             {canEdit && (
               <span className="inline-flex items-center text-gray-400">
-                {!isChild && sections.length > 0 && (
+                {!isChild && (
                   // An icon with the real select laid invisibly over it.
-                  <span className="relative px-0.5 hover:text-gray-700" title="Move to the main project or a subproject">
+                  <span className="relative px-0.5 hover:text-gray-700" title="Move to another heading">
                     ⇄
                     <select
-                      value={line.subproject}
-                      onChange={(e) => onPatch(line, { subproject: e.target.value })}
+                      value={`${line.subproject}\u0000${line.group}`}
+                      onChange={(e) => {
+                        const [subproject, group] = e.target.value.split("\u0000");
+                        onPatch(line, { subproject, group });
+                      }}
                       className="absolute inset-0 opacity-0 cursor-pointer"
                       aria-label="Move to"
                     >
-                      {sections.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
+                      {targets.map((t) => {
+                        const options = ["", ...t.headings].map((h) => (
+                          <option key={h || "(none)"} value={`${t.section}\u0000${h}`}>
+                            {h || "No heading"}
+                          </option>
+                        ));
+                        return targets.length > 1 ? (
+                          <optgroup key={t.section || "main"} label={t.name}>
+                            {options}
+                          </optgroup>
+                        ) : (
+                          options
+                        );
+                      })}
                     </select>
                   </span>
                 )}

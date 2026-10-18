@@ -37,6 +37,22 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
+// The project's equipment headings: add, rename, remove, reorder
+// (lib/jobs.js headingAction). Same permission as changing its lines.
+routerAdd(
+  "POST",
+  "/api/jobs/{id}/headings",
+  (e) => {
+    const { headingAction, buildSummary, requireJob } = require(`${__hooks}/lib/jobs.js`);
+    const { requireRecordOrg, summaryAccess } = require(`${__hooks}/lib/orgs.js`);
+    const id = e.request.pathValue("id");
+    const ctx = requireRecordOrg(e, requireJob($app, id), "jobs.lines");
+    headingAction(id, e.requestInfo().body || {});
+    return e.json(200, buildSummary($app, id, summaryAccess(ctx)));
+  },
+  $apis.requireAuth("users"),
+);
+
 // A subproject: part of the project with its own schedule (lib/jobs.js
 // addSubproject). Renaming and deleting go through the collection.
 routerAdd(
