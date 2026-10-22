@@ -6,7 +6,7 @@ import { errorText } from "../../lib/errors";
 import { fromDateInput } from "../../lib/format";
 import type { LabelUnit } from "../../lib/labelSpec";
 import { renderUnitLabelImage, sendRenderedLabel } from "../../lib/print";
-import { useCan } from "../../lib/roles";
+import { useCan, useFeature } from "../../lib/roles";
 import { SERIAL_STATUS_LABELS } from "../../lib/statuses";
 import BatchPrintBar from "../BatchPrintBar";
 import { useConfirm } from "../ConfirmProvider";
@@ -36,6 +36,7 @@ export default function UnitBulkBar({
   setSelected: (ids: Set<string>) => void;
 }) {
   const can = useCan();
+  const feature = useFeature();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { data: locations = [] } = useLocations();
@@ -120,12 +121,16 @@ export default function UnitBulkBar({
       />
       {can("units.flag") && (
         <>
-          <button onClick={() => setOpen("repair")} disabled={busy} className="btn-secondary">
-            Repair
-          </button>
-          <button onClick={() => setOpen("schedule")} disabled={busy} className="btn-secondary" title="Schedule one-off maintenance on these units">
-            Schedule
-          </button>
+          {feature("repairs") && (
+            <button onClick={() => setOpen("repair")} disabled={busy} className="btn-secondary">
+              Repair
+            </button>
+          )}
+          {feature("maintenance") && (
+            <button onClick={() => setOpen("schedule")} disabled={busy} className="btn-secondary" title="Schedule one-off maintenance on these units">
+              Schedule
+            </button>
+          )}
           <button onClick={() => setOpen("status")} disabled={busy} className="btn-secondary">
             Status
           </button>

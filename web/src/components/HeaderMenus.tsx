@@ -1,30 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { pb, useAuthRecord } from "../lib/pocketbase";
+import { useDropdown } from "../lib/dropdown";
 import { useOrg } from "../lib/org";
 import RoleBadge from "./RoleBadge";
-
-// A header dropdown: closes on a click elsewhere or Escape.
-function useDropdown() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-  return { open, setOpen, ref };
-}
 
 function MenuLink({ to, onClick, children }: { to: string; onClick: () => void; children: ReactNode }) {
   return (

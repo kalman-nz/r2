@@ -90,6 +90,7 @@ function jobInfo(app, job) {
     number: job.getInt("number"),
     name: job.getString("name"),
     status: job.getString("status"),
+    jobStatus: job.getString("jobStatus"),
     client: job.getString("client"),
     venue: job.getString("venue"),
     prepAt: job.getString("prepAt"),

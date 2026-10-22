@@ -42,10 +42,15 @@ onRecordUpdate((e) => {
   }
 }, "items");
 
-// Every organisation starts with the default repair statuses, however it's
-// made (first-run setup, the admin panel, a script).
+// Every organisation starts with the default project and repair statuses
+// and dashboards, however it's made (first-run setup, the admin panel, a
+// script).
 onRecordAfterCreateSuccess((e) => {
   const { createDefaultStatuses } = require(`${__hooks}/lib/repairs.js`);
+  const { createDefaultJobStatuses } = require(`${__hooks}/lib/jobStatuses.js`);
+  const { createDefaultDashboards } = require(`${__hooks}/lib/views.js`);
+  createDefaultJobStatuses(e.app, e.record.id);
   createDefaultStatuses(e.app, e.record.id);
+  createDefaultDashboards(e.app, e.record.id);
   e.next();
 }, "organisations");

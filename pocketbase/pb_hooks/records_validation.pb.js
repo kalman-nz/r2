@@ -30,6 +30,8 @@ onRecordValidate((e) => {
 
 onRecordValidate((e) => {
   const { validateJob } = require(`${__hooks}/lib/validation.js`);
+  const { syncJobStatus } = require(`${__hooks}/lib/jobStatuses.js`);
+  syncJobStatus(e.app, e.record);
   validateJob(e.app, e.record);
   e.next();
 }, "jobs");
@@ -163,3 +165,9 @@ onRecordDelete((e) => {
   guardReferenced(e.app, "jobs", "venue = {:id}", e.record.id, "location");
   e.next();
 }, "venues");
+
+onRecordValidate((e) => {
+  const { validateCrew } = require(`${__hooks}/lib/validation.js`);
+  validateCrew(e.app, e.record);
+  e.next();
+}, "job_crew");

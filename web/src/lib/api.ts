@@ -141,7 +141,7 @@ export interface Serial extends RecordModel {
 // What a repair status does to the kit (pb_hooks/lib/repairs.js): open
 // keeps it out of service, repaired puts it back, unrepairable retires it.
 export type RepairStage = "open" | "repaired" | "unrepairable";
-export type StatusColour = "gray" | "amber" | "blue" | "violet" | "green" | "red";
+export type StatusColour = "gray" | "amber" | "orange" | "blue" | "teal" | "violet" | "green" | "red";
 
 // One of an organisation's own repair statuses (Settings → Repair statuses).
 export interface RepairStatusDef extends RecordModel {
@@ -154,6 +154,24 @@ export interface RepairStatusDef extends RecordModel {
 }
 
 export type RepairStatusInput = Pick<RepairStatusDef, "name" | "stage" | "colour" | "isDefault"> & { id?: string };
+
+// One of an organisation's own project statuses (Settings → Project
+// statuses, pb_hooks/lib/jobStatuses.js), on one of the fixed stages
+// (JobStatus) that availability and scanning run on.
+export interface JobStatusDef extends RecordModel {
+  org: string;
+  name: string;
+  stage: JobStatus;
+  colour: StatusColour | "";
+  sortOrder: number;
+  isDefault: boolean;
+}
+
+export type JobStatusInput = Pick<JobStatusDef, "name" | "stage" | "colour" | "isDefault"> & { id?: string };
+
+// What an organisation uses (Settings → Features, pb_hooks/lib/features.js).
+export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "xero";
+export type Features = Record<FeatureKey, boolean>;
 
 // Files on a repair or maintenance job (pb_hooks/lib/files.js): the stored
 // names are in `files`; this has the name each was uploaded with, its size,
@@ -260,7 +278,10 @@ export interface Job extends RecordModel {
   org: string;
   number: number;
   name: string;
+  // The stage, which availability and scanning read; jobStatus is the
+  // organisation's own status on it (a JobStatusDef id).
   status: JobStatus;
+  jobStatus: string;
   client: string;
   venue: string;
   // Derived from the schedule (pb_hooks/lib/periods.js): kit booked over
@@ -373,6 +394,7 @@ export interface JobInfo {
   number: number;
   name: string;
   status: JobStatus;
+  jobStatus: string;
   client: string;
   venue: string;
   // Derived from the schedule (pb_hooks/lib/periods.js): kit booked over
@@ -632,6 +654,8 @@ export interface OrgRef {
   id: string;
   name: string;
   suspended: boolean;
+  // Only in /api/me memberships.
+  features?: Features;
 }
 
 // A role as people are given it (Settings → Roles defines them).
@@ -769,20 +793,67 @@ export interface SearchResults {
   labels: SearchResultItem[];
 }
 
-export interface EquipmentView {
+// Who something saved is shared with (pb_hooks/lib/sharing.js): its owner
+// (none for the organisation's own), people they picked, or everyone
+// (public, which needs views.publish to change).
+export interface Shared {
+  ownerId: string;
+  ownerName: string;
+  isOwner: boolean;
+  canEdit: boolean;
+  public: boolean;
+  sharedWith: { id: string; name: string }[];
+}
+
+export interface SharingInput {
+  public?: boolean;
+  sharedWith?: string[];
+}
+
+export interface EquipmentView extends Shared {
   id: string;
   name: string;
   columns: string[];
   widths: Record<string, number>;
   sortKey: string;
   sortDir: "asc" | "desc";
-  shared: boolean;
-  ownerId: string;
-  ownerName: string;
-  isOwner: boolean;
 }
 
-export type EquipmentViewInput = Omit<EquipmentView, "id" | "ownerId" | "ownerName" | "isOwner">;
+export type EquipmentViewInput = Pick<EquipmentView, "name" | "columns" | "widths" | "sortKey" | "sortDir"> & SharingInput;
+
+// A Home page someone designed (pb_hooks/lib/views.js): panels in order,
+// from web/src/lib/home.ts.
+export interface Dashboard extends Shared {
+  id: string;
+  name: string;
+  panels: { id: string }[];
+  // Everyone's Home until they pick their own.
+  isDefault: boolean;
+}
+
+export interface Dashboards {
+  dashboards: Dashboard[];
+  // Your pick ("" for the default).
+  home: string;
+  defaultId: string;
+}
+
+// A saved view of a list: its filters.
+export interface ListView extends Shared {
+  id: string;
+  page: "projects";
+  name: string;
+  config: Record<string, string>;
+}
+
+// Someone on a project (job_crew), with what they're doing.
+export interface CrewMember extends RecordModel {
+  org: string;
+  job: string;
+  user: string;
+  function: string;
+  sortOrder: number;
+}
 
 export interface ImportRun extends RecordModel {
   source: "rentman" | "csv";
@@ -907,6 +978,9 @@ export const api = {
   deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
+  saveJobStatuses: (statuses: JobStatusInput[], moves: Record<string, string> = {}) =>
+    request<JobStatusDef[]>("/api/job-statuses", json("PUT", { statuses, moves })),
+  updateFeatures: (orgId: string, features: Partial<Features>) => request<Features>(`/api/orgs/${orgId}/features`, json("PATCH", { features })),
 
   // Maintenance: see pb_hooks/routes_maintenance.pb.js.
   createPlan: (body: PlanInput) => request<MaintenancePlan>("/api/maintenance/plans", json("POST", body)),
@@ -989,6 +1063,22 @@ export const api = {
     request<LogEntry>("/api/activity", json("POST", { type, details })),
 
   listEquipmentViews: () => request<EquipmentView[]>("/api/equipment-views"),
+
+  // Everyone's own dashboards and saved views — see routes_views.pb.js.
+  dashboards: () => request<Dashboards>("/api/dashboards"),
+  createDashboard: (data: { name: string; panels: { id: string }[] } & SharingInput) => request<Dashboard>("/api/dashboards", json("POST", data)),
+  updateDashboard: (id: string, data: Partial<{ name: string; panels: { id: string }[]; isDefault: boolean }> & SharingInput) =>
+    request<Dashboard>(`/api/dashboards/${id}`, json("PATCH", data)),
+  deleteDashboard: (id: string) => request<{ ok: true }>(`/api/dashboards/${id}`, json("DELETE")),
+  setHome: (dashboard: string) => request<{ home: string }>("/api/me/home", json("PUT", { dashboard })),
+  listViews: (page: ListView["page"]) => request<ListView[]>(`/api/views?page=${page}`),
+  createView: (data: { page: ListView["page"]; name: string; config: Record<string, string> } & SharingInput) =>
+    request<ListView>("/api/views", json("POST", data)),
+  updateView: (id: string, data: Partial<{ name: string; config: Record<string, string> }> & SharingInput) =>
+    request<ListView>(`/api/views/${id}`, json("PATCH", data)),
+  deleteView: (id: string) => request<{ ok: true }>(`/api/views/${id}`, json("DELETE")),
+  // How much of each project's kit is needed and out, for "To prep next".
+  packing: (jobIds: string[]) => request<Record<string, { needed: number; out: number }>>(`/api/home/packing?jobs=${jobIds.join(",")}`),
   createEquipmentView: (data: EquipmentViewInput) => request<EquipmentView>("/api/equipment-views", json("POST", data)),
   updateEquipmentView: (id: string, data: EquipmentViewInput) =>
     request<EquipmentView>(`/api/equipment-views/${id}`, json("PUT", data)),

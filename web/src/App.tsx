@@ -275,6 +275,7 @@ function useOnline(): boolean {
 function AppShell() {
   const { org, memberships } = useOrg();
   const { can, isPlatformAdmin } = useRole();
+  const { feature } = useOrg();
   const settingsOpen = useSettingsAccess().length > 0;
   const projectViews = useProjectViewLinks();
   useTabTitle(!!org);
@@ -300,7 +301,7 @@ function AppShell() {
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
                 {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Check in & out" />}
-                <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />
+                {(feature("repairs") || feature("maintenance")) && <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />}
                 {can("labels.print") && <NavItem to="/label-printing" icon={icons.label} label="Label printing" />}
               </NavSection>
               <NavSection title="Relations">

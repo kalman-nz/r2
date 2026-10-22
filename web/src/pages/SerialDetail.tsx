@@ -7,7 +7,7 @@ import { useCategoryPaths, useLocations } from "../lib/catalog";
 import { buildLabelContext, unitDisplayName } from "../lib/labelSpec";
 import { formatDateTime, fromDateInput, toDateInput } from "../lib/format";
 import { errorText } from "../lib/errors";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import Field from "../components/Field";
 import NumberInput from "../components/NumberInput";
 import PrintButton from "../components/PrintButton";
@@ -27,6 +27,7 @@ export default function SerialDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { can } = useRole();
+  const feature = useFeature();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const paths = useCategoryPaths();
@@ -168,7 +169,7 @@ export default function SerialDetail() {
 
         <div className="flex flex-col gap-4">
           {can("units.flag") && <StatusCard serial={serial} onRepair={onRepair?.number ?? null} onSaved={refresh} />}
-          <UnitMaintenanceCard unit={serial} item={item} repairs={repairs} canRecord={can("units.flag")} />
+          {(feature("repairs") || feature("maintenance")) && <UnitMaintenanceCard unit={serial} item={item} repairs={repairs} canRecord={can("units.flag")} />}
         </div>
       </div>
     </div>
@@ -179,6 +180,9 @@ export default function SerialDetail() {
 // blown driver doesn't need someone who can edit units to take it out of
 // stock. A unit on a repair comes back to Active by closing the repair.
 function StatusCard({ serial, onRepair, onSaved }: { serial: Serial; onRepair: number | null; onSaved: (s: Serial) => void }) {
+  // Without repair jobs (Settings → Features), In repair is a plain flag.
+  const feature = useFeature();
+  const repairs = feature("repairs");
   const [status, setStatus] = useState<SerialStatus>(serial.status);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -209,7 +213,7 @@ function StatusCard({ serial, onRepair, onSaved }: { serial: Serial; onRepair: n
       <select value={status} onChange={(e) => setStatus(e.target.value as SerialStatus)} className="input py-1.5">
         {/* In repair comes from opening a repair, so it's tracked; it only shows while the unit is in one. */}
         {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[])
-          .filter((s) => (s !== "repair" || serial.status === "repair") && !(s === "active" && onRepair))
+          .filter((s) => (s !== "repair" || serial.status === "repair" || !repairs) && !(s === "active" && onRepair))
           .map((s) => (
           <option key={s} value={s}>
             {SERIAL_STATUS_LABELS[s]}

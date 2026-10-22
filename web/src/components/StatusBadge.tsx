@@ -1,5 +1,6 @@
 import type { JobStatus, QuoteStatus, SerialStatus } from "../lib/api";
 import { useRepairStatuses } from "../lib/maintenance";
+import { useJobStatuses } from "../lib/workflow";
 import { JOB_STATUSES, SERIAL_STATUS_LABELS, STATUS_COLOURS } from "../lib/statuses";
 
 const JOB_STYLES: Record<JobStatus, string> = {
@@ -27,7 +28,11 @@ const QUOTE_STYLES: Record<QuoteStatus, string> = {
 
 const base = "inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap";
 
-export function JobStatusBadge({ status }: { status: JobStatus }) {
+// A project's status: the organisation's own name and colour when the
+// project's jobStatus is known, else its stage's.
+export function JobStatusBadge({ status, jobStatus }: { status: JobStatus; jobStatus?: string }) {
+  const def = useJobStatuses().byId.get(jobStatus ?? "");
+  if (def) return <span className={`${base} ${STATUS_COLOURS[def.colour || "gray"].badge}`}>{def.name}</span>;
   const label = JOB_STATUSES.find((s) => s.value === status)?.label ?? status;
   return <span className={`${base} ${JOB_STYLES[status] ?? ""}`}>{label}</span>;
 }

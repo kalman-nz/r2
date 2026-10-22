@@ -5,7 +5,7 @@ import { pb } from "../lib/pocketbase";
 import { api, type JobPricing, type JobSummary } from "../lib/api";
 import { formatDate, formatDateTime, formatPeriod, nzd } from "../lib/format";
 import { errorText } from "../lib/errors";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import JobFields from "../components/job/JobFields";
 import { draftFromJob, draftToPayload, draftToUpdate, newJobDraft, type JobDraft } from "../lib/jobDraft";
 import JobLines from "../components/job/JobLines";
@@ -18,6 +18,7 @@ import { useConfirm } from "../components/ConfirmProvider";
 import { withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
 import { useRepairs } from "../lib/maintenance";
+import CrewCard from "../components/job/CrewCard";
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -139,6 +140,7 @@ function ExistingJob({ id }: { id: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { can } = useRole();
+  const feature = useFeature();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
@@ -241,7 +243,7 @@ function ExistingJob({ id }: { id: string }) {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xl text-gray-400 tabular-nums">#{job.number}</span>
             <h1 className="text-xl font-semibold text-gray-900">{job.name}</h1>
-            <JobStatusBadge status={job.status} />
+            <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
             {[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ") || "No client or location yet"}
@@ -364,30 +366,34 @@ function ExistingJob({ id }: { id: string }) {
             </section>
           )}
 
-          <DamageCard jobId={job.id} />
+          <CrewCard jobId={job.id} canEdit={can("jobs.edit")} />
 
-          <section className="card p-4 flex flex-col gap-2 text-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-500">Warehouse</h2>
-              <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
-                Scan →
-              </Link>
-            </div>
-            {neededUnits === 0 ? (
-              <p className="text-gray-500 text-xs">No physical kit on this project.</p>
-            ) : (
-              <>
-                <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                  <div className="h-full bg-data" style={{ width: `${Math.min(100, (outUnits / neededUnits) * 100)}%` }} />
-                </div>
-                <p className="text-xs text-gray-600">
-                  {outUnits} of {neededUnits} units out
-                  {returnedUnits > 0 ? ` · ${returnedUnits} back in` : ""}
-                  {packing.packed ? " · fully packed" : ""}
-                </p>
-              </>
-            )}
-          </section>
+          {feature("repairs") && <DamageCard jobId={job.id} />}
+
+          {feature("scanning") && (
+            <section className="card p-4 flex flex-col gap-2 text-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-500">Warehouse</h2>
+                <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
+                  Scan →
+                </Link>
+              </div>
+              {neededUnits === 0 ? (
+                <p className="text-gray-500 text-xs">No physical kit on this project.</p>
+              ) : (
+                <>
+                  <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full bg-data" style={{ width: `${Math.min(100, (outUnits / neededUnits) * 100)}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    {outUnits} of {neededUnits} units out
+                    {returnedUnits > 0 ? ` · ${returnedUnits} back in` : ""}
+                    {packing.packed ? " · fully packed" : ""}
+                  </p>
+                </>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </div>

@@ -306,7 +306,7 @@ function DirectoryDetail({ config }: { config: DirectoryConfig }) {
                 </span>
                 <span className="flex items-center gap-2 shrink-0">
                   <span className="text-xs text-gray-500">{formatDate(j.prepAt)}</span>
-                  <JobStatusBadge status={j.status} />
+                  <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
                 </span>
               </Link>
             ))}

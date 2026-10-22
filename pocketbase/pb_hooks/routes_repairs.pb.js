@@ -13,6 +13,7 @@ routerAdd(
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const ctx = requireOrg(e, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "repairs");
     const repair = openRepair($app, ctx.orgId, e.requestInfo().body || {}, e.auth);
     logEvent(ctx.orgId, "repair_open", whoName(e.auth), {
       repair: repair.id,
@@ -39,6 +40,7 @@ routerAdd(
     if (!repair) throw new NotFoundError("Repair not found");
     const { statusName } = require(`${__hooks}/lib/repairs.js`);
     const ctx = requireRecordOrg(e, repair, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "repairs");
     const from = repair.getString("status");
     const saved = updateRepair($app, repair, e.requestInfo().body || {});
     if (saved.getString("status") !== from) {
@@ -70,6 +72,7 @@ routerAdd(
     const repair = findOrNull($app, "repairs", e.request.pathValue("id"));
     if (!repair) throw new NotFoundError("Repair not found");
     const ctx = requireRecordOrg(e, repair, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "repairs");
     const files = uploadedFiles(e);
     const saved = addFiles($app, "repairs", repair.id, files, whoName(e.auth));
     logEvent(ctx.orgId, "repair_files", whoName(e.auth), {
@@ -95,6 +98,7 @@ routerAdd(
     const repair = findOrNull($app, "repairs", e.request.pathValue("id"));
     if (!repair) throw new NotFoundError("Repair not found");
     const ctx = requireRecordOrg(e, repair, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "repairs");
     const removed = removeFile($app, "repairs", repair.id, e.request.pathValue("name"));
     logEvent(ctx.orgId, "repair_file_removed", whoName(e.auth), { repair: repair.id, number: repair.getInt("number"), name: removed.name });
     return e.json(200, removed.record);

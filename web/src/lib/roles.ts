@@ -16,6 +16,11 @@ export function useCan() {
   return useOrg().can;
 }
 
+// Whether the organisation uses a feature: const feature = useFeature(); feature("repairs")
+export function useFeature() {
+  return useOrg().feature;
+}
+
 // Whether you could give someone this role: the server refuses a role with
 // permissions your own lacks, and only admins can make admins. null means
 // no limit (platform admins in the admin panel).

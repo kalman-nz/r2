@@ -9,6 +9,7 @@ routerAdd(
   "/api/me",
   (e) => {
     const { invitationJson, emailsTrusted, permissionsOf } = require(`${__hooks}/lib/members.js`);
+    const { featuresOf, blockingFeature } = require(`${__hooks}/lib/features.js`);
     const { findOrNull } = require(`${__hooks}/lib/records.js`);
     const user = e.auth;
     const memberships = $app.findRecordsByFilter("memberships", "user = {:user}", "", 0, 0, { user: user.id });
@@ -37,11 +38,13 @@ routerAdd(
         .map((m) => {
           const org = orgs[m.getString("org")];
           const role = findOrNull($app, "roles", m.getString("role"));
+          const features = featuresOf(org);
           return {
-            org: { id: org.id, name: org.getString("name"), suspended: org.getBool("suspended") },
+            org: { id: org.id, name: org.getString("name"), suspended: org.getBool("suspended"), features: features },
             role: { id: role ? role.id : "", name: role ? role.getString("name") : "", locked: !!role && role.getBool("locked") },
-            // What the app shows and hides; the server checks again anyway.
-            permissions: permissionsOf(role),
+            // What the app shows and hides (less whatever the organisation
+            // has turned off); the server checks again anyway.
+            permissions: permissionsOf(role).filter((p) => !blockingFeature(features, p)),
           };
         })
         .sort((a, b) => a.org.name.localeCompare(b.org.name)),

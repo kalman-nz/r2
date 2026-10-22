@@ -8,8 +8,10 @@
 //   const ctx = requireOrg(e, ["import.csv", "import.rentman"]); // any of these
 //
 // Both throw unless the signed-in user is a member, the organisation isn't
-// suspended, and their role there has the permission (lib/permissions.js).
-// They return { orgId, org, membership, role, permissions, can(p), isAdmin }.
+// suspended, and their role there has the permission (lib/permissions.js)
+// and the organisation hasn't turned off the feature it belongs to
+// (lib/features.js). They return { orgId, org, membership, role,
+// permissions, can(p), isAdmin, features }.
 
 function membershipOf(app, userId, orgId) {
   if (!userId || !orgId) return null;
@@ -29,6 +31,7 @@ function access(role) {
 
 function requireMember(e, orgId, permission) {
   const { LABELS } = require("./permissions.js");
+  const { featuresOf, blockingFeature } = require("./features.js");
   if (!e.auth) throw new UnauthorizedError("Sign in first");
   if (!orgId) throw new BadRequestError("Choose an organisation first");
   let org;
@@ -47,9 +50,15 @@ function requireMember(e, orgId, permission) {
     // a missing role allows nothing beyond membership
   }
   const allowed = access(role);
+  const features = featuresOf(org);
+  const can = (p) => allowed.can(p) && !blockingFeature(features, p);
   if (permission) {
     const wanted = Array.isArray(permission) ? permission : [permission];
-    if (!wanted.some(allowed.can)) {
+    if (!wanted.some(can)) {
+      const off = blockingFeature(features, wanted[0]);
+      if (off && wanted.every((p) => blockingFeature(features, p))) {
+        throw new ForbiddenError(off.label + " is turned off for this organisation (Settings → Features)");
+      }
       throw new ForbiddenError("Your role doesn't allow that (" + wanted.map((p) => LABELS[p] || p).join(" or ").toLowerCase() + ")");
     }
   }
@@ -58,9 +67,10 @@ function requireMember(e, orgId, permission) {
     org: org,
     membership: membership,
     role: role,
-    permissions: allowed.permissions,
-    can: allowed.can,
+    permissions: allowed.permissions.filter(can),
+    can: can,
     isAdmin: allowed.isAdmin,
+    features: features,
   };
 }
 

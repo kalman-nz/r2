@@ -93,6 +93,7 @@ const GROUPS = [
       ["team.manage", "Invite and remove people, and give them roles"],
       ["roles.manage", "Create and edit roles"],
       ["logs.view", "See the activity log and stats"],
+      ["views.publish", "Share dashboards and views with everyone"],
     ],
   },
 ];
@@ -128,7 +129,9 @@ function normalise(list) {
 }
 
 const PLANNER = ALL.filter(
-  (key) => ["settings.edit", "calendar.manage", "team.manage", "roles.manage", "logs.view", "import.rentman"].indexOf(key) === -1 && key.indexOf("templates.") !== 0,
+  (key) =>
+    ["settings.edit", "calendar.manage", "team.manage", "roles.manage", "logs.view", "import.rentman", "views.publish"].indexOf(key) === -1 &&
+    key.indexOf("templates.") !== 0,
 );
 const TECH = ["units.flag", "scan.out", "scan.in", "labels.print"];
 
@@ -136,9 +139,11 @@ const DEFAULT_ROLES = [
   { name: "Admin", description: "Everything, always. Every organisation keeps at least one.", locked: true, permissions: ALL },
   { name: "Planner", description: "Runs projects and quotes, and looks after inventory and contacts", locked: false, permissions: PLANNER },
   { name: "Tech", description: "Looks things up, scans kit out and in, reports broken gear and does maintenance, prints labels", locked: false, permissions: TECH },
+  // Event crew: their projects (dashboards' "My projects"), view only.
+  { name: "Crew", description: "Sees the projects they're working on, and can look things up", locked: false, permissions: [] },
 ];
 
-// A new organisation's starting roles. Returns { Admin, Planner, Tech }.
+// A new organisation's starting roles. Returns { Admin, Planner, Tech, Crew }.
 function createDefaultRoles(app, orgId) {
   const collection = app.findCollectionByNameOrId("roles");
   const made = {};

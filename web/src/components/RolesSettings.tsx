@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type OrgRole, type PermissionCatalogue } from "../lib/api";
 import { useOrg } from "../lib/org";
+import { FEATURES } from "../lib/workflow";
 import { useRole } from "../lib/roles";
 import { errorText } from "../lib/errors";
 import { useToast } from "./ToastProvider";
@@ -109,7 +110,7 @@ function RoleEditor({
   onClose: () => void;
   onDuplicate: (role: OrgRole) => void;
 }) {
-  const { org } = useOrg();
+  const { org, feature } = useOrg();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -235,7 +236,9 @@ function RoleEditor({
                 </div>
                 {group.permissions.map((p) => {
                   const checked = !!role?.locked || chosen.has(p.key);
-                  const mayTick = grantable(p.key);
+                  // Kept on the role, but nobody gets it while its feature's off.
+                  const off = FEATURES.find((f) => !feature(f.key) && f.permissions.includes(p.key));
+                  const mayTick = grantable(p.key) || !!off;
                   return (
                     <label
                       key={p.key}
@@ -249,7 +252,10 @@ function RoleEditor({
                         disabled={readOnly || (!mayTick && !checked)}
                         onChange={(e) => toggle(p.key, e.target.checked)}
                       />
-                      <span>{p.label}</span>
+                      <span>
+                        {p.label}
+                        {off && <span className="text-xs text-gray-400"> · {off.label} is off in Features</span>}
+                      </span>
                     </label>
                   );
                 })}

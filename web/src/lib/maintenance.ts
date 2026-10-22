@@ -115,10 +115,11 @@ export function useRepairStatuses() {
   }, [statuses, isLoading]);
 }
 
-export function useRepairs(filter?: string) {
+export function useRepairs(filter?: string, enabled = true) {
   return useQuery({
     queryKey: ["repairs", filter ?? ""],
     queryFn: () => pb.collection("repairs").getFullList<RepairWithItem>({ filter: orgFilter(filter), sort: "-number", expand: "item,job" }),
+    enabled,
   });
 }
 

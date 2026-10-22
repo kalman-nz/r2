@@ -8,9 +8,11 @@ import { RepairStatusBadge } from "../StatusBadge";
 import { ResultBadge } from "../maintenance/ResultBadge";
 import NewJobModal from "../maintenance/NewJobModal";
 import { useToast } from "../ToastProvider";
+import { useFeature } from "../../lib/roles";
 
 // An item's maintenance tab: the plans it's on, what's scheduled, its
-// repairs (with what they've cost), and what's been done.
+// repairs (with what they've cost), and what's been done — whichever of
+// those the organisation uses.
 export default function MaintenanceSection({ item, canRecord }: { item: Item; canRecord: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -25,39 +27,45 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
   const repairCost = repairs.reduce((sum, r) => sum + (r.cost || 0), 0);
   const maintenanceCost = done.reduce((sum, j) => sum + (j.cost || 0), 0);
   const now = Date.now();
+  const feature = useFeature();
+  const maintenanceOn = feature("maintenance");
+  const repairsOn = feature("repairs");
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="card p-4 flex flex-col gap-2 text-sm">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="eyebrow text-gray-500">Plans</h2>
-          <Link to="/maintenance?tab=plans" className="text-xs text-signal-ink hover:text-signal-ink-hover">
-            All plans →
-          </Link>
-        </div>
-        {covering.length === 0 ? (
-          <p className="text-xs text-gray-500">Not on any repeating plan. Add it to one from Maintenance → Plans, like an annual inspection or test &amp; tag.</p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {covering.map((p) => (
-              <li key={p.id}>
-                <Link to={`/maintenance/plans/${p.id}`} className="text-gray-900 hover:underline">
-                  {p.name}
-                </Link>
-                <span className="text-gray-500"> · {describeInterval(p.every, p.unit).toLowerCase()}</span>
-              </li>
-            ))}
-          </ul>
+      {maintenanceOn && (
+        <section className="card p-4 flex flex-col gap-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="eyebrow text-gray-500">Plans</h2>
+            <Link to="/maintenance?tab=plans" className="text-xs text-signal-ink hover:text-signal-ink-hover">
+              All plans →
+            </Link>
+          </div>
+          {covering.length === 0 ? (
+            <p className="text-xs text-gray-500">Not on any repeating plan. Add it to one from Maintenance → Plans, like an annual inspection or test &amp; tag.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {covering.map((p) => (
+                <li key={p.id}>
+                  <Link to={`/maintenance/plans/${p.id}`} className="text-gray-900 hover:underline">
+                    {p.name}
+                  </Link>
+                  <span className="text-gray-500"> · {describeInterval(p.every, p.unit).toLowerCase()}</span>
+                </li>
+              ))}
+            </ul>
         )}
       </section>
+      )}
 
-      <section className="card overflow-hidden text-sm">
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-          <h2 className="eyebrow text-gray-500">Scheduled</h2>
-          {canRecord && (
-            <button onClick={() => setScheduling(true)} className="btn-secondary py-1">
-              Schedule job
-            </button>
+      {maintenanceOn && (
+        <section className="card overflow-hidden text-sm">
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
+            <h2 className="eyebrow text-gray-500">Scheduled</h2>
+            {canRecord && (
+              <button onClick={() => setScheduling(true)} className="btn-secondary py-1">
+                Schedule job
+              </button>
           )}
         </div>
         {scheduled.length === 0 ? (
@@ -78,63 +86,68 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
           </div>
         )}
       </section>
+      )}
 
-      <section className="card overflow-hidden text-sm">
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-          <h2 className="eyebrow text-gray-500">Repairs</h2>
-          {repairCost > 0 && <span className="text-xs text-gray-500">{nzd(repairCost)} spent on repairs</span>}
-        </div>
-        {repairs.length === 0 ? (
-          <p className="px-4 pb-4 text-xs text-gray-500">Never repaired.</p>
-        ) : (
-          <div className="divide-y divide-gray-100 border-t border-gray-100">
-            {repairs.map((r) => {
-              const open = isOpen(r.status);
-              const overdue = open && (parseDate(r.dueAt)?.getTime() ?? Infinity) < now;
-              return (
-                <Link key={r.id} to={`/maintenance/repairs/${r.id}`} className="flex items-center justify-between gap-3 px-4 py-2 hover:bg-gray-50">
+      {repairsOn && (
+        <section className="card overflow-hidden text-sm">
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
+            <h2 className="eyebrow text-gray-500">Repairs</h2>
+            {repairCost > 0 && <span className="text-xs text-gray-500">{nzd(repairCost)} spent on repairs</span>}
+          </div>
+          {repairs.length === 0 ? (
+            <p className="px-4 pb-4 text-xs text-gray-500">Never repaired.</p>
+          ) : (
+            <div className="divide-y divide-gray-100 border-t border-gray-100">
+              {repairs.map((r) => {
+                const open = isOpen(r.status);
+                const overdue = open && (parseDate(r.dueAt)?.getTime() ?? Infinity) < now;
+                return (
+                  <Link key={r.id} to={`/maintenance/repairs/${r.id}`} className="flex items-center justify-between gap-3 px-4 py-2 hover:bg-gray-50">
+                    <span className="min-w-0">
+                      <span className="block text-gray-900 truncate">
+                        <span className="font-mono text-xs text-gray-400 mr-1.5">R{r.number}</span>
+                        {r.fault}
+                      </span>
+                      <span className={`block text-xs truncate ${overdue ? "text-fault-ink" : "text-gray-500"}`}>
+                        {r.serials.length > 0 ? `${r.serials.length} unit${r.serials.length === 1 ? "" : "s"}` : `× ${r.quantity}`} · opened {formatDate(r.created)}
+                        {r.cost > 0 && ` · ${nzd(r.cost)}`}
+                      </span>
+                    </span>
+                    <RepairStatusBadge status={r.status} />
+                  </Link>
+                );
+              })}
+            </div>
+        )}
+      </section>
+      )}
+
+      {maintenanceOn && (
+        <section className="card overflow-hidden text-sm">
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
+            <h2 className="eyebrow text-gray-500">Done</h2>
+            {maintenanceCost > 0 && <span className="text-xs text-gray-500">{nzd(maintenanceCost)} on maintenance</span>}
+          </div>
+          {done.length === 0 ? (
+            <p className="px-4 pb-4 text-xs text-gray-500">No maintenance recorded yet.</p>
+          ) : (
+            <div className="divide-y divide-gray-100 border-t border-gray-100">
+              {done.slice(0, 50).map((j) => (
+                <Link key={j.id} to={`/maintenance/jobs/${j.id}`} className="flex items-center justify-between gap-3 px-4 py-2 hover:bg-gray-50">
                   <span className="min-w-0">
-                    <span className="block text-gray-900 truncate">
-                      <span className="font-mono text-xs text-gray-400 mr-1.5">R{r.number}</span>
-                      {r.fault}
-                    </span>
-                    <span className={`block text-xs truncate ${overdue ? "text-fault-ink" : "text-gray-500"}`}>
-                      {r.serials.length > 0 ? `${r.serials.length} unit${r.serials.length === 1 ? "" : "s"}` : `× ${r.quantity}`} · opened {formatDate(r.created)}
-                      {r.cost > 0 && ` · ${nzd(r.cost)}`}
+                    <span className="block text-gray-900 truncate">{j.name}</span>
+                    <span className="block text-xs text-gray-500 truncate">
+                      {assetLabel(j)} · {formatDay(j.doneOn)}
+                      {j.doneBy && ` · ${j.doneBy}`}
                     </span>
                   </span>
-                  <RepairStatusBadge status={r.status} />
+                  <ResultBadge job={j} />
                 </Link>
-              );
-            })}
-          </div>
+              ))}
+            </div>
         )}
       </section>
-
-      <section className="card overflow-hidden text-sm">
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-          <h2 className="eyebrow text-gray-500">Done</h2>
-          {maintenanceCost > 0 && <span className="text-xs text-gray-500">{nzd(maintenanceCost)} on maintenance</span>}
-        </div>
-        {done.length === 0 ? (
-          <p className="px-4 pb-4 text-xs text-gray-500">No maintenance recorded yet.</p>
-        ) : (
-          <div className="divide-y divide-gray-100 border-t border-gray-100">
-            {done.slice(0, 50).map((j) => (
-              <Link key={j.id} to={`/maintenance/jobs/${j.id}`} className="flex items-center justify-between gap-3 px-4 py-2 hover:bg-gray-50">
-                <span className="min-w-0">
-                  <span className="block text-gray-900 truncate">{j.name}</span>
-                  <span className="block text-xs text-gray-500 truncate">
-                    {assetLabel(j)} · {formatDay(j.doneOn)}
-                    {j.doneBy && ` · ${j.doneBy}`}
-                  </span>
-                </span>
-                <ResultBadge job={j} />
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+      )}
 
       {scheduling && (
         <NewJobModal

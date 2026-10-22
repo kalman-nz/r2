@@ -170,7 +170,7 @@ const admin = as(adminUser.token, orgA);
 // Every organisation starts with Admin, Planner and Tech.
 const roleIds = async (who) => Object.fromEntries((await who.ok("GET", `/api/orgs/${who.org}/roles`)).map((r) => [r.name, r.id]));
 const rolesA = await roleIds(admin);
-assert.deepEqual(Object.keys(rolesA), ["Admin", "Planner", "Tech"]);
+assert.deepEqual(Object.keys(rolesA), ["Admin", "Planner", "Tech", "Crew"]);
 
 // The admin invites the rest of the team.
 const plannerUser = await signUp("planner");
@@ -250,7 +250,7 @@ await tech.fails("PATCH", `/api/orgs/${orgA}/roles/${rolesA.Planner}`, { permiss
 await tech.fails("PATCH", `/api/orgs/${orgA}/members/${plannerMembership.id}`, { roleId: rolesA.Admin }, 403, /Only admins/);
 await tech.fails("PATCH", `/api/orgs/${orgA}/members/${adminMembership.id}`, { roleId: rolesA.Tech }, 403, /Only admins/);
 await tech.fails("POST", `/api/orgs/${orgA}/invitations`, { email: `boss2-${run}@example.com`, roleId: rolesA.Planner }, 403, /your own role doesn't have/);
-const crew = await tech.ok("POST", `/api/orgs/${orgA}/roles`, { name: "Crew", permissions: ["scan.out", "scan.in"] });
+const crew = await tech.ok("POST", `/api/orgs/${orgA}/roles`, { name: "Stage crew", permissions: ["scan.out", "scan.in"] });
 await tech.ok("POST", `/api/orgs/${orgA}/invitations`, { email: `crew-${run}@example.com`, roleId: crew.id });
 await tech.fails("DELETE", `/api/orgs/${orgA}/roles/${crew.id}`, null, 400, /invitation is waiting/);
 await tech.fails("PUT", "/api/app-settings", { gstRate: "15" }, 403, /change business, pricing/);
@@ -264,7 +264,7 @@ await planner.ok("DELETE", `/api/collections/items/records/${flagged.id}`);
 // Back to plain tech for everything below.
 await admin.ok("PATCH", `/api/orgs/${orgA}/members/${techMembership.id}`, { roleId: rolesA.Tech });
 const listedRoles = await tech.ok("GET", `/api/orgs/${orgA}/roles`);
-assert.equal(listedRoles.find((r) => r.name === "Crew").invitations, 1);
+assert.equal(listedRoles.find((r) => r.name === "Stage crew").invitations, 1);
 assert.equal(listedRoles.find((r) => r.name === "Tech").members, 1);
 log("custom roles: per-action permissions, prerequisites, no handing out more than you have, the Admin role is fixed");
 
@@ -784,6 +784,107 @@ assert.deepEqual(lampHistory.map((j) => [j.status, j.plan]), [["done", ""]], "it
 await admin.fails("DELETE", `/api/collections/serials/records/${lampA.id}`, null, 400, /maintenance on record/);
 assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "maintenance_done" && a.summary === `Recorded ${ppeBody.name}: failed, repair R${mDone.repair.number}`));
 log("maintenance: repeating plans schedule each unit, done work schedules the next, fails open repairs, test & tag keeps the units' dates");
+
+// --- how each organisation works: project statuses ---
+const jobStatusesOf = async (who) =>
+  (await who.ok("GET", `/api/collections/job_statuses/records?sort=sortOrder&filter=${encodeURIComponent(`org = "${who.org}"`)}`)).items;
+let flowStatuses = await jobStatusesOf(planner);
+assert.deepEqual(flowStatuses.map((x) => x.name), ["Enquiry", "Provisional", "Confirmed", "Prepped", "Out", "Returned", "Cancelled"], "every organisation starts with these");
+const flowId = (name) => flowStatuses.find((x) => x.name === name).id;
+assert.equal((await jobRecord(jobA)).jobStatus, flowId("Out"), "projects have their stage's status");
+const flow = await planner.create("jobs", { name: "Workflow check", prepAt: "2031-02-01 08:00:00Z", returnAt: "2031-02-02 08:00:00Z" });
+assert.deepEqual([flow.jobStatus, flow.status], [flowId("Enquiry"), "enquiry"], "new projects start in the default");
+let moved = await planner.ok("PATCH", `/api/collections/jobs/records/${flow.id}`, { jobStatus: flowId("Prepped") });
+assert.equal(moved.status, "confirmed", "Prepped holds kit like Confirmed");
+moved = await planner.ok("PATCH", `/api/collections/jobs/records/${flow.id}`, { status: "provisional" });
+assert.equal(moved.jobStatus, flowId("Provisional"), "setting a stage picks its first status");
+await planner.fails("PATCH", `/api/collections/jobs/records/${flow.id}`, { jobStatus: (await jobStatusesOf(bossB))[0].id }, 400, /Pick one of the project statuses/);
+await planner.fails("PUT", "/api/job-statuses", { statuses: flowStatuses }, 403);
+flowStatuses = await admin.ok("PUT", "/api/job-statuses", {
+  statuses: [...flowStatuses.slice(0, 4), { name: "Loaded", stage: "out", colour: "orange" }, ...flowStatuses.slice(4)],
+});
+assert.deepEqual(flowStatuses.map((x) => x.name), ["Enquiry", "Provisional", "Confirmed", "Prepped", "Loaded", "Out", "Returned", "Cancelled"]);
+moved = await planner.ok("PATCH", `/api/collections/jobs/records/${flow.id}`, { status: "out" });
+assert.equal(moved.jobStatus, flowId("Loaded"), "kit going out (a first scan out) lands on the first out status");
+await planner.ok("PATCH", `/api/collections/jobs/records/${flow.id}`, { jobStatus: flowId("Prepped") });
+await admin.fails("PUT", "/api/job-statuses", { statuses: flowStatuses.filter((x) => x.name !== "Prepped") }, 400, /1 project is Prepped/);
+flowStatuses = await admin.ok("PUT", "/api/job-statuses", {
+  statuses: flowStatuses.filter((x) => x.name !== "Prepped"),
+  moves: { [flowId("Prepped")]: flowId("Confirmed") },
+});
+assert.deepEqual([(await jobRecord(flow)).jobStatus, (await jobRecord(flow)).status], [flowId("Confirmed"), "confirmed"], "a removed status's projects move");
+await admin.ok("PUT", "/api/job-statuses", { statuses: flowStatuses.map((x) => (x.name === "Confirmed" ? { ...x, stage: "provisional" } : x)) });
+assert.equal((await jobRecord(flow)).status, "provisional", "changing a status's stage takes its projects with it");
+flowStatuses = await admin.ok("PUT", "/api/job-statuses", { statuses: flowStatuses });
+await admin.fails("PUT", "/api/job-statuses", { statuses: flowStatuses.filter((x) => !["enquiry", "provisional", "confirmed"].includes(x.stage)) }, 400, /start in/);
+assert.equal((await jobStatusesOf(bossB)).length, 7, "B's are its own");
+
+// --- and which features it uses ---
+await planner.fails("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: false } }, 403);
+let feats = await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: false, repairs: false } });
+assert.deepEqual([feats.scanning, feats.repairs, feats.pricing], [false, false, true]);
+const techInA = (await ok(techUser.token, "GET", "/api/me")).memberships.find((m) => m.org.id === orgA);
+assert.ok(!techInA.permissions.includes("scan.out") && techInA.org.features.scanning === false, "a turned-off feature's permissions count for nobody");
+await tech.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: "x", direction: "out" }, 403, /Check in & out is turned off/);
+await tech.fails("POST", "/api/repairs", { item: stand.id, quantity: 1, fault: "x" }, 403, /Repairs is turned off/);
+await tech.ok("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "repair" });
+await tech.ok("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "active" });
+await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { pricing: false } });
+assert.equal((await admin.ok("GET", `/api/jobs/${jobA.id}/summary`)).includesPrices, false, "no prices anywhere, admins included");
+await admin.fails("POST", `/api/jobs/${jobA.id}/quotes`, null, 403, /Prices and quotes is turned off/);
+await admin.fails("GET", "/api/exports/xero/jobs?from=2030-03-01&to=2030-03-31", null, 403);
+feats = await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: true, repairs: true, pricing: true } });
+assert.ok(Object.values(feats).every(Boolean), "and back on");
+assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "features_changed" && a.summary === "Turned off Check in & out, Repairs"));
+log("each organisation's own project statuses on fixed stages, and features it can turn off");
+
+// --- crew, and everyone's own dashboards and views ---
+await planner.create("job_crew", { job: jobA.id, user: techUser.id, function: "Sound op" });
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, user: techUser.id }, 400);
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, user: bossUser.id }, 400, /not in this organisation/);
+assert.ok((await tech.call("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, user: techUser.id })).status >= 400, "techs don't plan crew");
+const minePage = await tech.ok("GET", `/api/collections/jobs/records?filter=${encodeURIComponent(`org = "${orgA}" && job_crew_via_job.user ?= "${techUser.id}"`)}`);
+assert.deepEqual(minePage.items.map((j) => j.id), [jobA.id], "my projects are the ones I'm crew on");
+const packingNow = await tech.ok("GET", `/api/home/packing?jobs=${jobA.id},${jobB.id}`);
+assert.ok(packingNow[jobA.id].needed > 0 && packingNow[jobA.id].out > 0, JSON.stringify(packingNow));
+
+let dash = await tech.ok("GET", "/api/dashboards");
+assert.deepEqual(dash.dashboards.map((d) => d.name).sort(), ["My projects", "Overview", "Workshop"], "everyone starts with these");
+const overview = dash.dashboards.find((d) => d.name === "Overview");
+assert.deepEqual([dash.defaultId, dash.home], [overview.id, ""]);
+await tech.fails("PATCH", `/api/dashboards/${overview.id}`, { panels: ["mine"] }, 403, /organisation's own/);
+await tech.fails("POST", "/api/dashboards", { name: "x", panels: ["Not a panel"] }, 400, /Not a panel/);
+const myDash = await tech.ok("POST", "/api/dashboards", { name: "My week", panels: ["mine", "going-out", { id: "repairs" }] });
+assert.deepEqual(myDash.panels, [{ id: "mine" }, { id: "going-out" }, { id: "repairs" }]);
+assert.ok(!(await planner.ok("GET", "/api/dashboards")).dashboards.some((d) => d.id === myDash.id), "your own until you share it");
+await tech.ok("PATCH", `/api/dashboards/${myDash.id}`, { sharedWith: [plannerUser.id] });
+assert.ok((await planner.ok("GET", "/api/dashboards")).dashboards.some((d) => d.id === myDash.id && !d.canEdit), "shared with one person");
+await planner.fails("PATCH", `/api/dashboards/${myDash.id}`, { name: "Mine now" }, 403, /owner/);
+await tech.fails("PATCH", `/api/dashboards/${myDash.id}`, { sharedWith: [bossUser.id] }, 400, /in this organisation/);
+await tech.fails("PATCH", `/api/dashboards/${myDash.id}`, { public: true }, 403, /share with everyone/);
+const company = await admin.ok("POST", "/api/dashboards", { name: "Company", panels: ["glance"], public: true });
+assert.ok((await tech.ok("GET", "/api/dashboards")).dashboards.some((d) => d.id === company.id), "admins can share with everyone");
+await admin.ok("PATCH", `/api/dashboards/${company.id}`, { isDefault: true });
+assert.equal((await tech.ok("GET", "/api/dashboards")).defaultId, company.id, "and pick everyone's Home");
+await admin.fails("DELETE", `/api/dashboards/${company.id}`, null, 400, /default/);
+await admin.ok("PATCH", `/api/dashboards/${overview.id}`, { isDefault: true });
+await tech.ok("PUT", "/api/me/home", { dashboard: myDash.id });
+assert.equal((await tech.ok("GET", "/api/dashboards")).home, myDash.id, "your own Home");
+const secret = await admin.ok("POST", "/api/dashboards", { name: "Secret", panels: ["quotes"] });
+await planner.fails("PUT", "/api/me/home", { dashboard: secret.id }, 404);
+
+const savedView = await tech.ok("POST", "/api/views", { page: "projects", name: "Out now", config: { view: "out" } });
+assert.ok(!(await planner.ok("GET", "/api/views?page=projects")).some((v) => v.id === savedView.id));
+await tech.ok("PATCH", `/api/views/${savedView.id}`, { sharedWith: [plannerUser.id] });
+assert.deepEqual((await planner.ok("GET", "/api/views?page=projects")).find((v) => v.id === savedView.id).config, { view: "out" });
+await tech.fails("PATCH", `/api/views/${savedView.id}`, { public: true }, 403);
+await tech.fails("POST", "/api/equipment-views", { name: "Speakers", columns: ["name"], public: true }, 403);
+const invView = await admin.ok("POST", "/api/equipment-views", { name: "All speakers", columns: ["name", "code"], public: true });
+assert.ok((await tech.ok("GET", "/api/equipment-views")).some((v) => v.id === invView.id && v.public && !v.canEdit), "inventory views share the same way");
+const adminInA = (await ok(adminUser.token, "GET", "/api/me")).memberships.find((m) => m.org.id === orgA);
+assert.ok(adminInA.permissions.includes("views.publish") && !techInA.permissions.includes("views.publish"), "only admins publish, to start with");
+assert.ok((await admin.ok("GET", `/api/orgs/${orgA}/roles`)).some((r) => r.name === "Crew" && r.permissions.length === 0), "and there's a Crew role");
+log("crew on projects, and everyone's own dashboards and views, shared with people or (admins) everyone");
 
 // --- delete protection ---
 await admin.fails("DELETE", `/api/collections/serials/records/${k12Serials[1].id}`, null, 400, /repairs on record/);

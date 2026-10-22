@@ -155,3 +155,23 @@ routerAdd(
   },
   $apis.requireAuth("users"),
 );
+
+// The organisation's project statuses, in order (lib/jobStatuses.js
+// saveJobStatuses): { statuses: [{ id?, name, stage, colour, isDefault }],
+// moves: { removedId: keptId } }.
+routerAdd(
+  "PUT",
+  "/api/job-statuses",
+  (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { saveJobStatuses } = require(`${__hooks}/lib/jobStatuses.js`);
+    const { whoName } = require(`${__hooks}/lib/auth.js`);
+    const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const ctx = requireOrg(e, "settings.edit");
+    const body = e.requestInfo().body || {};
+    const saved = saveJobStatuses($app, ctx.orgId, body.statuses, body.moves);
+    logEvent(ctx.orgId, "job_statuses", whoName(e.auth), { names: saved.map((s) => s.getString("name")) });
+    return e.json(200, saved);
+  },
+  $apis.requireAuth("users"),
+);

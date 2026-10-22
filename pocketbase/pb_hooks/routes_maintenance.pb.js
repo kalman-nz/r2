@@ -13,6 +13,7 @@ routerAdd(
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const ctx = requireOrg(e, "maintenance.plans");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     const plan = savePlan($app, ctx.orgId, null, e.requestInfo().body || {}, e.auth);
     logEvent(ctx.orgId, "maintenance_plan", whoName(e.auth), { plan: plan.id, name: plan.getString("name"), action: "created" });
     return e.json(200, plan);
@@ -32,6 +33,7 @@ routerAdd(
     const plan = findOrNull($app, "maintenance_plans", e.request.pathValue("id"));
     if (!plan) throw new NotFoundError("Plan not found");
     const ctx = requireRecordOrg(e, plan, "maintenance.plans");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     const saved = savePlan($app, ctx.orgId, plan, e.requestInfo().body || {}, e.auth);
     logEvent(ctx.orgId, "maintenance_plan", whoName(e.auth), { plan: plan.id, name: saved.getString("name"), action: "changed" });
     return e.json(200, saved);
@@ -51,6 +53,7 @@ routerAdd(
     const plan = findOrNull($app, "maintenance_plans", e.request.pathValue("id"));
     if (!plan) throw new NotFoundError("Plan not found");
     const ctx = requireRecordOrg(e, plan, "maintenance.plans");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     deletePlan($app, plan);
     logEvent(ctx.orgId, "maintenance_plan", whoName(e.auth), { plan: plan.id, name: plan.getString("name"), action: "deleted" });
     return e.json(200, { ok: true });
@@ -66,6 +69,7 @@ routerAdd(
     const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
     const { scheduleJobs } = require(`${__hooks}/lib/maintenance.js`);
     const ctx = requireOrg(e, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     return e.json(200, scheduleJobs($app, ctx.orgId, e.requestInfo().body || {}, e.auth));
   },
   $apis.requireAuth("users"),
@@ -84,6 +88,7 @@ routerAdd(
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const ctx = requireOrg(e, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     const body = e.requestInfo().body || {};
     const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
     if (ids.length === 0) throw new BadRequestError("Pick what passed");
@@ -117,7 +122,8 @@ routerAdd(
     const { updateJob } = require(`${__hooks}/lib/maintenance.js`);
     const job = findOrNull($app, "maintenance_jobs", e.request.pathValue("id"));
     if (!job) throw new NotFoundError("Job not found");
-    requireRecordOrg(e, job, "units.flag");
+    const ctx = requireRecordOrg(e, job, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     return e.json(200, updateJob($app, job, e.requestInfo().body || {}));
   },
   $apis.requireAuth("users"),
@@ -132,7 +138,8 @@ routerAdd(
     const { deleteJob } = require(`${__hooks}/lib/maintenance.js`);
     const job = findOrNull($app, "maintenance_jobs", e.request.pathValue("id"));
     if (!job) throw new NotFoundError("Job not found");
-    requireRecordOrg(e, job, "units.flag");
+    const ctx = requireRecordOrg(e, job, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     deleteJob($app, job);
     return e.json(200, { ok: true });
   },
@@ -153,6 +160,7 @@ routerAdd(
     const job = findOrNull($app, "maintenance_jobs", e.request.pathValue("id"));
     if (!job) throw new NotFoundError("Job not found");
     const ctx = requireRecordOrg(e, job, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     const result = completeJob($app, job, e.requestInfo().body || {}, e.auth);
     logEvent(ctx.orgId, "maintenance_done", whoName(e.auth), {
       job: job.id,
@@ -178,7 +186,8 @@ routerAdd(
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const job = findOrNull($app, "maintenance_jobs", e.request.pathValue("id"));
     if (!job) throw new NotFoundError("Job not found");
-    requireRecordOrg(e, job, "units.flag");
+    const ctx = requireRecordOrg(e, job, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     return e.json(200, addFiles($app, "maintenance_jobs", job.id, uploadedFiles(e), whoName(e.auth)));
   },
   $apis.requireAuth("users"),
@@ -194,7 +203,8 @@ routerAdd(
     const { removeFile } = require(`${__hooks}/lib/files.js`);
     const job = findOrNull($app, "maintenance_jobs", e.request.pathValue("id"));
     if (!job) throw new NotFoundError("Job not found");
-    requireRecordOrg(e, job, "units.flag");
+    const ctx = requireRecordOrg(e, job, "units.flag");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "maintenance");
     return e.json(200, removeFile($app, "maintenance_jobs", job.id, e.request.pathValue("name")).record);
   },
   $apis.requireAuth("users"),

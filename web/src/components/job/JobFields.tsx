@@ -1,9 +1,9 @@
-import type { JobStatus } from "../../lib/api";
 import type { JobDraft } from "../../lib/jobDraft";
 import { useContacts, useVenues } from "../../lib/catalog";
 import Field from "../Field";
 import QuickCreateSelect from "../QuickCreateSelect";
-import { JOB_STATUSES } from "../../lib/statuses";
+import { JOB_STAGES } from "../../lib/statuses";
+import { useJobStatuses } from "../../lib/workflow";
 import NumberInput from "../NumberInput";
 import { useCan } from "../../lib/roles";
 import { JobStatusBadge } from "../StatusBadge";
@@ -21,6 +21,10 @@ export default function JobFields({
   withDates?: boolean;
 }) {
   const can = useCan();
+  const { statuses, byId, defaultId } = useJobStatuses();
+  // A new project shows where it'll start; the server fills the default in.
+  const statusId = draft.jobStatus || (draft.status ? (statuses.find((s) => s.stage === draft.status)?.id ?? "") : defaultId);
+  const stage = byId.get(statusId)?.stage ?? draft.status;
   const { data: contacts = [] } = useContacts();
   const { data: venues = [] } = useVenues();
   const set = <K extends keyof JobDraft>(key: K, value: JobDraft[K]) => onChange({ ...draft, [key]: value });
@@ -68,16 +72,20 @@ export default function JobFields({
           />
         )}
       </Field>
-      <Field label="Status" hint={JOB_STATUSES.find((s) => s.value === draft.status)?.hint}>
+      <Field label="Status" hint={JOB_STAGES.find((s) => s.value === stage)?.hint}>
         {readOnly ? (
           <span className="py-2">
-            <JobStatusBadge status={draft.status} />
+            <JobStatusBadge status={draft.status} jobStatus={draft.jobStatus} />
           </span>
         ) : (
-          <select value={draft.status} onChange={(e) => set("status", e.target.value as JobStatus)} className="input py-2">
-            {JOB_STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
+          <select
+            value={statusId}
+            onChange={(e) => onChange({ ...draft, jobStatus: e.target.value, status: byId.get(e.target.value)?.stage ?? draft.status })}
+            className="input py-2"
+          >
+            {statuses.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
               </option>
             ))}
           </select>

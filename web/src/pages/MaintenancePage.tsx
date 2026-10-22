@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { orgFilter } from "../lib/currentOrg";
 import { invalidateMaintenance, today, type JobWithExpand } from "../lib/maintenance";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import { OPEN_REPAIRS_FILTER } from "../lib/statuses";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import { useToast } from "../components/ToastProvider";
@@ -30,13 +30,16 @@ type Open = "repair" | "job" | "plan" | "scan" | null;
 
 // Looking after the kit: scheduled maintenance (from repeating plans, or
 // one-off), repairs for what's broken, the plans themselves, and the record
-// of what's been done.
+// of what's been done. Each part only while the organisation uses it
+// (Settings → Features).
 export default function MaintenancePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { can } = useRole();
+  const feature = useFeature();
   const { showToast } = useToast();
-  const [tab, openTab] = useTab(TABS);
+  const tabs = TABS.filter((t) => (t.key === "repairs" ? feature("repairs") : feature("maintenance")));
+  const [tab, openTab] = useTab(tabs.length > 0 ? tabs : TABS);
   const [open, setOpen] = useState<Open>(null);
   const [passing, setPassing] = useState<JobWithExpand[] | null>(null);
   const canRecord = can("units.flag");
@@ -49,13 +52,17 @@ export default function MaintenancePage() {
       const total = async (collection: string, filter: string) =>
         (await pb.collection(collection).getList(1, 1, { filter: orgFilter(filter), fields: "id", skipTotal: false })).totalItems;
       const [overdue, repairs] = await Promise.all([
-        total("maintenance_jobs", pb.filter("status = 'scheduled' && dueOn < {:today}", { today: today() })),
-        total("repairs", OPEN_REPAIRS_FILTER),
+        feature("maintenance") ? total("maintenance_jobs", pb.filter("status = 'scheduled' && dueOn < {:today}", { today: today() })) : 0,
+        feature("repairs") ? total("repairs", OPEN_REPAIRS_FILTER) : 0,
       ]);
       return { overdue, repairs };
     },
   });
   const refresh = () => invalidateMaintenance(queryClient);
+
+  if (tabs.length === 0) {
+    return <p className="max-w-6xl mx-auto text-sm text-gray-500">Repairs and maintenance plans are both turned off (Settings → Features).</p>;
+  }
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-3">
@@ -65,9 +72,11 @@ export default function MaintenancePage() {
           <p className="text-xs text-gray-500">
             {counts
               ? [
-                  counts.overdue > 0 ? `${counts.overdue} overdue` : "Nothing overdue",
-                  `${counts.repairs} repair${counts.repairs === 1 ? "" : "s"} open`,
-                ].join(" · ")
+                  feature("maintenance") && (counts.overdue > 0 ? `${counts.overdue} overdue` : "Nothing overdue"),
+                  feature("repairs") && `${counts.repairs} repair${counts.repairs === 1 ? "" : "s"} open`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               : " "}
           </p>
         </div>
@@ -99,7 +108,7 @@ export default function MaintenancePage() {
         label="Maintenance sections"
         current={tab}
         onOpen={openTab}
-        tabs={TABS.map((t) => ({ ...t, count: t.key === "due" ? counts?.overdue || undefined : t.key === "repairs" ? counts?.repairs || undefined : undefined }))}
+        tabs={tabs.map((t) => ({ ...t, count: t.key === "due" ? counts?.overdue || undefined : t.key === "repairs" ? counts?.repairs || undefined : undefined }))}
       />
 
       {tab === "due" && <DueTab canRecord={canRecord} onPass={setPassing} />}
