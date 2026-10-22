@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type Invitation, type Me, type Membership, type OrgRef, type RoleRef } from "./api";
+import { api, type FeatureKey, type Invitation, type Me, type Membership, type OrgRef, type RoleRef } from "./api";
 import { currentOrgId, setCurrentOrgId } from "./currentOrg";
 import { useAuthRecord } from "./pocketbase";
 
@@ -18,8 +18,11 @@ interface OrgState {
   invitations: Invitation[];
   org: OrgRef | null;
   role: RoleRef | null;
-  // what your role in it allows (lib/permissions.js on the server)
+  // what your role in it allows (lib/permissions.js on the server), less
+  // what the organisation has turned off
   can: (permission: string) => boolean;
+  // whether the organisation uses a feature (Settings → Features)
+  feature: (key: FeatureKey) => boolean;
   isPlatformAdmin: boolean;
   switchOrg: (id: string) => void;
   refresh: () => Promise<unknown>;
@@ -85,6 +88,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
   const permissions = active?.permissions;
   const can = useCallback((permission: string) => !!permissions && permissions.includes(permission), [permissions]);
+  // On unless the organisation's turned it off (and on before /api/me says).
+  const features = active?.org.features;
+  const feature = useCallback((key: FeatureKey) => features?.[key] !== false, [features]);
 
   const switchOrg = useCallback((id: string) => {
     setCurrentOrgId(id);
@@ -102,11 +108,12 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       org: active?.org ?? null,
       role: active?.role ?? null,
       can,
+      feature,
       isPlatformAdmin: me?.user.isPlatformAdmin ?? false,
       switchOrg,
       refresh,
     }),
-    [me, userId, query.isError, active, can, switchOrg, refresh],
+    [me, userId, query.isError, active, can, feature, switchOrg, refresh],
   );
   return <OrgContext.Provider value={value}>{children}</OrgContext.Provider>;
 }

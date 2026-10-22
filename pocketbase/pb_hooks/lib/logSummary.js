@@ -95,6 +95,16 @@ function summarizeLogs(rows, opts) {
       // Status names since migration 0034; before it, these fixed ones.
       const old = { open: "Reported", in_progress: "Being repaired", completed: "Fixed", written_off: "Written off" };
       summary = "Set repair R" + details.number + " to " + (old[details.to] || details.to);
+    } else if (entry.type === "features_changed") {
+      const { FEATURES } = require(`${__hooks}/lib/features.js`);
+      const changes = details.changes || {};
+      const named = (on) =>
+        FEATURES.filter((f) => f.key in changes && (changes[f.key] !== false) === on)
+          .map((f) => f.label)
+          .join(", ");
+      summary = [named(false) && "Turned off " + named(false), named(true) && "Turned on " + named(true)].filter(Boolean).join("; ") || "Changed features";
+    } else if (entry.type === "job_statuses") {
+      summary = "Changed the project statuses: " + (details.names || []).join(", ");
     } else if (entry.type === "repair_statuses") {
       summary = "Changed the repair statuses: " + (details.names || []).join(", ");
     } else if (entry.type === "repair_files") {

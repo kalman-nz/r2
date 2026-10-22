@@ -6,12 +6,15 @@ export default function Switch({
   label,
   disabled = false,
   danger = false,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (on: boolean) => void;
   label: string;
   disabled?: boolean;
   danger?: boolean;
+  // For a switch whose label is shown elsewhere.
+  ariaLabel?: string;
 }) {
   return (
     <label className={`inline-flex items-center gap-2.5 text-sm text-gray-800 select-none ${disabled ? "opacity-50" : "cursor-pointer"}`}>
@@ -19,6 +22,7 @@ export default function Switch({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? (danger ? "bg-fault-ink" : "bg-carbon") : "bg-gray-300"}`}

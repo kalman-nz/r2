@@ -7,6 +7,8 @@ import PricingSettings from "../components/PricingSettings";
 import CatalogSettings from "../components/CatalogSettings";
 import CustomFieldsSettings from "../components/CustomFieldsSettings";
 import RepairStatusesSettings from "../components/RepairStatusesSettings";
+import JobStatusesSettings from "../components/JobStatusesSettings";
+import FeaturesSettings from "../components/FeaturesSettings";
 import ImportSettings from "../components/ImportSettings";
 import AccountingSettings from "../components/AccountingSettings";
 import MembersSettings from "../components/MembersSettings";
@@ -14,6 +16,8 @@ import RolesSettings from "../components/RolesSettings";
 import LogsPage from "./LogsPage";
 import RequireRole from "../components/RequireRole";
 import { useRole } from "../lib/roles";
+import { useOrg } from "../lib/org";
+import type { FeatureKey } from "../lib/api";
 
 function Icon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
   return (
@@ -32,13 +36,51 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement> & { children: Reac
   );
 }
 
-type NavItem = { to: string; label: string; group: string; permissions: string[]; icon: ReactNode; wide?: boolean };
+// feature: only while the organisation uses it (Settings → Features).
+type NavItem = { to: string; label: string; group: string; permissions: string[]; icon: ReactNode; wide?: boolean; feature?: FeatureKey };
 
 // Grouped in the nav under these headings, in this order. Each section
 // shows to anyone whose role has any of its permissions.
-const GROUPS = ["Organisation", "Finance", "Inventory", "Data"];
+const GROUPS = ["Organisation", "How you work", "Finance", "Inventory", "Data"];
 
 const NAV_ITEMS: NavItem[] = [
+  {
+    to: "features",
+    label: "Features",
+    group: "How you work",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <rect x="3" y="6" width="18" height="12" rx="6" />
+        <circle cx="15" cy="12" r="3" />
+      </Icon>
+    ),
+  },
+  {
+    to: "project-statuses",
+    label: "Project statuses",
+    group: "How you work",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <path d="M4 6h10M4 12h16M4 18h7" />
+        <circle cx="18" cy="6" r="2" />
+        <circle cx="15" cy="18" r="2" />
+      </Icon>
+    ),
+  },
+  {
+    to: "repair-statuses",
+    label: "Repair statuses",
+    group: "How you work",
+    feature: "repairs",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
+      </Icon>
+    ),
+  },
   {
     to: "general",
     label: "Business details",
@@ -67,6 +109,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "accounting",
     label: "Accounting",
     group: "Finance",
+    feature: "xero",
     permissions: ["settings.edit"],
     icon: (
       <Icon>
@@ -100,17 +143,6 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    to: "repair-statuses",
-    label: "Repair statuses",
-    group: "Inventory",
-    permissions: ["settings.edit"],
-    icon: (
-      <Icon>
-        <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
-      </Icon>
-    ),
-  },
-  {
     to: "import",
     label: "Import data",
     group: "Data",
@@ -127,6 +159,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "printer",
     label: "Printers",
     group: "Inventory",
+    feature: "labels",
     permissions: ["settings.edit"],
     icon: (
       <Icon>
@@ -204,7 +237,8 @@ const NAV_ITEMS: NavItem[] = [
 // Whether any part of Settings is open to you (the sidebar link).
 export function useSettingsAccess() {
   const { can } = useRole();
-  const open = NAV_ITEMS.filter((item) => item.permissions.some(can));
+  const { feature } = useOrg();
+  const open = NAV_ITEMS.filter((item) => item.permissions.some(can) && (!item.feature || feature(item.feature)));
   return GROUPS.flatMap((group) => open.filter((item) => item.group === group));
 }
 
@@ -255,6 +289,8 @@ export default function SettingsPage() {
             <Route path="inventory" element={gate("inventory", <CatalogSettings />)} />
             <Route path="custom-fields" element={gate("custom-fields", <CustomFieldsSettings />)} />
             <Route path="repair-statuses" element={gate("repair-statuses", <RepairStatusesSettings />)} />
+            <Route path="project-statuses" element={gate("project-statuses", <JobStatusesSettings />)} />
+            <Route path="features" element={gate("features", <FeaturesSettings />)} />
             <Route path="import" element={gate("import", <ImportSettings />)} />
             <Route path="labels" element={gate("labels", <LabelsList />)} />
             <Route path="printer" element={gate("printer", <PrinterSettings />)} />

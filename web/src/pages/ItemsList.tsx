@@ -3,6 +3,9 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type EquipmentView, type Item } from "../lib/api";
+import ShareModal from "../components/ShareModal";
+import ViewMenu from "../components/ViewMenu";
+import { byLabel, sharedLabel } from "../lib/views";
 import { renderItemLabelImage, sendRenderedLabel } from "../lib/print";
 import { money, num, PRICE_SUFFIX } from "../lib/format";
 import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
@@ -232,13 +235,15 @@ function ViewRow({
   busy,
   onApply,
   onPatch,
+  onShare,
   onDelete,
 }: {
   view: EquipmentView;
   active: boolean;
   busy: boolean;
   onApply: (view: EquipmentView) => void;
-  onPatch: (view: EquipmentView, patch: Partial<Pick<EquipmentView, "name" | "shared">>) => void;
+  onPatch: (view: EquipmentView, patch: Partial<Pick<EquipmentView, "name">>) => void;
+  onShare: (view: EquipmentView) => void;
   onDelete: (view: EquipmentView) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -276,15 +281,9 @@ function ViewRow({
           {view.name}
         </button>
       )}
-      <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
-        <input
-          type="checkbox"
-          checked={view.shared}
-          disabled={busy}
-          onChange={(e) => onPatch(view, { shared: e.target.checked })}
-        />
-        Shared
-      </label>
+      <button onClick={() => onShare(view)} disabled={busy} title="Share" className="text-xs text-gray-500 hover:text-gray-900 shrink-0">
+        {sharedLabel(view)}
+      </button>
       <button
         onClick={() => setEditing(true)}
         title="Rename"
@@ -328,7 +327,7 @@ function ManageViewsModal({
   onClose: () => void;
 }) {
   const [newName, setNewName] = useState("");
-  const [shareNew, setShareNew] = useState(false);
+  const [sharing, setSharing] = useState<EquipmentView | null>(null);
   const [busy, setBusy] = useState(false);
 
   const myViews = views.filter((v) => v.isOwner);
@@ -339,9 +338,8 @@ function ManageViewsModal({
     if (!name || busy) return;
     setBusy(true);
     try {
-      const view = await api.createEquipmentView({ name, shared: shareNew, ...getCurrentConfig() });
+      const view = await api.createEquipmentView({ name, ...getCurrentConfig() });
       setNewName("");
-      setShareNew(false);
       onSaved(view);
     } finally {
       setBusy(false);
@@ -354,7 +352,6 @@ function ManageViewsModal({
     try {
       const view = await api.updateEquipmentView(activeView.id, {
         name: activeView.name,
-        shared: activeView.shared,
         ...getCurrentConfig(),
       });
       onSaved(view);
@@ -363,13 +360,12 @@ function ManageViewsModal({
     }
   }
 
-  async function patchView(view: EquipmentView, patch: Partial<Pick<EquipmentView, "name" | "shared">>) {
+  async function patchView(view: EquipmentView, patch: Partial<Pick<EquipmentView, "name">>) {
     if (busy) return;
     setBusy(true);
     try {
       const updated = await api.updateEquipmentView(view.id, {
         name: patch.name ?? view.name,
-        shared: patch.shared ?? view.shared,
         columns: view.columns,
         widths: view.widths,
         sortKey: view.sortKey,
@@ -441,10 +437,6 @@ function ManageViewsModal({
                 placeholder="New view name…"
                 className="input py-1.5 text-sm flex-1 min-w-0"
               />
-              <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
-                <input type="checkbox" checked={shareNew} onChange={(e) => setShareNew(e.target.checked)} />
-                Share
-              </label>
               <button onClick={saveAsNew} disabled={busy || !newName.trim()} className="btn-secondary py-1.5 text-sm shrink-0">
                 Save as new
               </button>
@@ -463,6 +455,7 @@ function ManageViewsModal({
                 busy={busy}
                 onApply={onApply}
                 onPatch={patchView}
+                onShare={setSharing}
                 onDelete={remove}
               />
             ))}
@@ -483,7 +476,10 @@ function ManageViewsModal({
                   }`}
                 >
                   <span className="truncate">{v.name}</span>
-                  <span className="text-xs text-gray-400 shrink-0">by {v.ownerName}</span>
+                  <span className="text-xs text-gray-400 shrink-0">
+                    by {v.ownerName}
+                    {v.public ? " · everyone" : ""}
+                  </span>
                 </button>
               ))}
             </div>
@@ -496,6 +492,27 @@ function ManageViewsModal({
           </button>
         </div>
       </div>
+      {sharing && (
+        // Its own overlay: clicks on it mustn't reach this modal's.
+        <div onClick={(e) => e.stopPropagation()}>
+          <ShareModal
+            name={sharing.name}
+            value={sharing}
+            onSave={async (shared) => {
+              const updated = await api.updateEquipmentView(sharing.id, {
+                name: sharing.name,
+                columns: sharing.columns,
+                widths: sharing.widths,
+                sortKey: sharing.sortKey,
+                sortDir: sharing.sortDir,
+                ...shared,
+              });
+              onPatched(updated);
+            }}
+            onClose={() => setSharing(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -894,9 +911,18 @@ export default function ItemsList() {
             </button>
           )}
           <div className="ml-auto flex items-center gap-1.5">
-            <button onClick={() => setManageViewsOpen(true)} className="btn-secondary">
-              View: {activeView ? activeView.name : "Default"}
-            </button>
+            <ViewMenu
+              label="Saved views"
+              views={views}
+              currentId={activeView?.id ?? ""}
+              placeholder="View: Default"
+              prefix="View"
+              none="Default"
+              note={(v) => byLabel(v)}
+              onPick={applyView}
+              actions={[{ label: "Columns & views…", onClick: () => setManageViewsOpen(true) }]}
+              align="right"
+            />
           </div>
         </div>
 

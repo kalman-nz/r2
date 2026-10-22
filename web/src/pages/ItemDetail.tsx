@@ -8,7 +8,7 @@ import { indexFolders, trail } from "../lib/folders";
 import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
 import { priceLabel } from "../lib/format";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import ItemForm from "../components/item/ItemForm";
 import ItemDetails from "../components/item/ItemDetails";
 import { useConfirm } from "../components/ConfirmProvider";
@@ -43,6 +43,7 @@ export default function ItemDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { can } = useRole();
+  const feature = useFeature();
   const paths = useCategoryPaths();
   const { data: categories = [] } = useCategories();
   const folders = useMemo(() => indexFolders(categories), [categories]);
@@ -175,7 +176,11 @@ export default function ItemDetail() {
       t.key === "general" ||
       t.key === "accessories" ||
       t.key === "history" ||
-      (t.key === "maintenance" ? item.kind === "item" : t.key === "units" ? serialised : item.kind === "kit"),
+      (t.key === "maintenance"
+        ? item.kind === "item" && (feature("repairs") || feature("maintenance"))
+        : t.key === "units"
+          ? serialised
+          : item.kind === "kit"),
   ).map((t) => ({
     ...t,
     count:
@@ -219,7 +224,7 @@ export default function ItemDetail() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          {item.kind === "item" && can("units.flag") && (
+          {item.kind === "item" && can("units.flag") && feature("repairs") && (
             <button onClick={() => setRepairing(true)} className="btn-secondary">
               Repair
             </button>

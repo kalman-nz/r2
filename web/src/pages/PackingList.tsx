@@ -75,7 +75,7 @@ export default function PackingList() {
             {job.venueInfo?.address && <p className="text-gray-600">{job.venueInfo.address}</p>}
           </div>
           <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
-            <JobStatusBadge status={job.status} />
+            <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
             <p>
               <span className="text-gray-500">Out</span> {formatDateTime(job.prepAt)}
             </p>

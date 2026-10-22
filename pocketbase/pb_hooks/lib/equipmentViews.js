@@ -26,27 +26,21 @@ function validateViewBody(data) {
     widths,
     sortKey: typeof data.sortKey === "string" ? data.sortKey : "",
     sortDir: data.sortDir || "asc",
-    shared: data.shared === true,
   };
 }
 
-// currentUserId + ownerName are request-scoped (who's asking, and the
-// display name of whoever owns this particular row) — passed in rather
-// than looked up here so callers can batch-resolve owner names once per
-// list instead of a query per row.
-function toViewJson(record, currentUserId, ownerName) {
-  return {
-    id: record.id,
-    name: record.get("name"),
-    columns: record.get("columns") || [],
-    widths: record.get("widths") || {},
-    sortKey: record.get("sortKey") || "",
-    sortDir: record.get("sortDir") || "asc",
-    shared: record.get("shared") === true,
-    ownerId: record.get("owner"),
-    ownerName: ownerName || "",
-    isOwner: record.get("owner") === currentUserId,
-  };
+// Shared like dashboards (lib/sharing.js): names is { userId: name } for
+// everyone the listed rows mention, looked up once per list.
+function toViewJson(ctx, me, record, names) {
+  const { sharingJson } = require("./sharing.js");
+  const out = sharingJson(ctx, me, record, names);
+  out.id = record.id;
+  out.name = record.get("name");
+  out.columns = record.get("columns") || [];
+  out.widths = record.get("widths") || {};
+  out.sortKey = record.get("sortKey") || "";
+  out.sortDir = record.get("sortDir") || "asc";
+  return out;
 }
 
 module.exports = { validateViewBody, toViewJson };

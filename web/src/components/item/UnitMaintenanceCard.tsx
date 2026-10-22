@@ -8,25 +8,28 @@ import { RepairStatusBadge } from "../StatusBadge";
 import { ResultBadge } from "../maintenance/ResultBadge";
 import NewJobModal from "../maintenance/NewJobModal";
 import { useToast } from "../ToastProvider";
+import { useFeature } from "../../lib/roles";
 
 // A unit's maintenance and repairs, newest first, with what's next.
 export default function UnitMaintenanceCard({ unit, item, repairs, canRecord }: { unit: Serial; item: Item | null; repairs: RepairWithItem[]; canRecord: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [scheduling, setScheduling] = useState(false);
-  const { data: jobs = [] } = useMaintenanceJobs(`serial = "${unit.id}"`, "dueOn");
+  // Only what the organisation uses (Settings → Features).
+  const feature = useFeature();
+  const { data: jobs = [] } = useMaintenanceJobs(`serial = "${unit.id}"`, "dueOn", feature("maintenance"));
   const scheduled = jobs.filter((j) => j.status === "scheduled");
   // Done work and repairs together, by when they happened.
   const past = [
     ...jobs.filter((j) => j.status === "done").map((j) => ({ at: j.doneOn, job: j, repair: null })),
-    ...repairs.map((r) => ({ at: r.created.slice(0, 10), job: null, repair: r })),
+    ...(feature("repairs") ? repairs : []).map((r) => ({ at: r.created.slice(0, 10), job: null, repair: r })),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
     <section className="card overflow-hidden text-sm">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-gray-500">Maintenance</h2>
-        {canRecord && item && (
+        {canRecord && item && feature("maintenance") && (
           <button onClick={() => setScheduling(true)} className="btn-secondary py-1">
             Schedule
           </button>

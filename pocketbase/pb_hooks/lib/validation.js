@@ -268,12 +268,24 @@ function validateRole(record) {
 // Deleting a contact/venue/item that jobs point at would silently blank
 // those jobs' references (the relations are optional), so refuse and point
 // at archiving instead.
+// Someone on a project's crew: the project's in the same organisation,
+// and so are they.
+function validateCrew(app, record) {
+  const { membershipOf } = require("./orgs.js");
+  const org = record.getString("org");
+  if (!org) return;
+  sameOrg(app, record, "job", "jobs", "project");
+  if (!membershipOf(app, record.getString("user"), org)) throw new BadRequestError("They're not in this organisation");
+  record.set("function", record.getString("function").trim());
+}
+
 function guardReferenced(app, collection, filter, id, what) {
   const n = countWhere(app, collection, filter, { id: id });
   if (n > 0) throw new BadRequestError("This " + what + " is used on " + n + " project" + (n === 1 ? "" : "s") + " — archive it instead");
 }
 
 module.exports = {
+  validateCrew,
   validateItem,
   validateSerial,
   validateComponent,

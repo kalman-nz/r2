@@ -59,12 +59,15 @@ routerAdd(
     const body = e.requestInfo().body || {};
     if (["active", "repair", "lost", "retired"].indexOf(body.status) === -1) throw new BadRequestError("Invalid status");
     const previous = serial.getString("status");
-    // In repair comes from opening a repair, and goes when it's closed, so
-    // the repair and the unit can't disagree. Lost or retired can still be
-    // set while it's away: closing the repair leaves those alone.
-    if (body.status === "repair" && previous !== "repair") throw new BadRequestError("Open a repair to take it out of service");
-    const repair = body.status === "active" ? openRepairOf($app, serial.id) : null;
-    if (repair) throw new BadRequestError("It's on repair R" + repair.getInt("number") + ": mark that repaired to put it back in service");
+    // With repairs on, In repair comes from opening a repair and goes when
+    // it's repaired, so the repair and the unit can't disagree (lost or
+    // retired can still be set while it's away: ending the repair leaves
+    // those alone). With repairs off it's a plain flag.
+    if (ctx.features.repairs) {
+      if (body.status === "repair" && previous !== "repair") throw new BadRequestError("Open a repair to take it out of service");
+      const repair = body.status === "active" ? openRepairOf($app, serial.id) : null;
+      if (repair) throw new BadRequestError("It's on repair R" + repair.getInt("number") + ": mark that repaired to put it back in service");
+    }
     serial.set("status", body.status);
     if (typeof body.note === "string" && body.note.trim()) {
       const stamp = new Date().toISOString().slice(0, 10) + " " + whoName(e.auth) + ": ";

@@ -1,89 +1,67 @@
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import type { Contact, Job, Venue } from "../lib/api";
+import { api, type CrewMember, type Dashboard, type Quote } from "../lib/api";
 import { orgFilter } from "../lib/currentOrg";
-import { formatDateTime, formatDuration, formatTime, localDateInput, parseDate } from "../lib/format";
-import {
-  assetLabel,
-  daysUntil,
-  dueLabel,
-  inDays,
-  invalidateMaintenance,
-  today,
-  useMaintenanceJobs,
-  useRepairs,
-} from "../lib/maintenance";
+import { formatDate, formatDateTime, formatDuration, formatTime, nzd, parseDate } from "../lib/format";
+import { assetLabel, dueLabel, inDays, invalidateMaintenance, today, useMaintenanceJobs, useRepairs } from "../lib/maintenance";
+import { byDay, dayOf, greeting, PANEL_BY_ID, panelAllowed, STANDARD_PANELS, startsLabel, type PanelId, type ProjectRow } from "../lib/home";
 import { useOrg } from "../lib/org";
 import { useRole } from "../lib/roles";
 import { OPEN_REPAIRS_FILTER } from "../lib/statuses";
+import { errorText } from "../lib/errors";
+import { byLabel } from "../lib/views";
 import { JobStatusBadge, RepairStatusBadge } from "../components/StatusBadge";
 import NewRepairModal from "../components/repair/NewRepairModal";
-
-type ProjectRow = Job & { expand?: { client?: Contact; venue?: Venue } };
+import DashboardEditor from "../components/home/DashboardEditor";
+import ManageViews from "../components/ManageViews";
+import ShareModal from "../components/ShareModal";
+import ViewMenu from "../components/ViewMenu";
+import { useConfirm } from "../components/ConfirmProvider";
+import { useToast } from "../components/ToastProvider";
+import { DayGroup, More, Packed, Panel, ProjectLine, ProjectName, Row, Stat } from "../components/home/parts";
 
 // How many rows the side panels show before "View all".
 const PANEL_ROWS = 6;
 
-// The local calendar day of a stored datetime ("2026-10-22"), "" if none.
-function dayOf(value: string): string {
-  const d = parseDate(value);
-  return d ? localDateInput(d) : "";
-}
+type CrewWithJob = CrewMember & { expand?: { job?: ProjectRow } };
+type QuoteWithJob = Quote & { expand?: { job?: ProjectRow } };
+type Editing = { dashboard?: Dashboard; start?: { name: string; panels: PanelId[] } };
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-}
-
-// "Starts today", "Starts in 3 days", "Started 2 days ago"
-function startsLabel(day: string): string {
-  const n = daysUntil(day);
-  if (n === 0) return "Starts today";
-  if (n === 1) return "Starts tomorrow";
-  if (n > 1) return `Starts in ${n} days`;
-  return n === -1 ? "Started yesterday" : `Started ${-n} days ago`;
-}
-
-// Rows bucketed by calendar day, in the order given: past days fold into
-// one "late" group at the top, then Today, Tomorrow, and each day after.
-function byDay(rows: ProjectRow[], at: (j: ProjectRow) => string, lateTitle: string) {
-  const now = today();
-  const groups: { key: string; title: string; late: boolean; rows: ProjectRow[] }[] = [];
-  for (const job of rows) {
-    const day = dayOf(at(job));
-    const late = day < now;
-    const key = late ? "late" : day;
-    let group = groups.find((g) => g.key === key);
-    if (!group) {
-      const n = daysUntil(day);
-      const title = late
-        ? lateTitle
-        : n === 0
-          ? "Today"
-          : n === 1
-            ? "Tomorrow"
-            : (parseDate(at(job))?.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }) ?? day);
-      group = { key, title, late, rows: [] };
-      groups.push(group);
-    }
-    group.rows.push(job);
-  }
-  return groups;
-}
-
-// The day's work at a glance: what's going out and coming back this week,
-// what needs confirming, and what's due or broken in the warehouse.
+// Home: the dashboard you've picked (or the organisation's default), made
+// of panels (lib/home.ts). Anyone can design their own, copy someone
+// else's, and share theirs with people; sharing with everyone takes
+// views.publish (routes_views.pb.js).
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { org } = useOrg();
+  const { org, feature } = useOrg();
   const { record, can } = useRole();
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [reporting, setReporting] = useState(false);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [sharing, setSharing] = useState<Dashboard | null>(null);
+  const [managing, setManaging] = useState(false);
   const canScanOut = can("scan.out");
   const canScanIn = can("scan.in");
+
+  const { data: boards } = useQuery({ queryKey: ["dashboards"], queryFn: api.dashboards });
+  const current = boards?.dashboards.find((d) => d.id === (boards.home || boards.defaultId)) ?? null;
+  // What this person can see of it, in its order.
+  const panels = useMemo(
+    () =>
+      ((current ? current.panels.map((p) => p.id) : boards ? STANDARD_PANELS : []) as PanelId[]).filter((id) => {
+        const panel = PANEL_BY_ID.get(id);
+        return !!panel && panelAllowed(panel, can, feature);
+      }),
+    [current, boards, can, feature],
+  );
+  const has = (id: PanelId) => panels.includes(id);
+  const needsJobs = panels.some((id) => ["glance", "prep", "going-out", "coming-back", "out-now", "confirm"].includes(id));
+  const maintenanceOn = feature("maintenance") && (has("maintenance") || has("glance"));
+  const repairsOn = feature("repairs") && (has("repairs") || has("glance"));
 
   const { data: jobs = [], isLoading, error } = useQuery({
     queryKey: ["jobs", "dashboard"],
@@ -93,9 +71,24 @@ export default function Dashboard() {
         expand: "client,venue",
         filter: orgFilter("status != 'returned' && status != 'cancelled'"),
       }),
+    enabled: needsJobs,
   });
-  const { data: maintenance = [], isLoading: maintenanceLoading } = useMaintenanceJobs(`status = 'scheduled' && dueOn <= "${inDays(7)}"`);
-  const { data: repairs = [], isLoading: repairsLoading } = useRepairs(OPEN_REPAIRS_FILTER);
+  const { data: maintenance = [], isLoading: maintenanceLoading } = useMaintenanceJobs(`status = 'scheduled' && dueOn <= "${inDays(7)}"`, "dueOn", maintenanceOn);
+  const { data: repairs = [], isLoading: repairsLoading } = useRepairs(OPEN_REPAIRS_FILTER, repairsOn);
+  const { data: crew = [], isLoading: crewLoading } = useQuery({
+    queryKey: ["job-crew", "mine", record?.id],
+    queryFn: () =>
+      pb.collection("job_crew").getFullList<CrewWithJob>({
+        filter: orgFilter(pb.filter("user = {:me} && job.status != 'returned' && job.status != 'cancelled'", { me: record!.id })),
+        expand: "job,job.client,job.venue",
+      }),
+    enabled: has("mine") && !!record,
+  });
+  const { data: quotes = [], isLoading: quotesLoading } = useQuery({
+    queryKey: ["quotes", "waiting"],
+    queryFn: () => pb.collection("quotes").getFullList<QuoteWithJob>({ filter: orgFilter("status = 'issued'"), sort: "issuedAt", expand: "job" }),
+    enabled: has("quotes"),
+  });
 
   const now = Date.now();
   const todayDay = today();
@@ -107,83 +100,159 @@ export default function Dashboard() {
   const goingOut = jobs.filter((j) => j.status === "confirmed" && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= weekEnd);
   const goingOutToday = goingOut.filter((j) => dayOf(j.prepAt) <= todayDay);
   const lateOut = goingOut.filter((j) => dayOf(j.prepAt) < todayDay);
-
-  const out = jobs.filter((j) => j.status === "out");
-  const comingBack = out.filter((j) => dayOf(j.returnAt) !== "" && dayOf(j.returnAt) <= weekEnd).sort((a, b) => time(a.returnAt) - time(b.returnAt));
+  const out = jobs.filter((j) => j.status === "out").sort((a, b) => time(a.returnAt) - time(b.returnAt));
+  const comingBack = out.filter((j) => dayOf(j.returnAt) !== "" && dayOf(j.returnAt) <= weekEnd);
   const overdueBack = out.filter((j) => time(j.returnAt) < now);
   const backToday = out.filter((j) => dayOf(j.returnAt) === todayDay && time(j.returnAt) >= now);
-
   const toConfirm = jobs.filter((j) => (j.status === "enquiry" || j.status === "provisional") && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= inDays(14));
-
+  const toPrep = jobs.filter((j) => j.status === "confirmed" && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= inDays(14));
+  const mine = crew.filter((c) => c.expand?.job).sort((a, b) => time(a.expand!.job!.startAt) - time(b.expand!.job!.startAt));
   const maintenanceOverdue = maintenance.filter((m) => m.dueOn < todayDay);
   const repairsOverdue = repairs.filter((r) => time(r.dueAt) < now);
 
+  // Packing progress for what's next to prep (with scanning on).
+  const prepIds = toPrep.slice(0, 20).map((j) => j.id);
+  const { data: packing = {} } = useQuery({
+    queryKey: ["home-packing", prepIds.join(",")],
+    queryFn: () => api.packing(prepIds),
+    enabled: has("prep") && feature("scanning") && prepIds.length > 0,
+  });
+
   const firstName = String(record?.name ?? "").trim().split(/\s+/)[0];
   const loading = isLoading ? "—" : undefined;
+  const refreshBoards = () => queryClient.invalidateQueries({ queryKey: ["dashboards"] });
 
-  return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-4">
-      <div className="flex items-end justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">
-            {greeting()}
-            {firstName && `, ${firstName}`}
-          </h1>
-          <p className="text-xs text-gray-500">
-            {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-            {org && ` · ${org.name}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {can("units.flag") && (
-            <button onClick={() => setReporting(true)} className="btn-secondary">
-              Report repair
-            </button>
-          )}
-          {(canScanOut || canScanIn) && (
-            <Link to="/scan" className="btn-secondary">
-              Check in & out
-            </Link>
-          )}
-          {can("jobs.create") && (
-            <Link to="/projects/new" className="btn-primary">
-              New project
-            </Link>
-          )}
-        </div>
-      </div>
+  async function choose(id: string) {
+    try {
+      await api.setHome(id);
+      await refreshBoards();
+    } catch (err) {
+      showToast("error", errorText(err));
+    }
+  }
 
-      {error && <p className="text-red-600 text-sm">Couldn't load projects: {(error as Error).message}</p>}
+  async function remove(d: Dashboard) {
+    const ok = await confirm({ title: "Delete dashboard", message: `Delete ${d.name}? Anyone it's shared with loses it too.`, confirmLabel: "Delete", danger: true });
+    if (!ok) return;
+    try {
+      await api.deleteDashboard(d.id);
+      await refreshBoards();
+      showToast("success", `Deleted ${d.name}`);
+    } catch (err) {
+      showToast("error", errorText(err));
+    }
+  }
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
-        <Stat
-          label="Going out today"
-          value={loading ?? goingOutToday.length}
-          hint={lateOut.length > 0 ? `${lateOut.length} late` : `${goingOut.length} this week`}
-          alert={lateOut.length > 0}
-        />
-        <Stat label="Due back today" value={loading ?? backToday.length} hint={`${comingBack.length} this week`} />
-        <Stat label="Overdue back" value={loading ?? overdueBack.length} hint={overdueBack.length > 0 ? "Chase these up" : "All on time"} alert={overdueBack.length > 0} />
-        <Stat label="Out on hire" value={loading ?? out.length} hint="Projects out now" to="/projects?view=out" />
-        <Stat
-          label="Maintenance overdue"
-          value={maintenanceLoading ? "—" : maintenanceOverdue.length}
-          hint={`${maintenance.length - maintenanceOverdue.length} due this week`}
-          alert={maintenanceOverdue.length > 0}
-          to="/maintenance"
-        />
-        <Stat
-          label="Open repairs"
-          value={repairsLoading ? "—" : repairs.length}
-          hint={repairsOverdue.length > 0 ? `${repairsOverdue.length} past expected back` : "Out of service"}
-          alert={repairsOverdue.length > 0}
-          to="/maintenance?tab=repairs"
-        />
-      </div>
+  async function makeDefault(d: Dashboard) {
+    try {
+      await api.updateDashboard(d.id, { isDefault: true });
+      await refreshBoards();
+      showToast("success", `${d.name} is everyone's Home now, until they pick their own`);
+    } catch (err) {
+      showToast("error", errorText(err));
+    }
+  }
 
-      <div className="grid gap-4 lg:grid-cols-5 items-start">
-        <div className="lg:col-span-3 flex flex-col gap-4">
+  function render(id: PanelId): ReactNode {
+    switch (id) {
+      case "glance":
+        return (
+          <div key={id} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+            <Stat
+              label="Going out today"
+              value={loading ?? goingOutToday.length}
+              hint={lateOut.length > 0 ? `${lateOut.length} late` : `${goingOut.length} this week`}
+              alert={lateOut.length > 0}
+            />
+            <Stat label="Due back today" value={loading ?? backToday.length} hint={`${comingBack.length} this week`} />
+            <Stat label="Overdue back" value={loading ?? overdueBack.length} hint={overdueBack.length > 0 ? "Chase these up" : "All on time"} alert={overdueBack.length > 0} />
+            <Stat label="Out on hire" value={loading ?? out.length} hint="Projects out now" to="/projects?view=out" />
+            {feature("maintenance") && (
+              <Stat
+                label="Maintenance overdue"
+                value={maintenanceLoading ? "—" : maintenanceOverdue.length}
+                hint={`${maintenance.length - maintenanceOverdue.length} due this week`}
+                alert={maintenanceOverdue.length > 0}
+                to="/maintenance"
+              />
+            )}
+            {feature("repairs") && (
+              <Stat
+                label="Open repairs"
+                value={repairsLoading ? "—" : repairs.length}
+                hint={repairsOverdue.length > 0 ? `${repairsOverdue.length} past expected back` : "Out of service"}
+                alert={repairsOverdue.length > 0}
+                to="/maintenance?tab=repairs"
+              />
+            )}
+          </div>
+        );
+      case "mine":
+        return (
           <Panel
+            key={id}
+            title="My projects"
+            sub="The ones you're on the crew for, soonest first"
+            count={mine.length}
+            action={{ to: "/projects?view=mine", label: "All mine" }}
+            empty={crewLoading ? "Loading…" : "You're not on any upcoming projects."}
+          >
+            {mine.slice(0, 12).map((c) => {
+              const j = c.expand!.job!;
+              return (
+                <ProjectLine
+                  key={c.id}
+                  job={j}
+                  when={dayOf(j.startAt) === todayDay ? formatTime(j.startAt) : formatDateTime(j.startAt)}
+                  late={false}
+                  extra={
+                    <span className="flex items-center gap-2 shrink-0">
+                      {c.function && <span className="text-xs text-gray-500 whitespace-nowrap">{c.function}</span>}
+                      <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
+                    </span>
+                  }
+                  onOpen={() => navigate(`/projects/${j.id}`)}
+                />
+              );
+            })}
+          </Panel>
+        );
+      case "prep":
+        return (
+          <Panel
+            key={id}
+            title="To prep next"
+            sub="Confirmed, going out in the next 14 days"
+            count={toPrep.length}
+            action={{ to: "/projects?view=confirmed", label: "All confirmed" }}
+            empty={isLoading ? "Loading…" : "Nothing to prep in the next two weeks."}
+          >
+            {byDay(toPrep, (j) => j.prepAt, "Late, should be out").map((g) => (
+              <DayGroup key={g.key} title={g.title} late={g.late} count={g.rows.length}>
+                {g.rows.map((j) => (
+                  <ProjectLine
+                    key={j.id}
+                    job={j}
+                    when={g.late ? formatDateTime(j.prepAt) : formatTime(j.prepAt)}
+                    late={time(j.prepAt) < now}
+                    extra={
+                      <span className="flex items-center gap-3 shrink-0">
+                        <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
+                        {packing[j.id] && <Packed needed={packing[j.id].needed} out={packing[j.id].out} />}
+                      </span>
+                    }
+                    scan={canScanOut ? "Scan out" : undefined}
+                    onOpen={() => navigate(`/projects/${j.id}`)}
+                  />
+                ))}
+              </DayGroup>
+            ))}
+          </Panel>
+        );
+      case "going-out":
+        return (
+          <Panel
+            key={id}
             title="Going out"
             sub="Confirmed, next 7 days"
             count={goingOut.length}
@@ -205,8 +274,11 @@ export default function Dashboard() {
               </DayGroup>
             ))}
           </Panel>
-
+        );
+      case "coming-back":
+        return (
           <Panel
+            key={id}
             title="Coming back"
             sub="Out on hire, due back in the next 7 days"
             count={comingBack.length}
@@ -231,15 +303,30 @@ export default function Dashboard() {
               </DayGroup>
             ))}
           </Panel>
-        </div>
-
-        <div className="lg:col-span-2 flex flex-col gap-4">
-          <Panel
-            title="Needs confirming"
-            sub="Enquiries and provisionals starting within 14 days"
-            count={toConfirm.length}
-            empty={isLoading ? "Loading…" : "Nothing waiting on a decision."}
-          >
+        );
+      case "out-now":
+        return (
+          <Panel key={id} title="Out now" sub="Out on hire, by when it's due back" count={out.length} action={{ to: "/projects?view=out", label: "View all" }} empty={isLoading ? "Loading…" : "Nothing's out."}>
+            {out.slice(0, PANEL_ROWS).map((j) => {
+              const late = time(j.returnAt) < now;
+              return (
+                <Row key={j.id} onOpen={() => navigate(`/projects/${j.id}`)}>
+                  <div className="min-w-0 flex-1">
+                    <ProjectName job={j} />
+                    <div className={`text-xs ${late ? "text-fault-ink font-medium" : "text-gray-500"}`}>
+                      {late ? `${formatDuration(now - time(j.returnAt))} late` : `Back ${formatDateTime(j.returnAt)}`}
+                    </div>
+                  </div>
+                  <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
+                </Row>
+              );
+            })}
+            <More shown={PANEL_ROWS} total={out.length} to="/projects?view=out" />
+          </Panel>
+        );
+      case "confirm":
+        return (
+          <Panel key={id} title="Needs confirming" sub="Enquiries and provisionals starting within 14 days" count={toConfirm.length} empty={isLoading ? "Loading…" : "Nothing waiting on a decision."}>
             {toConfirm.slice(0, PANEL_ROWS).map((j) => {
               const day = dayOf(j.prepAt);
               return (
@@ -250,14 +337,17 @@ export default function Dashboard() {
                       {startsLabel(day)} · {formatDateTime(j.prepAt)}
                     </div>
                   </div>
-                  <JobStatusBadge status={j.status} />
+                  <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
                 </Row>
               );
             })}
             <More shown={PANEL_ROWS} total={toConfirm.length} to="/projects" />
           </Panel>
-
+        );
+      case "maintenance":
+        return (
           <Panel
+            key={id}
             title="Maintenance due"
             sub="Overdue and next 7 days"
             count={maintenance.length}
@@ -275,14 +365,10 @@ export default function Dashboard() {
             ))}
             <More shown={PANEL_ROWS} total={maintenance.length} to="/maintenance" />
           </Panel>
-
-          <Panel
-            title="Open repairs"
-            sub="Out of service"
-            count={repairs.length}
-            action={{ to: "/maintenance?tab=repairs", label: "View all" }}
-            empty={repairsLoading ? "Loading…" : "Nothing in for repair."}
-          >
+        );
+      case "repairs":
+        return (
+          <Panel key={id} title="Open repairs" sub="Out of service" count={repairs.length} action={{ to: "/maintenance?tab=repairs", label: "View all" }} empty={repairsLoading ? "Loading…" : "Nothing in for repair."}>
             {repairs.slice(0, PANEL_ROWS).map((r) => {
               const overdue = time(r.dueAt) < now;
               return (
@@ -300,8 +386,114 @@ export default function Dashboard() {
             })}
             <More shown={PANEL_ROWS} total={repairs.length} to="/maintenance?tab=repairs" />
           </Panel>
+        );
+      case "quotes": {
+        const total = quotes.reduce((sum, q) => sum + (q.total || 0), 0);
+        return (
+          <Panel
+            key={id}
+            title="Quotes waiting"
+            sub={quotes.length > 0 ? `${nzd(total)} incl GST, waiting on clients` : "Issued, not yet accepted"}
+            count={quotes.length}
+            empty={quotesLoading ? "Loading…" : "No quotes waiting."}
+          >
+            {quotes.slice(0, PANEL_ROWS).map((q) => (
+              <Row key={q.id} onOpen={() => navigate(`/print/quotes/${q.id}`)}>
+                <div className="min-w-0 flex-1">
+                  {q.expand?.job ? <ProjectName job={q.expand.job} /> : <div className="text-gray-500">(deleted project)</div>}
+                  <div className="text-xs text-gray-500">Issued {formatDate(q.issuedAt)}</div>
+                </div>
+                <span className="text-xs tabular-nums text-gray-700 whitespace-nowrap">{nzd(q.total)}</span>
+              </Row>
+            ))}
+            <More shown={PANEL_ROWS} total={quotes.length} to="/projects" />
+          </Panel>
+        );
+      }
+    }
+  }
+
+  const full = panels.filter((id) => PANEL_BY_ID.get(id)?.size === "full");
+  const wide = panels.filter((id) => PANEL_BY_ID.get(id)?.size === "wide");
+  const side = panels.filter((id) => PANEL_BY_ID.get(id)?.size === "side");
+  const list = boards?.dashboards ?? [];
+  const startNew = () => setEditing({ start: { name: "", panels: [] } });
+  // Your own copy to change: of one you can't, say.
+  const copyOf = (d: Dashboard | null) =>
+    setEditing({ start: { name: d ? `${d.name} (mine)` : "My dashboard", panels: (d?.panels.map((p) => p.id) ?? STANDARD_PANELS) as PanelId[] } });
+
+  return (
+    <div className="max-w-6xl mx-auto flex flex-col gap-4">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">
+            {greeting()}
+            {firstName && `, ${firstName}`}
+          </h1>
+          <p className="text-xs text-gray-500">
+            {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            {org && ` · ${org.name}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {can("units.flag") && feature("repairs") && (
+            <button onClick={() => setReporting(true)} className="btn-secondary">
+              Report repair
+            </button>
+          )}
+          {(canScanOut || canScanIn) && (
+            <Link to="/scan" className="btn-secondary">
+              Check in & out
+            </Link>
+          )}
+          {can("jobs.create") && (
+            <Link to="/projects/new" className="btn-primary">
+              New project
+            </Link>
+          )}
         </div>
       </div>
+
+      {/* Which dashboard. New, copy, share and the rest are in its menu. */}
+      <div className="flex items-center gap-1.5 flex-wrap text-sm">
+        <ViewMenu
+          label="Dashboard"
+          views={list}
+          currentId={current?.id ?? ""}
+          placeholder="Standard"
+          note={(d) => (d.isDefault ? "Default" : byLabel(d))}
+          onPick={(d) => d && choose(d.id)}
+          actions={[
+            { label: "New dashboard", onClick: startNew },
+            { label: "Copy this dashboard", onClick: () => copyOf(current) },
+            current?.isOwner && { label: "Share…", onClick: () => setSharing(current) },
+            { label: "Manage dashboards…", onClick: () => setManaging(true) },
+          ]}
+        />
+        {current?.canEdit && (
+          <button onClick={() => setEditing({ dashboard: current })} className="btn-secondary">
+            Edit
+          </button>
+        )}
+        {current && !current.isOwner && <span className="text-xs text-gray-400 ml-1">{byLabel(current, org?.name)}</span>}
+      </div>
+
+      {error && <p className="text-red-600 text-sm">Couldn't load projects: {(error as Error).message}</p>}
+
+      {full.map(render)}
+      {wide.length + side.length > 0 && (
+        <div className={`grid gap-4 items-start ${wide.length > 0 && side.length > 0 ? "lg:grid-cols-5" : ""}`}>
+          {wide.length > 0 && <div className={`flex flex-col gap-4 ${side.length > 0 ? "lg:col-span-3" : ""}`}>{wide.map(render)}</div>}
+          {side.length > 0 && (
+            <div className={`flex flex-col gap-4 ${wide.length > 0 ? "lg:col-span-2" : "lg:grid lg:grid-cols-2 lg:items-start"}`}>{side.map(render)}</div>
+          )}
+        </div>
+      )}
+      {boards && panels.length === 0 && (
+        <div className="card px-4 py-8 text-center text-sm text-gray-500">
+          Nothing on this dashboard you can see. {current?.canEdit ? "Edit it to add panels." : "Copy it, or pick another, to make it yours."}
+        </div>
+      )}
 
       {reporting && (
         <NewRepairModal
@@ -313,115 +505,61 @@ export default function Dashboard() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-// A count tile. alert marks something to act on; to makes it a link.
-function Stat({ label, value, hint, alert = false, to }: { label: string; value: number | string; hint: string; alert?: boolean; to?: string }) {
-  const body = (
-    <>
-      <span className="eyebrow text-gray-500 truncate">{label}</span>
-      <span className={`font-display text-2xl tabular-nums leading-tight ${alert ? "text-fault-ink" : "text-gray-900"}`}>{value}</span>
-      <span className={`text-xs truncate ${alert ? "text-fault-ink" : "text-gray-500"}`}>{hint}</span>
-    </>
-  );
-  const className = `card px-3.5 py-3 flex flex-col gap-0.5 min-w-0 ${alert ? "shadow-[inset_3px_0_0_var(--color-fault)]" : ""}`;
-  return to ? (
-    <Link to={to} className={`${className} hover:border-gray-300 hover:bg-gray-50 transition-colors`}>
-      {body}
-    </Link>
-  ) : (
-    <div className={className}>{body}</div>
-  );
-}
-
-function Panel({
-  title,
-  sub,
-  count,
-  action,
-  empty,
-  children,
-}: {
-  title: string;
-  sub: string;
-  count: number;
-  action?: { to: string; label: string };
-  empty: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="card overflow-hidden">
-      <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-2 border-b border-gray-200">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900">
-            {title} <span className="font-mono text-xs text-gray-400 ml-1">{count}</span>
-          </h2>
-          <p className="text-xs text-gray-500 truncate">{sub}</p>
-        </div>
-        {action && (
-          <Link to={action.to} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover whitespace-nowrap">
-            {action.label}
-          </Link>
-        )}
-      </div>
-      {count === 0 ? <p className="px-4 py-6 text-sm text-gray-500 text-center">{empty}</p> : <div className="divide-y divide-gray-100">{children}</div>}
-    </section>
-  );
-}
-
-function DayGroup({ title, late, count, children }: { title: string; late: boolean; count: number; children: ReactNode }) {
-  return (
-    <div>
-      <div className={`px-4 pt-2.5 pb-1 eyebrow ${late ? "text-fault-ink" : "text-gray-500"}`}>
-        {title} <span className="text-gray-400 ml-1">{count}</span>
-      </div>
-      <div className="divide-y divide-gray-100">{children}</div>
-    </div>
-  );
-}
-
-function Row({ onOpen, children }: { onOpen: () => void; children: ReactNode }) {
-  return (
-    <div onClick={onOpen} className="flex items-center gap-3 px-4 py-2 text-[13px] hover:bg-gray-50 cursor-pointer">
-      {children}
-    </div>
-  );
-}
-
-function ProjectName({ job }: { job: ProjectRow }) {
-  return (
-    <div className="font-medium text-gray-900 truncate">
-      <span className="font-mono text-xs text-gray-500 mr-1.5">{job.number}</span>
-      {job.name}
-    </div>
-  );
-}
-
-function ProjectLine({ job, when, late, scan, onOpen }: { job: ProjectRow; when: string; late: boolean; scan?: string; onOpen: () => void }) {
-  const where = [job.expand?.client?.name, job.expand?.venue?.name].filter(Boolean).join(" · ");
-  return (
-    <Row onOpen={onOpen}>
-      <span className={`w-24 shrink-0 text-xs tabular-nums ${late ? "text-fault-ink font-medium" : "text-gray-600"}`}>{when}</span>
-      <div className="min-w-0 flex-1">
-        <ProjectName job={job} />
-        {where && <div className="text-xs text-gray-500 truncate">{where}</div>}
-      </div>
-      {scan && (
-        <Link to={`/projects/${job.id}/scan`} onClick={(e) => e.stopPropagation()} className="btn-secondary !px-2.5 !py-1 !text-xs whitespace-nowrap">
-          {scan}
-        </Link>
+      {editing && (
+        <DashboardEditor
+          dashboard={editing.dashboard}
+          start={editing.start}
+          onClose={() => setEditing(null)}
+          onSaved={async (saved) => {
+            const created = !editing.dashboard;
+            setEditing(null);
+            // A new one's what you made it for: it's your Home now.
+            if (created) {
+              setManaging(false);
+              await api.setHome(saved.id);
+            }
+            await refreshBoards();
+            showToast("success", created ? `${saved.name} is your Home now` : "Saved");
+          }}
+        />
       )}
-    </Row>
-  );
-}
-
-function More({ shown, total, to }: { shown: number; total: number; to: string }) {
-  if (total <= shown) return null;
-  return (
-    <Link to={to} className="block px-4 py-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-50">
-      and {total - shown} more…
-    </Link>
+      {sharing && (
+        <ShareModal
+          name={sharing.name}
+          value={sharing}
+          onSave={async (shared) => {
+            await api.updateDashboard(sharing.id, shared);
+            await refreshBoards();
+          }}
+          onClose={() => setSharing(null)}
+        />
+      )}
+      {/* Out of the way while editing or sharing one, back after. */}
+      {managing && !editing && !sharing && (
+        <ManageViews
+          title="Dashboards"
+          views={list}
+          currentId={current?.id ?? ""}
+          orgName={org?.name}
+          note={(d) => (d.isDefault ? "everyone's Home until they pick their own" : "")}
+          onPick={(d) => {
+            setManaging(false);
+            choose(d.id);
+          }}
+          onShare={setSharing}
+          actions={(d) => [
+            d.canEdit && { label: "Edit", onClick: () => setEditing({ dashboard: d }) },
+            { label: "Copy", onClick: () => copyOf(d) },
+            can("views.publish") && d.public && !d.isDefault && { label: "Make default", onClick: () => makeDefault(d) },
+            d.canEdit && !d.isDefault && { label: "Delete", onClick: () => remove(d), danger: true },
+          ]}
+          onClose={() => setManaging(false)}
+        >
+          <button onClick={startNew} className="btn-secondary self-start">
+            New dashboard
+          </button>
+        </ManageViews>
+      )}
+    </div>
   );
 }

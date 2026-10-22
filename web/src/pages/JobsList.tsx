@@ -6,15 +6,18 @@ import type { Contact, Job, Venue } from "../lib/api";
 import { formatDateTimeYear, parseDate } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge } from "../components/StatusBadge";
-import { JOB_STATUSES, type ProjectView } from "../lib/statuses";
+import SavedViews from "../components/SavedViews";
+import { JOB_STAGES, JOB_STATUSES, type ProjectView } from "../lib/statuses";
 import { orgFilter } from "../lib/currentOrg";
+import { useJobStatuses } from "../lib/workflow";
 
 type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
 
-// The view lives in the URL (?view=), so the sidebar can link to it.
+// The view lives in the URL (?view=, by stage), so the sidebar can link to
+// it; ?status= narrows to one of the organisation's own statuses.
 type Filter = ProjectView;
 
-const FILTERS = new Set<string>(["active", "all", ...JOB_STATUSES.map((s) => s.value)]);
+const FILTERS = new Set<string>(["active", "mine", "all", ...JOB_STATUSES.map((s) => s.value)]);
 
 export default function JobsList() {
   const navigate = useNavigate();
@@ -22,21 +25,28 @@ export default function JobsList() {
   const [params, setParams] = useSearchParams();
   const view = params.get("view") ?? "active";
   const filter = (FILTERS.has(view) ? view : "active") as Filter;
-  const setFilter = (f: Filter) => setParams(f === "active" ? {} : { view: f }, { replace: true });
+  const statusId = params.get("status") ?? "";
+  const setFilter = (value: string) =>
+    setParams(value.startsWith("status:") ? { status: value.slice(7) } : value === "active" ? {} : { view: value }, { replace: true });
   const [search, setSearch] = useState("");
+  const { statuses } = useJobStatuses();
 
   const { data: jobs = [], isLoading, error } = useQuery({
-    queryKey: ["jobs", filter],
+    queryKey: ["jobs", filter, statusId],
     queryFn: () =>
       pb.collection("jobs").getFullList<JobWithExpand>({
-        sort: filter === "active" ? "startAt" : "-startAt",
+        sort: filter === "active" && !statusId ? "startAt" : "-startAt",
         expand: "client,venue",
         filter: orgFilter(
-          filter === "active"
-            ? "status != 'returned' && status != 'cancelled'"
-            : filter === "all"
-              ? undefined
-              : pb.filter("status = {:status}", { status: filter }),
+          statusId
+            ? pb.filter("jobStatus = {:id}", { id: statusId })
+            : filter === "active"
+              ? "status != 'returned' && status != 'cancelled'"
+              : filter === "mine"
+                ? pb.filter("job_crew_via_job.user ?= {:me} && status != 'cancelled'", { me: pb.authStore.record?.id ?? "" })
+                : filter === "all"
+                  ? undefined
+                  : pb.filter("status = {:status}", { status: filter }),
         ),
       }),
   });
@@ -52,6 +62,14 @@ export default function JobsList() {
   }, [jobs, search]);
 
   const now = Date.now();
+  // What a saved view keeps (components/SavedViews.tsx).
+  const config = { view: statusId ? "" : filter, status: statusId, search: search.trim() };
+  function apply(saved: Record<string, string>) {
+    setSearch(saved.search ?? "");
+    // A status that's since been removed falls back to its stage's view.
+    if (saved.status && statuses.some((s) => s.id === saved.status)) setFilter(`status:${saved.status}`);
+    else setFilter(FILTERS.has(saved.view ?? "") ? saved.view : "active");
+  }
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-3">
@@ -74,15 +92,30 @@ export default function JobsList() {
           placeholder="Search number, name, client, location…"
           className="input w-72"
         />
-        <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)} className="input w-auto">
-          <option value="active">Active (not returned or cancelled)</option>
+        <select value={statusId ? `status:${statusId}` : filter} onChange={(e) => setFilter(e.target.value)} className="input w-auto">
+          <option value="active">Active (not done or cancelled)</option>
+          <option value="mine">Mine (on the crew)</option>
           <option value="all">All projects</option>
-          {JOB_STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
+          {statuses.length > 0 && (
+            <optgroup label="Status">
+              {statuses.map((s) => (
+                <option key={s.id} value={`status:${s.id}`}>
+                  {s.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Stage">
+            {JOB_STAGES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </optgroup>
         </select>
+        <div className="ml-auto">
+          <SavedViews page="projects" config={config} onApply={apply} />
+        </div>
       </div>
 
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
@@ -122,7 +155,7 @@ export default function JobsList() {
                     {formatDateTimeYear(job.endAt)}
                   </td>
                   <td className="px-3 py-2">
-                    <JobStatusBadge status={job.status} />
+                    <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
                   </td>
                 </tr>
               );

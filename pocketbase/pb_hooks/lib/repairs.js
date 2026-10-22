@@ -12,7 +12,8 @@
 // and repairs can't disagree.
 
 const STAGES = ["open", "repaired", "unrepairable"];
-const COLOURS = ["gray", "amber", "blue", "violet", "green", "red"];
+// Must match the colour field (migrations 0034 and 0035).
+const COLOURS = ["gray", "amber", "orange", "blue", "teal", "violet", "green", "red"];
 // What every organisation starts with (the same as migration 0034).
 const DEFAULT_STATUSES = [
   { name: "Backlog", stage: "open", colour: "gray" },

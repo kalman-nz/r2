@@ -11,7 +11,7 @@ import NumberInput from "../components/NumberInput";
 import NewRepairModal from "../components/repair/NewRepairModal";
 import { useToast } from "../components/ToastProvider";
 import { orgFilter } from "../lib/currentOrg";
-import { useCan } from "../lib/roles";
+import { useCan, useFeature } from "../lib/roles";
 
 // Scanning kit out to a job and back in. Works with a Bluetooth/USB scanner
 // (it types the code and presses Enter into the focused box) or the phone's
@@ -65,7 +65,7 @@ function ChooseJob() {
                 {[job.expand?.client?.name, `prep ${formatDateTime(job.prepAt)}`].filter(Boolean).join(" · ")}
               </span>
             </span>
-            <JobStatusBadge status={job.status} />
+            <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
           </button>
         ))}
         {!isLoading && filtered.length === 0 && (
@@ -116,6 +116,7 @@ function ScanJob({ jobId }: { jobId: string }) {
   const [busy, setBusy] = useState(false);
   const [camera, setCamera] = useState(false);
   const [reporting, setReporting] = useState<FeedEntry | null>(null);
+  const repairsOn = useFeature()("repairs");
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const feedId = useRef(0);
@@ -253,7 +254,8 @@ function ScanJob({ jobId }: { jobId: string }) {
                   </Link>
                 ) : (
                   f.back &&
-                  can("units.flag") && (
+                  can("units.flag") &&
+                  repairsOn && (
                     <button onClick={() => setReporting(f)} className="text-xs font-medium text-gray-500 hover:text-fault-ink">
                       Report fault
                     </button>

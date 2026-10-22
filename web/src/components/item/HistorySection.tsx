@@ -11,6 +11,7 @@ interface HistoryJob {
   number: number;
   name: string;
   status: JobStatus;
+  jobStatus: string;
   prepAt: string;
   returnAt: string;
 }
@@ -33,7 +34,7 @@ export function useItemHistory(itemId: string) {
         pb.collection("job_lines").getFullList<{ job: string; quantity: number; expand?: { job?: HistoryJob } }>({
           filter,
           expand: "job",
-          fields: "job,quantity,expand.job.id,expand.job.number,expand.job.name,expand.job.status,expand.job.prepAt,expand.job.returnAt",
+          fields: "job,quantity,expand.job.id,expand.job.number,expand.job.name,expand.job.status,expand.job.jobStatus,expand.job.prepAt,expand.job.returnAt",
         }),
         pb.collection("scans").getFullList<{ job: string; direction: "out" | "in"; created: string }>({
           filter,
@@ -113,7 +114,7 @@ function HistoryCard({ title, entries, empty }: { title: string; entries: Entry[
               </span>
               <span className="flex items-center gap-2 shrink-0">
                 <span className="tabular-nums text-gray-700">× {e.quantity}</span>
-                <JobStatusBadge status={e.job.status} />
+                <JobStatusBadge status={e.job.status} jobStatus={e.job.jobStatus} />
               </span>
             </Link>
           ))}

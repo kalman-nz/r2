@@ -46,6 +46,8 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
   }
   const clients = names("contacts", jobs.map((j) => j.getString("client")));
   const venues = names("venues", jobs.map((j) => j.getString("venue")));
+  // The organisation's own status names (Settings → Project statuses).
+  const statusNames = names("job_statuses", jobs.map((j) => j.getString("jobStatus")));
   const proto = e.request.header.get("X-Forwarded-Proto") || (e.request.tls ? "https" : "http");
   const base = proto + "://" + e.request.host;
 
@@ -56,6 +58,7 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
       number: j.getInt("number"),
       name: j.getString("name"),
       status: j.getString("status"),
+      statusName: statusNames[j.getString("jobStatus")] || "",
       start: toMs(j.getString("prepAt")),
       end: toMs(j.getString("returnAt")),
       client: clients[j.getString("client")] || "",

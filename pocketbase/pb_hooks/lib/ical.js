@@ -65,7 +65,9 @@ function buildIcs(jobs, calendarName, nowMs) {
         description.push(p.name + tag + ": " + utc(p.start) + " to " + utc(p.end));
       }
     }
-    description.push("Status: " + (STATUS_LABEL[job.status] || job.status));
+    // The organisation's own name for it when there is one.
+    const label = job.statusName || STATUS_LABEL[job.status] || job.status;
+    description.push("Status: " + label);
     if (job.url) description.push(job.url);
 
     lines.push(
@@ -75,7 +77,7 @@ function buildIcs(jobs, calendarName, nowMs) {
       "LAST-MODIFIED:" + icsDate(Number.isFinite(job.updated) ? job.updated : nowMs),
       "DTSTART:" + icsDate(job.start),
       "DTEND:" + icsDate(job.end),
-      fold("SUMMARY:" + escapeText("#" + job.number + " " + job.name + (job.status === "confirmed" || job.status === "out" ? "" : " (" + STATUS_LABEL[job.status] + ")"))),
+      fold("SUMMARY:" + escapeText("#" + job.number + " " + job.name + (job.status === "confirmed" || job.status === "out" ? "" : " (" + label + ")"))),
       "STATUS:" + (job.status === "enquiry" || job.status === "provisional" ? "TENTATIVE" : "CONFIRMED"),
     );
     if (job.venue) lines.push(fold("LOCATION:" + escapeText(job.venue)));

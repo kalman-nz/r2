@@ -72,13 +72,32 @@ One database holds every organisation. Every business record has an `org`, and c
 - **Accounts** belong to people, not organisations. Anyone can sign up; a new account sees nothing until an organisation invites its address.
 - **Invitations:** an organisation's admins invite an email with a role (Settings → Team). The person signs up (or signs in) with that address, verifies it, and accepts on their Organisations page. Someone can be in several organisations with a different role in each, and switches between them from the header.
 - **Platform admins** (`isPlatformAdmin` on the account) run the admin panel at `/admin`: every organisation (create, invite its first admin, rename, suspend, delete) and every account (verify by hand, grant platform admin, delete). They don't see organisations' business data unless they're also members. Organisations are created by platform admins for now; self-serve sign-up comes with billing.
-- Every organisation keeps at least one admin. Organisations have a `features` field ready for per-organisation feature toggles.
+- Every organisation keeps at least one admin. Its `features` field says which features it uses (see below).
+
+### How each business works
+
+Every organisation starts set up the usual way, and can change it to fit how it actually works (Settings → How you work):
+
+- **Features.** Check in & out, repairs, maintenance plans, labels, prices and quotes, and the Xero export can each be turned off. A theatre with a small crew might not scan kit or keep repair jobs; a touring production company wants both. Off, a feature is hidden for everyone and the server stops doing it: its permissions count for nobody, and its routes refuse. Nothing's deleted, so turning it back on picks up where it left off. With repairs off, a unit can be flagged In repair by hand (`lib/features.js`, `organisations.features`).
+- **Project statuses.** Each organisation names, orders and colours its own (Confirmed → Prepping → Prepped → Loaded → Out, say). Each sits on one of six fixed stages that availability, scanning, the calendar feed and the Xero export run on: enquiry (holds nothing), pencilled in, confirmed, out, done and cancelled. A project keeps both: `jobStatus` (its status) and `status` (that status's stage), kept together on every save. A project's first scan out moves it to the first status on the out stage. Removing a status asks where its projects go; changing a status's stage takes its projects with it (`lib/jobStatuses.js`).
+- **Repair statuses** work the same way, on three stages (see Repairs and maintenance).
+
+New organisations get the defaults from a hook when they're created, however they're made.
+
+### Home, dashboards and saved views
+
+People see what they need rather than one page for everyone: a workshop tech sees what to prep next, crew see their own projects, the office sees what's waiting on a decision.
+
+- **Dashboards.** Home shows a dashboard: panels picked and put in order from a set (at a glance, my projects, to prep next with packing progress, going out, coming back, out now, needs confirming, maintenance, repairs, quotes; `web/src/lib/home.ts`). Anyone can design their own, or copy someone else's to change. Each organisation starts with Overview (everyone's Home until they pick their own), Workshop and My projects. Panels for a turned-off feature, or one someone's role can't see (quotes), don't show for them.
+- **Saved views.** The Projects list (filter and search) and Inventory (columns, widths and sort) can be saved under a name. Dashboards and views are picked from one dropdown, with new, copy, share and manage at its foot.
+- **Sharing.** Dashboards and views are their owner's until they share them: with people they pick, or with everyone in the organisation. Sharing with everyone, and picking the default Home, take the "Share dashboards and views with everyone" permission, which only Admin has to start with. People use and copy what's shared with them; only the owner changes it. The organisation's own (the defaults) can be changed by anyone with that permission (`lib/sharing.js`, `routes_views.pb.js`).
+- **Crew.** Planners put people on a project with what they're doing (Sound op, Crew chief), on its page. They see it under My projects and in Projects → Mine.
 
 ### Roles and permissions
 
 Each organisation defines its own roles (Settings → Roles). A role is a name plus a set of per-action permissions, such as "Add items", "Delete units", "Issue quotes", "Scan kit out" or "Invite and remove people". The catalogue is in `pocketbase/pb_hooks/lib/permissions.js`. Every member can look up inventory, jobs, contacts and venues; everything else needs a permission.
 
-- Every organisation starts with **Admin** (locked: always every permission, including ones added later), **Planner** and **Tech**. Planner and Tech can be edited or deleted like any other role.
+- Every organisation starts with **Admin** (locked: always every permission, including ones added later), **Planner**, **Tech** and **Crew** (no permissions: they look things up and see their own projects). All but Admin can be edited or deleted like any other role.
 - Some permissions need others: seeing quotes needs seeing prices, and issuing quotes needs seeing them. The editor ticks these for you, and the server enforces them.
 - **Nobody can hand out more than they have.** Creating, changing, deleting or assigning a role needs every permission in it, and only admins can make or remove admins. Every organisation keeps at least one admin.
 - The server checks permissions in both places: in collection rules, through a join on the member's own membership row, so a permission held in one organisation never counts in another (`pb_migrations/0024_custom_roles.js`); and in the routes, via `requireOrg(e, "permission")` (`pb_hooks/lib/orgs.js`). The web app only hides what you can't use.
@@ -88,7 +107,7 @@ Adding a permission: add it to `lib/permissions.js`, check it where it applies, 
 ### Availability
 
 - A job holds its kit from **prep** to **return**, plus a turnaround buffer: a global one in Settings → Pricing, plus any extra per item.
-- Enquiries hold nothing; provisional (pencilled) and confirmed jobs do. Shortages say when they'd go away if pencilled holds were released.
+- Enquiries hold nothing; provisional (pencilled) and confirmed jobs do. Shortages say when they'd go away if pencilled holds were released. (These are stages: an organisation's own statuses each sit on one.)
 - "Free" over a window is the **minimum** at any moment in it, so a one-hour overlap counts. Negative means overbooked, and it's shown as such.
 - Bulk stock = quantity − out of service. Serialised stock = active units. A kit owns nothing and is only as available as its scarcest part.
 - The engine (`lib/availability.js`) already takes stock changes over time, so subhires and repair tickets slot straight in.
@@ -162,6 +181,8 @@ The brief's MVP is built:
 - **Getting data in:** CSV import for items and contacts, and Rentman import of equipment, contacts and projects.
 - **Getting data out:** the iCal feed and the Xero CSV export.
 - **Accounts:** organisations, invitations with email verification, custom roles with per-action permissions in each organisation, a platform admin panel, and first-run setup.
+- **Fits each business:** features it can turn off, and its own project and repair statuses on fixed stages.
+- **Fits each person:** dashboards and saved views of their own, shared with people or (by admins) with everyone, and crew on projects.
 
 From the brief's v1 so far:
 

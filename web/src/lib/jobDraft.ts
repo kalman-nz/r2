@@ -5,6 +5,9 @@ import { fromLocalInput, toLocalInput } from "./format";
 // browser's time zone, converted to/from the UTC PocketBase stores.
 export interface JobDraft {
   name: string;
+  // The organisation's own status (sent), and its stage (shown; the server
+  // works it out from the status).
+  jobStatus: string;
   status: JobStatus;
   client: string;
   venue: string;
@@ -25,6 +28,7 @@ export interface JobDraft {
 export function draftFromJob(job: JobInfo): JobDraft {
   return {
     name: job.name,
+    jobStatus: job.jobStatus,
     status: job.status,
     client: job.client,
     venue: job.venue,
@@ -51,7 +55,9 @@ export function newJobDraft(): JobDraft {
   ret.setHours(12, 0, 0, 0);
   return {
     name: "",
-    status: "enquiry",
+    // "" is the organisation's default status, filled in by the server.
+    jobStatus: "",
+    status: "" as JobStatus,
     client: "",
     venue: "",
     prepAt: toLocalInput(prep.toISOString()),
@@ -70,13 +76,14 @@ export function newJobDraft(): JobDraft {
 // billing periods; updating never does (the server refuses: dates come from the
 // schedule).
 export function draftToUpdate(d: JobDraft) {
-  const { prepAt: _p, returnAt: _r, billingStart: _bs, billingEnd: _be, ...rest } = d;
+  const { prepAt: _p, returnAt: _r, billingStart: _bs, billingEnd: _be, status: _s, ...rest } = d;
   return { ...rest, name: d.name.trim() };
 }
 
 export function draftToPayload(d: JobDraft) {
+  const { status: _s, ...rest } = d;
   return {
-    ...d,
+    ...rest,
     name: d.name.trim(),
     prepAt: fromLocalInput(d.prepAt),
     returnAt: fromLocalInput(d.returnAt),

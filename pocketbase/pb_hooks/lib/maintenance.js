@@ -401,9 +401,10 @@ function completeJob(app, job, body, who) {
       record.set("failedQty", failedQty);
     }
 
-    // A fail with a fault takes it out of service. A unit already away on
-    // a repair keeps that one.
-    if (result === "fail" && body.repair && item) {
+    // A fail with a fault takes it out of service (where the organisation
+    // keeps repairs). A unit already away on a repair keeps that one.
+    const { featuresOf } = require("./features.js");
+    if (result === "fail" && body.repair && item && featuresOf(tx.findRecordById("organisations", org)).repairs) {
       const fault = text(body.repair.fault, 2000) || record.getString("name") + ": failed";
       const already = unit ? openRepairOf(tx, unit.id) : null;
       if (already) {
