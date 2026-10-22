@@ -1,6 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Warehouse routes any member can use, techs included: looking up a scanned
-// code, scanning kit out/in against a job (lib/scan.js), and flagging gear
+// code, tracking kit to a step on a job (lib/scan.js), and flagging gear
 // as broken. Flagging goes through here rather than the REST API so techs
 // can do it without being able to edit the rest of an item or serial.
 
@@ -34,12 +34,68 @@ routerAdd(
     const { requireRecordOrg, summaryAccess } = require(`${__hooks}/lib/orgs.js`);
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const { stepFor, stepsOf } = require(`${__hooks}/lib/tracking.js`);
     const id = e.request.pathValue("id");
     const body = e.requestInfo().body || {};
-    const ctx = requireRecordOrg(e, requireJob($app, id), body.direction === "in" ? "scan.in" : "scan.out");
+    const job = requireJob($app, id);
+    // Bringing kit back is its own permission; every other step sends it out.
+    const back = stepFor(stepsOf($app, job.getString("org")), body).getString("stage") === "back";
+    const ctx = requireRecordOrg(e, job, back ? "scan.in" : "scan.out");
     const result = scan(id, body, e.auth);
-    logEvent(ctx.orgId, "scan_" + body.direction, whoName(e.auth), { job: id, code: String(body.code || ""), message: result.message });
-    return e.json(200, { message: result.message, item: result.item, serial: result.serial, summary: buildSummary($app, id, summaryAccess(ctx)) });
+    logEvent(ctx.orgId, back ? "scan_in" : "scan_out", whoName(e.auth), { job: id, code: String(body.code || ""), message: result.message });
+    return e.json(200, { message: result.message, item: result.item, serial: result.serial, stage: result.stage, summary: buildSummary($app, id, summaryAccess(ctx)) });
+  },
+  $apis.requireAuth("users"),
+);
+
+// Takes up the status equipment tracking suggests (lib/tracking.js
+// suggestion): everything's Loaded, so the project's Out. Anyone who can
+// track kit can do this, but only to the status the kit's reached.
+// body: { status }.
+routerAdd(
+  "POST",
+  "/api/jobs/{id}/tracking-status",
+  (e) => {
+    const { buildSummary, loadItems, loadLines, requireJob } = require(`${__hooks}/lib/jobs.js`);
+    const { requireRecordOrg, summaryAccess } = require(`${__hooks}/lib/orgs.js`);
+    const { needsOf } = require(`${__hooks}/lib/scan.js`);
+    const { stepsOf, suggestion, trackingState } = require(`${__hooks}/lib/tracking.js`);
+    const { whoName } = require(`${__hooks}/lib/auth.js`);
+    const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const job = requireJob($app, e.request.pathValue("id"));
+    let ctx = requireRecordOrg(e, job);
+    if (!ctx.can("scan.out") && !ctx.can("scan.in")) ctx = requireRecordOrg(e, job, "scan.out");
+    const lines = loadLines($app, job.id);
+    const itemsById = loadItems($app, lines);
+    const steps = stepsOf($app, ctx.orgId);
+    const offered = suggestion($app, job, trackingState($app, job.id, needsOf(lines, itemsById), itemsById, steps), steps);
+    const status = (e.requestInfo().body || {}).status;
+    if (!offered || offered.status !== status) throw new BadRequestError("The kit isn't all at a step for that status");
+    job.set("jobStatus", status);
+    $app.save(job);
+    logEvent(ctx.orgId, "job_status_tracked", whoName(e.auth), { job: job.id, status: offered.statusName, step: offered.stepName });
+    return e.json(200, buildSummary($app, job.id, summaryAccess(ctx)));
+  },
+  $apis.requireAuth("users"),
+);
+
+// Replaces the organisation's tracking steps (Settings → Equipment
+// tracking, lib/tracking.js). body: { steps: [{ id?, name, stage, colour,
+// jobStatus }] }.
+routerAdd(
+  "PUT",
+  "/api/tracking-steps",
+  (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { requireFeature } = require(`${__hooks}/lib/features.js`);
+    const { saveSteps } = require(`${__hooks}/lib/tracking.js`);
+    const { whoName } = require(`${__hooks}/lib/auth.js`);
+    const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const ctx = requireOrg(e, "settings.edit");
+    requireFeature(ctx.org, "scanning");
+    const saved = saveSteps($app, ctx.orgId, (e.requestInfo().body || {}).steps);
+    logEvent(ctx.orgId, "tracking_steps", whoName(e.auth), { names: saved.map((s) => s.getString("name")) });
+    return e.json(200, saved);
   },
   $apis.requireAuth("users"),
 );

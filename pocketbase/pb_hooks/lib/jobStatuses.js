@@ -15,7 +15,7 @@
 // status (its stage), which availability, scanning, the calendar feed and
 // the Xero export read. syncJobStatus() keeps them together on every save:
 // picking a status sets the stage, and code that sets a stage (the first
-// scan out, an import) moves the project to the organisation's first
+// stage change, an import) moves the project to the organisation's first
 // status with that stage.
 
 const STAGES = ["enquiry", "provisional", "confirmed", "out", "returned", "cancelled"];

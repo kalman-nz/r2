@@ -49,7 +49,10 @@ onRecordAfterCreateSuccess((e) => {
   const { createDefaultStatuses } = require(`${__hooks}/lib/repairs.js`);
   const { createDefaultJobStatuses } = require(`${__hooks}/lib/jobStatuses.js`);
   const { createDefaultDashboards } = require(`${__hooks}/lib/views.js`);
+  const { createDefaultSteps } = require(`${__hooks}/lib/tracking.js`);
   createDefaultJobStatuses(e.app, e.record.id);
+  // After the statuses: its steps move projects to them.
+  createDefaultSteps(e.app, e.record.id);
   createDefaultStatuses(e.app, e.record.id);
   createDefaultDashboards(e.app, e.record.id);
   e.next();

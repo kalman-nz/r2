@@ -142,6 +142,7 @@ routerAdd(
         "job_periods",
         "subprojects",
         "jobs",
+        "tracking_steps",
         "job_statuses",
         "repair_statuses",
         "serials",

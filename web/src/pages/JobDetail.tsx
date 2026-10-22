@@ -19,6 +19,7 @@ import { withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
 import { useRepairs } from "../lib/maintenance";
 import CrewCard from "../components/job/CrewCard";
+import TrackingCard from "../components/job/TrackingCard";
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -226,9 +227,6 @@ function ExistingJob({ id }: { id: string }) {
     }
   }
 
-  const neededUnits = packing.items.reduce((sum, p) => sum + p.needed, 0);
-  const outUnits = packing.items.reduce((sum, p) => sum + Math.max(0, p.out), 0);
-  const returnedUnits = packing.items.reduce((sum, p) => sum + p.returned, 0);
   const shortLines = summary.lines.filter((l) => (l.availability?.short ?? 0) > 0).length;
   const deletable = quotes.length === 0 && packing.scanCount === 0;
 
@@ -256,9 +254,9 @@ function ExistingJob({ id }: { id: string }) {
           <Link to={`/print/jobs/${job.id}/packing`} className="btn-secondary">
             Packing list
           </Link>
-          {(can("scan.out") || can("scan.in")) && (
+          {feature("scanning") && !job.untracked && (can("scan.out") || can("scan.in")) && (
             <Link to={`/projects/${job.id}/scan`} className="btn-secondary">
-              Scan kit
+              Track equipment
             </Link>
           )}
           {can("quotes.issue") && (
@@ -370,30 +368,7 @@ function ExistingJob({ id }: { id: string }) {
 
           {feature("repairs") && <DamageCard jobId={job.id} />}
 
-          {feature("scanning") && (
-            <section className="card p-4 flex flex-col gap-2 text-sm">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-gray-500">Warehouse</h2>
-                <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
-                  Scan →
-                </Link>
-              </div>
-              {neededUnits === 0 ? (
-                <p className="text-gray-500 text-xs">No physical kit on this project.</p>
-              ) : (
-                <>
-                  <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                    <div className="h-full bg-data" style={{ width: `${Math.min(100, (outUnits / neededUnits) * 100)}%` }} />
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    {outUnits} of {neededUnits} units out
-                    {returnedUnits > 0 ? ` · ${returnedUnits} back in` : ""}
-                    {packing.packed ? " · fully packed" : ""}
-                  </p>
-                </>
-              )}
-            </section>
-          )}
+          {feature("scanning") && <TrackingCard summary={summary} canScan={can("scan.out") || can("scan.in")} canEdit={can("jobs.edit")} />}
         </div>
       </div>
     </div>

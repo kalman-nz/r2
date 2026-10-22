@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import type { TrackingStage } from "../../lib/api";
 import type { ProjectRow } from "../../lib/home";
 
 // The pieces dashboards are drawn with (pages/Dashboard.tsx).
@@ -96,7 +97,8 @@ export function ProjectLine({
   job: ProjectRow;
   when: string;
   late: boolean;
-  scan?: string;
+  // A button to the project's equipment tracking, on a stage's first step.
+  scan?: { label: string; stage?: TrackingStage };
   // Anything else for the line's end (a badge, packing progress).
   extra?: ReactNode;
   onOpen: () => void;
@@ -111,8 +113,12 @@ export function ProjectLine({
       </div>
       {extra}
       {scan && (
-        <Link to={`/projects/${job.id}/scan`} onClick={(e) => e.stopPropagation()} className="btn-secondary !px-2.5 !py-1 !text-xs whitespace-nowrap">
-          {scan}
+        <Link
+          to={`/projects/${job.id}/scan${scan.stage ? `?stage=${scan.stage}` : ""}`}
+          onClick={(e) => e.stopPropagation()}
+          className="btn-secondary !px-2.5 !py-1 !text-xs whitespace-nowrap"
+        >
+          {scan.label}
         </Link>
       )}
     </Row>
@@ -125,21 +131,5 @@ export function More({ shown, total, to }: { shown: number; total: number; to: s
     <Link to={to} className="block px-4 py-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-50">
       and {total - shown} more…
     </Link>
-  );
-}
-
-// How much of a project's kit is out: "12 of 40 packed".
-export function Packed({ needed, out }: { needed: number; out: number }) {
-  if (needed <= 0) return <span className="text-xs text-gray-400 whitespace-nowrap">No kit</span>;
-  const done = out >= needed;
-  return (
-    <span className="flex flex-col items-end gap-1 w-24 shrink-0">
-      <span className={`text-xs tabular-nums whitespace-nowrap ${done ? "text-emerald-700 font-medium" : "text-gray-600"}`}>
-        {done ? "All packed" : `${out} of ${needed} out`}
-      </span>
-      <span className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-        <span className={`block h-full ${done ? "bg-emerald-500" : "bg-data"}`} style={{ width: `${Math.min(100, (out / needed) * 100)}%` }} />
-      </span>
-    </span>
   );
 }

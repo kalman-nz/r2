@@ -563,32 +563,98 @@ assert.ok(xeroRows.slice(1).every((r) => r.includes(`,R2-${jobA.number},`) && r.
 assert.ok(xeroRows[1].includes("Includes 2× QSC K12"), xeroRows[1]);
 log("Xero export: invoices from accepted quotes only, kit contents folded in, other organisations' jobs left out");
 
-// --- scanning ---
+// --- equipment tracking ---
+const stepsA = (await tech.ok("GET", `/api/collections/tracking_steps/records?sort=sortOrder&filter=${encodeURIComponent(`org = "${tech.org}"`)}`)).items;
+assert.deepEqual(stepsA.map((x) => `${x.name}:${x.stage}`), ["Prepped:prep", "Loaded:out", "Returned:back"], "every organisation starts with these steps");
+const stepId = Object.fromEntries(stepsA.map((x) => [x.name, x.id]));
+const jobStatusesA = (await tech.ok("GET", `/api/collections/job_statuses/records?filter=${encodeURIComponent(`org = "${tech.org}"`)}`)).items;
+const jobStatusNamed = (id) => jobStatusesA.find((x) => x.id === id)?.name;
 const scanA = (code, direction, extra = {}) => tech.call("POST", `/api/jobs/${jobA.id}/scan`, { code, direction, ...extra });
-let s = await scanA(k12Serials[0].barcode, "out");
+const trackA = (code, name, extra = {}) => tech.call("POST", `/api/jobs/${jobA.id}/scan`, { code, step: stepId[name], ...extra });
+const xlrTracked = (summary) => summary.lines.find((l) => l.item?.id === xlr.id);
+let s = await trackA(k12Serials[0].barcode, "Prepped");
 assert.equal(s.status, 200, JSON.stringify(s.json));
-assert.equal(s.json.summary.job.status, "out", "first scan out moves the job to out");
-s = await scanA(k12Serials[0].barcode, "out");
-assert.match(s.json.message, /already out on this project/);
-s = await tech.call("POST", `/api/jobs/${jobB.id}/scan`, { code: k12Serials[0].barcode, direction: "out" });
-assert.match(s.json.message, /still out on project #/);
-s = await scanA(`XLR-${run}`, "out", { quantity: 9 });
+assert.match(s.json.message, /→ Prepped \(1 of 2\)/);
+assert.equal(s.json.summary.job.status, "confirmed", "prepping some of the kit doesn't move the project on");
+s = await trackA(k12Serials[0].barcode, "Prepped");
+assert.match(s.json.message, /already Prepped/);
+s = await tech.call("POST", `/api/jobs/${jobB.id}/scan`, { code: k12Serials[0].barcode, step: stepId.Prepped });
+assert.match(s.json.message, /still with project #/);
+s = await trackA(`XLR-${run}`, "Prepped", { quantity: 9 });
 assert.match(s.json.message, /Only 8 more/);
-s = await scanA(`XLR-${run}`, "out", { quantity: 8 });
+s = await trackA(`XLR-${run}`, "Prepped", { quantity: 8 });
 assert.equal(s.status, 200);
+assert.deepEqual(xlrTracked(s.json.summary).tracking.at, { [stepId.Prepped]: 8 }, "each line has its own tracking");
+s = await trackA(`XLR-${run}`, "Prepped");
+assert.match(s.json.message, /already Prepped or further along/);
+// Straight from the shelf to the truck is fine.
+s = await trackA(k12Serials[1].barcode, "Loaded");
+assert.equal(s.status, 200);
+assert.equal(s.json.summary.trackingSuggestion?.statusName, "Prepped", "everything prepped (or further): Prepped is offered");
+assert.equal(jobStatusNamed(s.json.summary.job.jobStatus), "Confirmed", "but the project's status is never changed by tracking");
+s = await trackA(`XLR-${run}`, "Loaded", { quantity: 5 });
+assert.deepEqual(xlrTracked(s.json.summary).tracking.at, { [stepId.Prepped]: 3, [stepId.Loaded]: 5 }, "the audio can be loaded while the rest is prepped");
+assert.equal(s.json.summary.job.status, "confirmed", "not everything's loaded yet");
+// The old direction still works: "out" is the first step that's gone.
+s = await scanA(`XLR-${run}`, "out", { quantity: 3 });
+assert.equal(s.status, 200, JSON.stringify(s.json));
+s = await trackA(k12Serials[0].barcode, "Loaded");
+const offer = s.json.summary.trackingSuggestion;
+assert.equal(offer?.statusName, "Out", "everything loaded: Out is offered");
+await tech.fails("POST", `/api/jobs/${jobA.id}/tracking-status`, { status: jobStatusesA.find((x) => x.name === "Returned").id }, 400, /isn't all at a step/);
+await bossB.fails("POST", `/api/jobs/${jobA.id}/tracking-status`, { status: offer.status }, 403);
+s = { json: { summary: await tech.ok("POST", `/api/jobs/${jobA.id}/tracking-status`, { status: offer.status }) } };
+assert.equal(s.json.summary.job.status, "out", "whoever's scanning can take it up");
+assert.equal(s.json.summary.trackingSuggestion, null);
+s = await trackA(k12Serials[0].barcode, "Prepped");
+assert.equal(s.status, 200, "a unit can go back a step");
+assert.equal(s.json.summary.trackingSuggestion, null, "nothing's offered backwards");
 s = await scanA(`XLR-${run}`, "in", { quantity: 3 });
 const xlrPacking = s.json.summary.packing.items.find((p) => p.itemId === xlr.id);
 assert.equal(xlrPacking.out, 5);
+assert.equal(xlrPacking.returned, 3);
+s = await trackA(k12Serials[1].barcode, "Returned");
+assert.equal(s.status, 200);
+assert.equal(s.json.stage, "back");
 s = await scanA(k12Serials[0].barcode, "in");
 assert.equal(s.status, 200);
 assert.equal(s.json.serial, k12Serials[0].id, "a scan says which unit it was, for reporting a fault");
 assert.equal(s.json.item, k12.id);
+assert.equal(s.json.summary.job.status, "out", "not everything's back");
 s = await scanA("no-such-code", "out");
 assert.equal(s.status, 404);
 s = await scanA(`BONLY-${run}`, "out");
 assert.equal(s.status, 404, "another organisation's barcode means nothing here");
+await tech.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: `XLR-${run}`, step: "nope" }, 400, /Pick one of the tracking steps/);
 await bossB.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: `XLR-${run}`, direction: "in" }, 403);
-log("scanning: double-scans, cross-job scans, over-scans and other organisations' codes refused");
+const packingHome = await tech.ok("GET", `/api/home/packing?jobs=${jobA.id},${jobInB.id}`);
+assert.deepEqual(Object.keys(packingHome), [jobA.id], "only this organisation's projects");
+assert.deepEqual(packingHome[jobA.id], { needed: 10, at: { [stepId.Loaded]: 5, [stepId.Returned]: 5 } });
+
+// A project can go without tracking, but not with kit still out.
+await planner.fails("PATCH", `/api/collections/jobs/records/${jobA.id}`, { untracked: true }, 400, /still out/);
+await planner.ok("PATCH", `/api/collections/jobs/records/${jobB.id}`, { untracked: true });
+await tech.fails("POST", `/api/jobs/${jobB.id}/scan`, { code: `XLR-${run}`, step: stepId.Prepped }, 400, /isn't tracked/);
+assert.equal((await tech.ok("GET", `/api/jobs/${jobB.id}/summary`)).lines.filter((l) => l.tracking).length, 0, "no tracking on its lines");
+await planner.ok("PATCH", `/api/collections/jobs/records/${jobB.id}`, { untracked: false });
+
+// The organisation's own steps.
+const stepBody = (list) => ({ steps: list });
+const keep = stepsA.map((x) => ({ id: x.id, name: x.name, stage: x.stage, colour: x.colour, jobStatus: x.jobStatus }));
+await tech.fails("PUT", "/api/tracking-steps", stepBody(keep), 403);
+await admin.fails("PUT", "/api/tracking-steps", stepBody(keep.filter((x) => x.stage !== "back")), 400, /coming back/);
+await admin.fails("PUT", "/api/tracking-steps", stepBody(keep.map((x) => (x.name === "Prepped" ? { ...x, stage: "out" } : x))), 400, /stays getting ready/);
+const savedSteps = await admin.ok(
+  "PUT",
+  "/api/tracking-steps",
+  stepBody([{ name: "Checked", stage: "back", colour: "blue" }, ...keep.filter((x) => x.name !== "Prepped"), { name: "Delivered", stage: "out", colour: "amber", jobStatus: "" }]),
+);
+assert.deepEqual(savedSteps.map((x) => x.name), ["Loaded", "Delivered", "Checked", "Returned"], "kept in stage order, as given within each");
+s = await tech.call("GET", `/api/jobs/${jobA.id}/summary`);
+assert.ok(s.json.packing.items.every((p) => !(stepId.Prepped in p.at)), "a removed step's kit moves on to the next one");
+// Back to the defaults (Prepped is a new step now; Checked and Delivered go).
+await admin.ok("PUT", "/api/tracking-steps", stepBody(keep.map((x) => (x.name === "Prepped" ? { ...x, id: undefined } : x))));
+log("equipment tracking: steps per line, skipping and going back a step, project statuses offered (never forced), projects without tracking, and each organisation's own steps");
 
 // --- flags and repairs ---
 await tech.fails("POST", `/api/serials/${k12Serials[1].id}/status`, { status: "repair" }, 400, /Open a repair/);
@@ -825,7 +891,7 @@ let feats = await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { 
 assert.deepEqual([feats.scanning, feats.repairs, feats.pricing], [false, false, true]);
 const techInA = (await ok(techUser.token, "GET", "/api/me")).memberships.find((m) => m.org.id === orgA);
 assert.ok(!techInA.permissions.includes("scan.out") && techInA.org.features.scanning === false, "a turned-off feature's permissions count for nobody");
-await tech.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: "x", direction: "out" }, 403, /Check in & out is turned off/);
+await tech.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: "x", direction: "out" }, 403, /Equipment tracking is turned off/);
 await tech.fails("POST", "/api/repairs", { item: stand.id, quantity: 1, fault: "x" }, 403, /Repairs is turned off/);
 await tech.ok("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "repair" });
 await tech.ok("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "active" });
@@ -835,7 +901,7 @@ await admin.fails("POST", `/api/jobs/${jobA.id}/quotes`, null, 403, /Prices and 
 await admin.fails("GET", "/api/exports/xero/jobs?from=2030-03-01&to=2030-03-31", null, 403);
 feats = await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: true, repairs: true, pricing: true } });
 assert.ok(Object.values(feats).every(Boolean), "and back on");
-assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "features_changed" && a.summary === "Turned off Check in & out, Repairs"));
+assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "features_changed" && a.summary === "Turned off Equipment tracking, Repairs"));
 log("each organisation's own project statuses on fixed stages, and features it can turn off");
 
 // --- crew, and everyone's own dashboards and views ---
@@ -846,7 +912,7 @@ assert.ok((await tech.call("POST", "/api/collections/job_crew/records", { org: o
 const minePage = await tech.ok("GET", `/api/collections/jobs/records?filter=${encodeURIComponent(`org = "${orgA}" && job_crew_via_job.user ?= "${techUser.id}"`)}`);
 assert.deepEqual(minePage.items.map((j) => j.id), [jobA.id], "my projects are the ones I'm crew on");
 const packingNow = await tech.ok("GET", `/api/home/packing?jobs=${jobA.id},${jobB.id}`);
-assert.ok(packingNow[jobA.id].needed > 0 && packingNow[jobA.id].out > 0, JSON.stringify(packingNow));
+assert.ok(packingNow[jobA.id].needed > 0 && Object.keys(packingNow[jobA.id].at).length > 0, JSON.stringify(packingNow));
 
 let dash = await tech.ok("GET", "/api/dashboards");
 assert.deepEqual(dash.dashboards.map((d) => d.name).sort(), ["My projects", "Overview", "Workshop"], "everyone starts with these");
@@ -887,7 +953,7 @@ assert.ok((await admin.ok("GET", `/api/orgs/${orgA}/roles`)).some((r) => r.name 
 log("crew on projects, and everyone's own dashboards and views, shared with people or (admins) everyone");
 
 // --- delete protection ---
-await admin.fails("DELETE", `/api/collections/serials/records/${k12Serials[1].id}`, null, 400, /repairs on record/);
+await admin.fails("DELETE", `/api/collections/serials/records/${k12Serials[1].id}`, null, 400, /scanned on a project|repairs on record/);
 const spareMic = await planner.create("items", { name: `Spare mic ${run}`, kind: "item", tracking: "bulk", stockQty: 2 });
 await tech.ok("PATCH", `/api/repairs/${(await tech.ok("POST", "/api/repairs", { item: spareMic.id, quantity: 1, fault: "Dented grille" })).id}`, { status: st["Repaired"] });
 await admin.fails("DELETE", `/api/collections/items/records/${spareMic.id}`, null, 400, /repairs on record/);

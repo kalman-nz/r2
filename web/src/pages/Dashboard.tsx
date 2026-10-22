@@ -12,7 +12,8 @@ import { useRole } from "../lib/roles";
 import { OPEN_REPAIRS_FILTER } from "../lib/statuses";
 import { errorText } from "../lib/errors";
 import { byLabel } from "../lib/views";
-import { JobStatusBadge, RepairStatusBadge } from "../components/StatusBadge";
+import { progressOf, useTrackingSteps } from "../lib/tracking";
+import { JobStatusBadge, RepairStatusBadge, TrackingStatus } from "../components/StatusBadge";
 import NewRepairModal from "../components/repair/NewRepairModal";
 import DashboardEditor from "../components/home/DashboardEditor";
 import ManageViews from "../components/ManageViews";
@@ -20,7 +21,7 @@ import ShareModal from "../components/ShareModal";
 import ViewMenu from "../components/ViewMenu";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
-import { DayGroup, More, Packed, Panel, ProjectLine, ProjectName, Row, Stat } from "../components/home/parts";
+import { DayGroup, More, Panel, ProjectLine, ProjectName, Row, Stat } from "../components/home/parts";
 
 // How many rows the side panels show before "View all".
 const PANEL_ROWS = 6;
@@ -45,6 +46,7 @@ export default function Dashboard() {
   const [sharing, setSharing] = useState<Dashboard | null>(null);
   const [managing, setManaging] = useState(false);
   const canScanOut = can("scan.out");
+  const { steps } = useTrackingSteps();
   const canScanIn = can("scan.in");
 
   const { data: boards } = useQuery({ queryKey: ["dashboards"], queryFn: api.dashboards });
@@ -238,10 +240,10 @@ export default function Dashboard() {
                     extra={
                       <span className="flex items-center gap-3 shrink-0">
                         <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
-                        {packing[j.id] && <Packed needed={packing[j.id].needed} out={packing[j.id].out} />}
+                        {packing[j.id] && <TrackingStatus progress={progressOf(steps, packing[j.id].at, packing[j.id].needed)} compact />}
                       </span>
                     }
-                    scan={canScanOut ? "Scan out" : undefined}
+                    scan={canScanOut && !j.untracked ? { label: "Track" } : undefined}
                     onOpen={() => navigate(`/projects/${j.id}`)}
                   />
                 ))}
@@ -267,7 +269,7 @@ export default function Dashboard() {
                     job={j}
                     when={g.late ? formatDateTime(j.prepAt) : formatTime(j.prepAt)}
                     late={time(j.prepAt) < now}
-                    scan={canScanOut ? "Scan out" : undefined}
+                    scan={canScanOut && !j.untracked ? { label: "Track" } : undefined}
                     onOpen={() => navigate(`/projects/${j.id}`)}
                   />
                 ))}
@@ -295,7 +297,7 @@ export default function Dashboard() {
                       job={j}
                       when={late ? `${formatDuration(now - time(j.returnAt))} late` : formatTime(j.returnAt)}
                       late={late}
-                      scan={canScanIn ? "Scan in" : undefined}
+                      scan={canScanIn && !j.untracked ? { label: "Return", stage: "back" } : undefined}
                       onOpen={() => navigate(`/projects/${j.id}`)}
                     />
                   );
@@ -443,7 +445,7 @@ export default function Dashboard() {
           )}
           {(canScanOut || canScanIn) && (
             <Link to="/scan" className="btn-secondary">
-              Check in & out
+              Track equipment
             </Link>
           )}
           {can("jobs.create") && (

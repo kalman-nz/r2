@@ -86,7 +86,7 @@ function summarizeLogs(rows, opts) {
     } else if (entry.type === "quote_status") {
       summary = "Marked a quote for " + jobLabel(details.job) + " as " + details.status;
     } else if (entry.type === "scan_out" || entry.type === "scan_in") {
-      summary = "Scanned " + (details.message || details.code) + " · " + jobLabel(details.job);
+      summary = "Tracked " + (details.message || details.code) + " · " + jobLabel(details.job);
     } else if (entry.type === "serial_status") {
       summary = "Flagged " + (details.barcode || details.serial) + " as " + details.to + (details.note ? ': "' + details.note + '"' : "");
     } else if (entry.type === "repair_open") {
@@ -105,6 +105,10 @@ function summarizeLogs(rows, opts) {
       summary = [named(false) && "Turned off " + named(false), named(true) && "Turned on " + named(true)].filter(Boolean).join("; ") || "Changed features";
     } else if (entry.type === "job_statuses") {
       summary = "Changed the project statuses: " + (details.names || []).join(", ");
+    } else if (entry.type === "job_status_tracked") {
+      summary = "Set " + jobLabel(details.job) + " to " + details.status + " (everything " + details.step + ")";
+    } else if (entry.type === "tracking_steps") {
+      summary = "Changed the equipment tracking steps: " + (details.names || []).join(", ");
     } else if (entry.type === "repair_statuses") {
       summary = "Changed the repair statuses: " + (details.names || []).join(", ");
     } else if (entry.type === "repair_files") {

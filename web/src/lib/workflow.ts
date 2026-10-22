@@ -13,9 +13,9 @@ export const FEATURES: { key: FeatureKey; label: string; hint: string; off: stri
   {
     key: "scanning",
     permissions: ["scan.out", "scan.in"],
-    label: "Check in & out",
-    hint: "Scan kit out to projects and back in, with each project's packing state.",
-    off: "Check in & out and the packing state are hidden; kit doesn't have to be scanned to go out.",
+    label: "Equipment tracking",
+    hint: "Scan kit through your steps (prepped, loaded, returned) so every bit of equipment on a project has its own status.",
+    off: "Equipment tracking is hidden; kit doesn't have to be scanned to go out.",
   },
   {
     key: "repairs",
