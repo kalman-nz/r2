@@ -151,7 +151,6 @@ routerAdd(
         "import_runs",
         "settings",
         "label_templates",
-        "equipment_views",
         "list_views",
         "dashboards",
         "logs",

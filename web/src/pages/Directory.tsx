@@ -3,16 +3,19 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RecordModel } from "pocketbase";
 import { pb } from "../lib/pocketbase";
-import type { Job } from "../lib/api";
+import type { Job, ViewConfig } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useRole } from "../lib/roles";
+import ColumnsMenu from "../components/ColumnsMenu";
 import Field from "../components/Field";
+import PageViews from "../components/PageViews";
 import { JobStatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
 import { orgFilter, withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
+import { asBool, asString, asStrings } from "../lib/views";
 
 // Contacts and venues are plain records with a list, an edit form and the
 // jobs that use them, so one config-driven pair of pages serves both.
@@ -27,20 +30,35 @@ interface FieldSpec {
   placeholder?: string;
 }
 
+// A list column; the first (the name) always shows, the rest can be picked
+// (shown: on to start with), and saved views keep the choice.
+interface ColumnSpec {
+  key: string;
+  label: string;
+  className?: string;
+  shown?: boolean;
+  format?: (value: unknown) => string;
+}
+
 interface DirectoryConfig {
   collection: "contacts" | "venues";
+  // Its page for saved views.
+  page: "contacts" | "locations";
   title: string;
   singular: string;
   path: string;
   // The job field pointing at this collection.
   jobField: "client" | "venue";
   fields: FieldSpec[];
-  columns: { key: string; label: string; className?: string }[];
+  columns: ColumnSpec[];
   searchKeys: string[];
+  // A "Type" filter, for contacts: companies or people.
+  kinds?: { value: string; label: string }[];
 }
 
 const CONTACTS: DirectoryConfig = {
   collection: "contacts",
+  page: "contacts",
   title: "Contacts",
   singular: "contact",
   path: "/contacts",
@@ -65,15 +83,22 @@ const CONTACTS: DirectoryConfig = {
   ],
   columns: [
     { key: "name", label: "Name" },
+    { key: "kind", label: "Type", className: "hidden md:table-cell", shown: false, format: (v) => (v === "company" ? "Company" : v === "person" ? "Person" : "") },
     { key: "contactPerson", label: "Contact", className: "hidden md:table-cell" },
     { key: "email", label: "Email", className: "hidden sm:table-cell" },
     { key: "phone", label: "Phone", className: "hidden lg:table-cell" },
+    { key: "billingAddress", label: "Billing address", className: "hidden lg:table-cell", shown: false },
   ],
   searchKeys: ["name", "contactPerson", "email", "phone"],
+  kinds: [
+    { value: "company", label: "Companies" },
+    { value: "person", label: "People" },
+  ],
 };
 
 const VENUES: DirectoryConfig = {
   collection: "venues",
+  page: "locations",
   title: "Locations",
   singular: "location",
   path: "/locations",
@@ -89,6 +114,8 @@ const VENUES: DirectoryConfig = {
     { key: "name", label: "Name" },
     { key: "address", label: "Address", className: "hidden sm:table-cell" },
     { key: "contactName", label: "Contact", className: "hidden md:table-cell" },
+    { key: "phone", label: "Phone", className: "hidden lg:table-cell", shown: false },
+    { key: "notes", label: "Notes", className: "hidden lg:table-cell", shown: false },
   ],
   searchKeys: ["name", "address", "contactName"],
 };
@@ -98,6 +125,22 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
   const { can } = useRole();
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [kind, setKind] = useState("");
+  const pickable = useMemo(() => config.columns.slice(1), [config]);
+  // The page as it comes, and what a saved view keeps: filters and columns.
+  const defaults = useMemo<ViewConfig>(
+    () => ({ archived: false, ...(config.kinds ? { kind: "" } : {}), columns: pickable.filter((c) => c.shown !== false).map((c) => c.key) }),
+    [config, pickable],
+  );
+  const [shown, setShown] = useState<string[]>(defaults.columns as string[]);
+  const settings: ViewConfig = { archived: showArchived, ...(config.kinds ? { kind } : {}), columns: shown };
+  function applySettings(s: ViewConfig) {
+    setShowArchived(asBool(s.archived));
+    const k = asString(s.kind);
+    setKind(config.kinds?.some((x) => x.value === k) ? k : "");
+    setShown(asStrings(s.columns, pickable.map((c) => c.key)));
+  }
+  const columns = [config.columns[0], ...pickable.filter((c) => shown.includes(c.key))];
   const { data: records = [], isLoading, error } = useQuery({
     queryKey: [config.collection],
     queryFn: () => pb.collection(config.collection).getFullList<RecordModel>({ filter: orgFilter(), sort: "name" }),
@@ -107,9 +150,10 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
     const term = search.trim().toLowerCase();
     return records.filter((r) => {
       if (!showArchived && r.archived) return false;
+      if (kind && r.kind !== kind) return false;
       return !term || config.searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(term));
     });
-  }, [records, search, showArchived, config.searchKeys]);
+  }, [records, search, showArchived, kind, config.searchKeys]);
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-3">
@@ -125,11 +169,25 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
         )}
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
+        <PageViews page={config.page} settings={settings} defaults={defaults} onApply={applySettings} />
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="input w-72" />
+        {config.kinds && (
+          <select value={kind} onChange={(e) => setKind(e.target.value)} className="input w-auto" aria-label="Type">
+            <option value="">All types</option>
+            {config.kinds.map((k) => (
+              <option key={k.value} value={k.value}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        )}
         <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Show archived
         </label>
+        <div className="ml-auto">
+          <ColumnsMenu columns={pickable} visible={shown} onChange={setShown} />
+        </div>
       </div>
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
       {error && <p className="text-red-600 text-sm">Couldn't load: {errorText(error)}</p>}
@@ -137,7 +195,7 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
         <table className="w-full text-[13px] border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-left text-gray-500">
-              {config.columns.map((c) => (
+              {columns.map((c) => (
                 <th key={c.key} className={`px-3 py-2 font-medium ${c.className ?? ""}`}>
                   {c.label}
                 </th>
@@ -147,9 +205,9 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
           <tbody className="divide-y divide-gray-100">
             {filtered.map((r) => (
               <tr key={r.id} onClick={() => navigate(`${config.path}/${r.id}`)} className="hover:bg-gray-50 cursor-pointer">
-                {config.columns.map((c, i) => (
+                {columns.map((c, i) => (
                   <td key={c.key} className={`px-3 py-2 ${i === 0 ? "font-medium text-gray-900" : "text-gray-600"} ${c.className ?? ""}`}>
-                    {String(r[c.key] || (i === 0 ? "(no name)" : "—")).split("\n")[0]}
+                    {String((c.format ? c.format(r[c.key]) : r[c.key]) || (i === 0 ? "(no name)" : "—")).split("\n")[0]}
                     {i === 0 && r.archived && <span className="ml-2 text-xs text-gray-400 font-normal">Archived</span>}
                   </td>
                 ))}

@@ -940,13 +940,33 @@ const secret = await admin.ok("POST", "/api/dashboards", { name: "Secret", panel
 await planner.fails("PUT", "/api/me/home", { dashboard: secret.id }, 404);
 
 const savedView = await tech.ok("POST", "/api/views", { page: "projects", name: "Out now", config: { view: "out" } });
-assert.ok(!(await planner.ok("GET", "/api/views?page=projects")).some((v) => v.id === savedView.id));
+const viewsOf = async (who, page) => (await who.ok("GET", `/api/views?page=${page}`)).views;
+assert.ok(!(await viewsOf(planner, "projects")).some((v) => v.id === savedView.id));
 await tech.ok("PATCH", `/api/views/${savedView.id}`, { sharedWith: [plannerUser.id] });
-assert.deepEqual((await planner.ok("GET", "/api/views?page=projects")).find((v) => v.id === savedView.id).config, { view: "out" });
+assert.deepEqual((await viewsOf(planner, "projects")).find((v) => v.id === savedView.id).config, { view: "out" });
 await tech.fails("PATCH", `/api/views/${savedView.id}`, { public: true }, 403);
-await tech.fails("POST", "/api/equipment-views", { name: "Speakers", columns: ["name"], public: true }, 403);
-const invView = await admin.ok("POST", "/api/equipment-views", { name: "All speakers", columns: ["name", "code"], public: true });
-assert.ok((await tech.ok("GET", "/api/equipment-views")).some((v) => v.id === invView.id && v.public && !v.canEdit), "inventory views share the same way");
+// Every list page's views work the same: Inventory's keep filters and columns.
+await tech.fails("POST", "/api/views", { page: "inventory", name: "Speakers", config: { columns: ["name"] }, public: true }, 403);
+await tech.fails("POST", "/api/views", { page: "nope", name: "Speakers", config: {} }, 400, /Which page/);
+const invConfig = { type: "Serialised", archived: false, unavailable: false, columns: ["code", "stock"], widths: { name: 300 }, sortKey: "name", sortDir: "asc" };
+const invView = await admin.ok("POST", "/api/views", { page: "inventory", name: "All speakers", config: invConfig, public: true });
+let invViews = await tech.ok("GET", "/api/views?page=inventory");
+assert.ok(invViews.views.some((v) => v.id === invView.id && v.public && !v.canEdit), "inventory views share the same way");
+assert.deepEqual(invViews.views.find((v) => v.id === invView.id).config, invConfig, "filters and columns are kept");
+assert.equal(invViews.pick, "");
+assert.equal(invViews.defaultId, "", "no default until someone picks one");
+// The organisation's default for a page, and each person's own pick.
+await tech.fails("PATCH", `/api/views/${invView.id}`, { isDefault: true }, 403);
+await admin.ok("PATCH", `/api/views/${invView.id}`, { isDefault: true });
+assert.equal((await tech.ok("GET", "/api/views?page=inventory")).defaultId, invView.id, "everyone gets the default");
+await admin.fails("DELETE", `/api/views/${invView.id}`, null, 400, /default view/);
+await admin.fails("PATCH", `/api/views/${invView.id}`, { public: false }, 400, /has to be shared with everyone/);
+await tech.ok("PUT", "/api/me/views/inventory", { view: "standard" });
+assert.equal((await tech.ok("GET", "/api/views?page=inventory")).pick, "standard", "picking the page as it comes");
+await tech.fails("PUT", "/api/me/views/inventory", { view: savedView.id }, 404);
+await tech.ok("PUT", "/api/me/views/projects", { view: savedView.id });
+assert.equal((await tech.ok("GET", "/api/views?page=projects")).pick, savedView.id);
+assert.equal((await planner.ok("GET", "/api/views?page=inventory")).pick, "", "picks are each person's own");
 const adminInA = (await ok(adminUser.token, "GET", "/api/me")).memberships.find((m) => m.org.id === orgA);
 assert.ok(adminInA.permissions.includes("views.publish") && !techInA.permissions.includes("views.publish"), "only admins publish, to start with");
 assert.ok((await admin.ok("GET", `/api/orgs/${orgA}/roles`)).some((r) => r.name === "Crew" && r.permissions.length === 0), "and there's a Crew role");

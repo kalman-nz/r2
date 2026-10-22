@@ -1,5 +1,5 @@
 // Sharing for everyone's own dashboards and saved views (dashboards,
-// list_views, equipment_views; pb_migrations/0036): each is its owner's, and
+// list_views; pb_migrations/0036, 0038): each is its owner's, and
 // they can share it with people they pick (sharedWith) or with everyone in
 // the organisation (public). Making something public, or taking it back,
 // needs views.publish (an admin's by default). Ones with no owner are the
