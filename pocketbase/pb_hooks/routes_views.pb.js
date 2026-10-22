@@ -133,12 +133,15 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// Saved views of a list (?page=projects) you can see.
+// A list page's saved views (?page=inventory) you can see, which one you've
+// picked (an id, "standard" for the page as it comes, or "" to follow the
+// organisation's default) and that default.
 routerAdd(
   "GET",
   "/api/views",
   (e) => {
     const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { decodeJson } = require(`${__hooks}/lib/records.js`);
     const { VISIBLE, namesFor } = require(`${__hooks}/lib/sharing.js`);
     const { listViewJson, PAGES } = require(`${__hooks}/lib/views.js`);
     const ctx = requireOrg(e);
@@ -146,7 +149,41 @@ routerAdd(
     if (PAGES.indexOf(page) === -1) throw new BadRequestError("Which page?");
     const records = $app.findRecordsByFilter("list_views", VISIBLE + " && page = {:page}", "name", 0, 0, { org: ctx.orgId, me: e.auth.id, page: page });
     const names = namesFor($app, records);
-    return e.json(200, records.map((r) => listViewJson(ctx, e.auth.id, r, names)));
+    const picked = String(decodeJson(ctx.membership.get("views"), {})[page] || "");
+    const fallback = records.find((r) => r.getBool("isDefault"));
+    return e.json(200, {
+      views: records.map((r) => listViewJson(ctx, e.auth.id, r, names)),
+      pick: picked === "standard" || records.some((r) => r.id === picked) ? picked : "",
+      defaultId: fallback ? fallback.id : "",
+    });
+  },
+  $apis.requireAuth("users"),
+);
+
+// Your view of a list page in this organisation: { view: id } (one you can
+// see), "standard", or "" for the organisation's default.
+routerAdd(
+  "PUT",
+  "/api/me/views/{page}",
+  (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { decodeJson } = require(`${__hooks}/lib/records.js`);
+    const { VISIBLE } = require(`${__hooks}/lib/sharing.js`);
+    const { PAGES } = require(`${__hooks}/lib/views.js`);
+    const ctx = requireOrg(e);
+    const page = e.request.pathValue("page");
+    if (PAGES.indexOf(page) === -1) throw new BadRequestError("Which page?");
+    const id = String((e.requestInfo().body || {}).view || "");
+    if (id && id !== "standard") {
+      const seen = $app.findRecordsByFilter("list_views", VISIBLE + " && page = {:page} && id = {:id}", "", 1, 0, { org: ctx.orgId, me: e.auth.id, page: page, id: id });
+      if (seen.length === 0) throw new NotFoundError("View not found");
+    }
+    const views = decodeJson(ctx.membership.get("views"), {});
+    if (id) views[page] = id;
+    else delete views[page];
+    ctx.membership.set("views", views);
+    $app.save(ctx.membership);
+    return e.json(200, { pick: id });
   },
   $apis.requireAuth("users"),
 );
@@ -176,7 +213,9 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// { name?, config?, sharedWith?, public? }
+// { name?, config?, sharedWith?, public?, isDefault? }. isDefault makes it
+// the page's view for everyone who hasn't picked one (shared with everyone
+// only; one per page).
 routerAdd(
   "PATCH",
   "/api/views/{id}",
@@ -190,13 +229,29 @@ routerAdd(
     const record = findOrNull($app, "list_views", e.request.pathValue("id"));
     if (!record) throw new NotFoundError("View not found");
     const ctx = requireRecordOrg(e, record);
-    requireEdit(ctx, e.auth.id, record);
     const body = e.requestInfo().body || {};
+    const onlyDefault = Object.keys(body).every((k) => k === "isDefault");
+    // Publishers pick the default from anything shared with everyone.
+    if (!(onlyDefault && ctx.can("views.publish"))) requireEdit(ctx, e.auth.id, record);
     const wasPublic = record.getBool("public");
-    if (body.name !== undefined) record.set("name", cleanName(body.name));
-    if (body.config !== undefined) record.set("config", cleanConfig(body.config));
-    applySharing($app, ctx, record, body);
-    $app.save(record);
+    $app.runInTransaction((tx) => {
+      if (body.name !== undefined) record.set("name", cleanName(body.name));
+      if (body.config !== undefined) record.set("config", cleanConfig(body.config));
+      applySharing(tx, ctx, record, body);
+      if (body.isDefault !== undefined && !!body.isDefault !== record.getBool("isDefault")) {
+        if (!ctx.can("views.publish")) throw new ForbiddenError("Only people who can share with everyone can pick the default view");
+        if (body.isDefault) {
+          if (!record.getBool("public")) throw new BadRequestError("Share it with everyone first");
+          for (const other of tx.findRecordsByFilter("list_views", "org = {:org} && page = {:page} && isDefault = true", "", 0, 0, { org: ctx.orgId, page: record.getString("page") })) {
+            other.set("isDefault", false);
+            tx.save(other);
+          }
+        }
+        record.set("isDefault", !!body.isDefault);
+      }
+      if (record.getBool("isDefault") && !record.getBool("public")) throw new BadRequestError("The default view has to be shared with everyone: pick another default first");
+      tx.save(record);
+    });
     if (record.getBool("public") !== wasPublic) {
       logEvent(ctx.orgId, "view_published", whoName(e.auth), { kind: "view", name: record.getString("name"), public: record.getBool("public") });
     }
@@ -216,6 +271,7 @@ routerAdd(
     if (!record) throw new NotFoundError("View not found");
     const ctx = requireRecordOrg(e, record);
     requireEdit(ctx, e.auth.id, record);
+    if (record.getBool("isDefault")) throw new BadRequestError("It's the default view: pick another default first");
     $app.delete(record);
     return e.json(200, { ok: true });
   },

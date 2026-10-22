@@ -849,16 +849,6 @@ export interface SharingInput {
   sharedWith?: string[];
 }
 
-export interface EquipmentView extends Shared {
-  id: string;
-  name: string;
-  columns: string[];
-  widths: Record<string, number>;
-  sortKey: string;
-  sortDir: "asc" | "desc";
-}
-
-export type EquipmentViewInput = Pick<EquipmentView, "name" | "columns" | "widths" | "sortKey" | "sortDir"> & SharingInput;
 
 // A Home page someone designed (pb_hooks/lib/views.js): panels in order,
 // from web/src/lib/home.ts.
@@ -877,12 +867,28 @@ export interface Dashboards {
   defaultId: string;
 }
 
-// A saved view of a list: its filters.
+// The list pages with saved views (pb_hooks/lib/views.js).
+export type ViewPage = "projects" | "inventory" | "contacts" | "locations";
+
+// A saved view's settings: the page's filters and columns, as JSON.
+export type ViewConfig = Record<string, unknown>;
+
+// A saved view of a list page: its filters and column settings.
 export interface ListView extends Shared {
   id: string;
-  page: "projects";
+  page: ViewPage;
   name: string;
-  config: Record<string, string>;
+  config: ViewConfig;
+  // The organisation's default for its page.
+  isDefault: boolean;
+}
+
+export interface PageViewsData {
+  views: ListView[];
+  // Your pick: a view's id, "standard" for the page as it comes, or "" to
+  // follow the organisation's default.
+  pick: string;
+  defaultId: string;
 }
 
 // Someone on a project (job_crew), with what they're doing.
@@ -1103,7 +1109,6 @@ export const api = {
   logEvent: (type: string, details?: Record<string, unknown>) =>
     request<LogEntry>("/api/activity", json("POST", { type, details })),
 
-  listEquipmentViews: () => request<EquipmentView[]>("/api/equipment-views"),
 
   // Everyone's own dashboards and saved views — see routes_views.pb.js.
   dashboards: () => request<Dashboards>("/api/dashboards"),
@@ -1112,18 +1117,14 @@ export const api = {
     request<Dashboard>(`/api/dashboards/${id}`, json("PATCH", data)),
   deleteDashboard: (id: string) => request<{ ok: true }>(`/api/dashboards/${id}`, json("DELETE")),
   setHome: (dashboard: string) => request<{ home: string }>("/api/me/home", json("PUT", { dashboard })),
-  listViews: (page: ListView["page"]) => request<ListView[]>(`/api/views?page=${page}`),
-  createView: (data: { page: ListView["page"]; name: string; config: Record<string, string> } & SharingInput) =>
-    request<ListView>("/api/views", json("POST", data)),
-  updateView: (id: string, data: Partial<{ name: string; config: Record<string, string> }> & SharingInput) =>
+  listViews: (page: ViewPage) => request<PageViewsData>(`/api/views?page=${page}`),
+  setPageView: (page: ViewPage, view: string) => request<{ pick: string }>(`/api/me/views/${page}`, json("PUT", { view })),
+  createView: (data: { page: ViewPage; name: string; config: ViewConfig } & SharingInput) => request<ListView>("/api/views", json("POST", data)),
+  updateView: (id: string, data: Partial<{ name: string; config: ViewConfig; isDefault: boolean }> & SharingInput) =>
     request<ListView>(`/api/views/${id}`, json("PATCH", data)),
   deleteView: (id: string) => request<{ ok: true }>(`/api/views/${id}`, json("DELETE")),
   // How much of each project's kit is needed and out, for "To prep next".
   packing: (jobIds: string[]) => request<Record<string, { needed: number; at: TrackedAt }>>(`/api/home/packing?jobs=${jobIds.join(",")}`),
-  createEquipmentView: (data: EquipmentViewInput) => request<EquipmentView>("/api/equipment-views", json("POST", data)),
-  updateEquipmentView: (id: string, data: EquipmentViewInput) =>
-    request<EquipmentView>(`/api/equipment-views/${id}`, json("PUT", data)),
-  deleteEquipmentView: (id: string) => request<{ ok: true }>(`/api/equipment-views/${id}`, json("DELETE")),
 
   // You: the organisations you're in and invited to — see routes_me.pb.js.
   me: () => request<Me>("/api/me"),

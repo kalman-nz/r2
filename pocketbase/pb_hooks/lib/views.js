@@ -11,7 +11,9 @@ const DEFAULT_DASHBOARDS = [
   { name: "Workshop", panels: ["prep", "going-out", "coming-back", "maintenance", "repairs"] },
   { name: "My projects", panels: ["mine"] },
 ];
-const PAGES = ["projects"];
+// List pages with saved views (each view keeps that page's filters and
+// column settings, as the page itself defines them).
+const PAGES = ["projects", "inventory", "contacts", "locations"];
 
 function text(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -72,6 +74,8 @@ function listViewJson(ctx, me, record, names) {
   out.page = record.getString("page");
   out.name = record.getString("name");
   out.config = decodeJson(record.get("config"), {});
+  // The organisation's default for its page.
+  out.isDefault = record.getBool("isDefault");
   return out;
 }
 

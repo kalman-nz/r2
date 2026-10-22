@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import type { Contact, Job, Venue } from "../lib/api";
+import type { Contact, Job, Venue, ViewConfig } from "../lib/api";
 import { formatDateTimeYear, parseDate } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge } from "../components/StatusBadge";
-import SavedViews from "../components/SavedViews";
+import ColumnsMenu from "../components/ColumnsMenu";
+import PageViews from "../components/PageViews";
 import { JOB_STAGES, JOB_STATUSES, type ProjectView } from "../lib/statuses";
 import { orgFilter } from "../lib/currentOrg";
+import { asString, asStrings } from "../lib/views";
 import { useJobStatuses } from "../lib/workflow";
 
 type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
@@ -19,16 +21,58 @@ type Filter = ProjectView;
 
 const FILTERS = new Set<string>(["active", "mine", "all", ...JOB_STATUSES.map((s) => s.value)]);
 
+// The columns after the project's number and name, in order. Saved views
+// keep which show (components/PageViews.tsx).
+interface Column {
+  key: string;
+  label: string;
+  className?: string;
+  shown: boolean;
+  render: (job: JobWithExpand, now: number) => ReactNode;
+}
+
+const COLUMNS: Column[] = [
+  { key: "client", label: "Client", className: "hidden md:table-cell", shown: false, render: (j) => <span className="text-gray-600">{j.expand?.client?.name ?? "—"}</span> },
+  { key: "location", label: "Location", className: "hidden md:table-cell", shown: true, render: (j) => <span className="text-gray-600">{j.expand?.venue?.name ?? "—"}</span> },
+  { key: "reference", label: "Reference", className: "hidden lg:table-cell", shown: false, render: (j) => <span className="text-gray-600">{j.reference || "—"}</span> },
+  { key: "start", label: "Start", shown: true, render: (j) => <span className="text-gray-600 whitespace-nowrap">{formatDateTimeYear(j.startAt)}</span> },
+  {
+    key: "end",
+    label: "End",
+    className: "hidden sm:table-cell",
+    shown: true,
+    render: (j, now) => {
+      const overdue = j.status === "out" && (parseDate(j.returnAt)?.getTime() ?? Infinity) < now;
+      return (
+        <span className={`whitespace-nowrap ${overdue ? "text-fault-ink font-medium" : "text-gray-600"}`} title={overdue ? "Overdue back" : undefined}>
+          {formatDateTimeYear(j.endAt)}
+        </span>
+      );
+    },
+  },
+  { key: "prep", label: "Kit out", className: "hidden lg:table-cell", shown: false, render: (j) => <span className="text-gray-600 whitespace-nowrap">{formatDateTimeYear(j.prepAt)}</span> },
+  { key: "return", label: "Kit back", className: "hidden lg:table-cell", shown: false, render: (j) => <span className="text-gray-600 whitespace-nowrap">{formatDateTimeYear(j.returnAt)}</span> },
+  { key: "status", label: "Status", shown: true, render: (j) => <JobStatusBadge status={j.status} jobStatus={j.jobStatus} /> },
+];
+const COLUMN_KEYS = COLUMNS.map((c) => c.key);
+
+// The page as it comes.
+const DEFAULT_VIEW: ViewConfig = { view: "active", status: "", columns: COLUMNS.filter((c) => c.shown).map((c) => c.key) };
+
 export default function JobsList() {
   const navigate = useNavigate();
   const { can } = useRole();
   const [params, setParams] = useSearchParams();
+  // Opened with its own filter (the sidebar's "Mine", say): that wins over
+  // the saved view.
+  const [linked] = useState(() => params.has("view") || params.has("status"));
   const view = params.get("view") ?? "active";
   const filter = (FILTERS.has(view) ? view : "active") as Filter;
   const statusId = params.get("status") ?? "";
   const setFilter = (value: string) =>
     setParams(value.startsWith("status:") ? { status: value.slice(7) } : value === "active" ? {} : { view: value }, { replace: true });
   const [search, setSearch] = useState("");
+  const [shown, setShown] = useState<string[]>(DEFAULT_VIEW.columns as string[]);
   const { statuses } = useJobStatuses();
 
   const { data: jobs = [], isLoading, error } = useQuery({
@@ -61,15 +105,17 @@ export default function JobsList() {
     );
   }, [jobs, search]);
 
-  const now = Date.now();
-  // What a saved view keeps (components/SavedViews.tsx).
-  const config = { view: statusId ? "" : filter, status: statusId, search: search.trim() };
-  function apply(saved: Record<string, string>) {
-    setSearch(saved.search ?? "");
-    // A status that's since been removed falls back to its stage's view.
-    if (saved.status && statuses.some((s) => s.id === saved.status)) setFilter(`status:${saved.status}`);
-    else setFilter(FILTERS.has(saved.view ?? "") ? saved.view : "active");
+  // What a saved view keeps: the filter and the columns.
+  const settings: ViewConfig = { view: statusId ? "" : filter, status: statusId, columns: shown };
+  function applySettings(s: ViewConfig) {
+    const status = asString(s.status);
+    const saved = asString(s.view, "active");
+    setFilter(status ? `status:${status}` : FILTERS.has(saved) ? saved : "active");
+    setShown(asStrings(s.columns, COLUMN_KEYS));
   }
+
+  const now = Date.now();
+  const columns = COLUMNS.filter((c) => shown.includes(c.key));
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-3">
@@ -86,13 +132,14 @@ export default function JobsList() {
       </div>
 
       <div className="flex items-center gap-1.5 flex-wrap">
+        <PageViews page="projects" settings={settings} defaults={DEFAULT_VIEW} onApply={applySettings} applyOnLoad={!linked} />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search number, name, client, location…"
           className="input w-72"
         />
-        <select value={statusId ? `status:${statusId}` : filter} onChange={(e) => setFilter(e.target.value)} className="input w-auto">
+        <select value={statusId ? `status:${statusId}` : filter} onChange={(e) => setFilter(e.target.value)} className="input w-auto" aria-label="Show">
           <option value="active">Active (not done or cancelled)</option>
           <option value="mine">Mine (on the crew)</option>
           <option value="all">All projects</option>
@@ -114,7 +161,7 @@ export default function JobsList() {
           </optgroup>
         </select>
         <div className="ml-auto">
-          <SavedViews page="projects" config={config} onApply={apply} />
+          <ColumnsMenu columns={COLUMNS} visible={shown} onChange={setShown} />
         </div>
       </div>
 
@@ -127,39 +174,30 @@ export default function JobsList() {
             <tr className="border-b border-gray-200 text-left text-gray-500">
               <th className="px-3 py-2 font-medium w-16">#</th>
               <th className="px-3 py-2 font-medium">Project</th>
-              <th className="px-3 py-2 font-medium hidden md:table-cell">Location</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap">Start</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap hidden sm:table-cell">End</th>
-              <th className="px-3 py-2 font-medium">Status</th>
+              {columns.map((c) => (
+                <th key={c.key} className={`px-3 py-2 font-medium whitespace-nowrap ${c.className ?? ""}`}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filtered.map((job) => {
-              const overdue =
-                job.status === "out" && (parseDate(job.returnAt)?.getTime() ?? Infinity) < now;
-              return (
-                <tr key={job.id} onClick={() => navigate(`/projects/${job.id}`)} className="hover:bg-gray-50 cursor-pointer">
-                  <td className="px-3 py-2 text-gray-500 font-mono text-xs">{job.number}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-medium text-gray-900 truncate">{job.name}</span>
-                      {job.expand?.client && <span className="text-xs text-gray-500 truncate">{job.expand.client.name}</span>}
-                    </div>
+            {filtered.map((job) => (
+              <tr key={job.id} onClick={() => navigate(`/projects/${job.id}`)} className="hover:bg-gray-50 cursor-pointer">
+                <td className="px-3 py-2 text-gray-500 font-mono text-xs">{job.number}</td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-medium text-gray-900 truncate">{job.name}</span>
+                    {job.expand?.client && !shown.includes("client") && <span className="text-xs text-gray-500 truncate">{job.expand.client.name}</span>}
+                  </div>
+                </td>
+                {columns.map((c) => (
+                  <td key={c.key} className={`px-3 py-2 ${c.className ?? ""}`}>
+                    {c.render(job, now)}
                   </td>
-                  <td className="px-3 py-2 text-gray-600 hidden md:table-cell">{job.expand?.venue?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatDateTimeYear(job.startAt)}</td>
-                  <td
-                    className={`px-3 py-2 whitespace-nowrap hidden sm:table-cell ${overdue ? "text-fault-ink font-medium" : "text-gray-600"}`}
-                    title={overdue ? "Overdue back" : undefined}
-                  >
-                    {formatDateTimeYear(job.endAt)}
-                  </td>
-                  <td className="px-3 py-2">
-                    <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
-                  </td>
-                </tr>
-              );
-            })}
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
         {!isLoading && filtered.length === 0 && (

@@ -456,7 +456,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Which dashboard. New, copy, share and the rest are in its menu. */}
+      {/* Which dashboard. Editing, copying, sharing and the rest are in its menu. */}
       <div className="flex items-center gap-1.5 flex-wrap text-sm">
         <ViewMenu
           label="Dashboard"
@@ -466,18 +466,13 @@ export default function Dashboard() {
           note={(d) => (d.isDefault ? "Default" : byLabel(d))}
           onPick={(d) => d && choose(d.id)}
           actions={[
+            current?.canEdit && { label: "Edit dashboard…", onClick: () => setEditing({ dashboard: current }) },
             { label: "New dashboard", onClick: startNew },
             { label: "Copy this dashboard", onClick: () => copyOf(current) },
             current?.isOwner && { label: "Share…", onClick: () => setSharing(current) },
             { label: "Manage dashboards…", onClick: () => setManaging(true) },
           ]}
         />
-        {current?.canEdit && (
-          <button onClick={() => setEditing({ dashboard: current })} className="btn-secondary">
-            Edit
-          </button>
-        )}
-        {current && !current.isOwner && <span className="text-xs text-gray-400 ml-1">{byLabel(current, org?.name)}</span>}
       </div>
 
       {error && <p className="text-red-600 text-sm">Couldn't load projects: {(error as Error).message}</p>}
@@ -542,7 +537,6 @@ export default function Dashboard() {
           title="Dashboards"
           views={list}
           currentId={current?.id ?? ""}
-          orgName={org?.name}
           note={(d) => (d.isDefault ? "everyone's Home until they pick their own" : "")}
           onPick={(d) => {
             setManaging(false);
