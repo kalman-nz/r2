@@ -2,6 +2,7 @@ import type { JobStatus, QuoteStatus, SerialStatus } from "../lib/api";
 import { useRepairStatuses } from "../lib/maintenance";
 import { useJobStatuses } from "../lib/workflow";
 import { JOB_STATUSES, SERIAL_STATUS_LABELS, STATUS_COLOURS } from "../lib/statuses";
+import type { Progress } from "../lib/tracking";
 
 const JOB_STYLES: Record<JobStatus, string> = {
   enquiry: "bg-gray-100 text-gray-600",
@@ -44,6 +45,28 @@ export function SerialStatusBadge({ status }: { status: SerialStatus }) {
 export function QuoteStatusBadge({ status }: { status: QuoteStatus }) {
   const label = status === "void" ? "Void" : status.charAt(0).toUpperCase() + status.slice(1);
   return <span className={`${base} ${QUOTE_STYLES[status] ?? ""}`}>{label}</span>;
+}
+
+// Where some kit is on its way out and back (lib/tracking.ts): the furthest
+// step all of it has reached, and how much has reached the next one.
+export function TrackingStatus({ progress, compact = false }: { progress: Progress | null; compact?: boolean }) {
+  if (!progress || progress.total === 0) return null;
+  const { current, next, nextCount, total } = progress;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {current ? (
+        <span className={`${base} ${STATUS_COLOURS[current.colour || "gray"].badge}`}>{current.name}</span>
+      ) : (
+        <span className={`${base} bg-white text-gray-500 ring-1 ring-inset ring-gray-200`}>Not started</span>
+      )}
+      {next && nextCount > 0 && (
+        <span className="text-xs text-gray-500 tabular-nums" title={`${nextCount} of ${total} ${next.name} or further along`}>
+          {nextCount}/{total}
+          {!compact && ` ${next.name}`}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // A repair's status in its organisation's own name and colour.

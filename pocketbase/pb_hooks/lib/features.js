@@ -11,8 +11,8 @@
 const FEATURES = [
   {
     key: "scanning",
-    label: "Check in & out",
-    hint: "Scanning kit out to projects and back in, with the packing state on each project",
+    label: "Equipment tracking",
+    hint: "Scanning kit through your steps (prepped, loaded, returned) so every bit of equipment on a project has its own status",
     permissions: ["scan.out", "scan.in"],
   },
   {

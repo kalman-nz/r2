@@ -53,8 +53,8 @@ const GROUPS = [
   {
     name: "Warehouse",
     permissions: [
-      ["scan.out", "Scan kit out"],
-      ["scan.in", "Scan kit back in"],
+      ["scan.out", "Track kit going out (prep, load)"],
+      ["scan.in", "Track kit coming back"],
     ],
   },
   {

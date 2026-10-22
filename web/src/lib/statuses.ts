@@ -37,7 +37,7 @@ export const JOB_STAGES: { value: JobStatus; label: string; hint: string; starts
   { value: "enquiry", label: "Enquiry", hint: "A price check: holds no kit", starts: true },
   { value: "provisional", label: "Pencilled in", hint: "Holds kit, but shortages say it'd go if released", starts: true },
   { value: "confirmed", label: "Confirmed", hint: "Booked: holds kit", starts: true },
-  { value: "out", label: "Out", hint: "The kit's left the warehouse. A project's first scan out moves it to the first status here", starts: false },
+  { value: "out", label: "Out", hint: "The kit's left the warehouse. Equipment tracking offers this once everything's loaded", starts: false },
   { value: "returned", label: "Done", hint: "Finished: holds nothing, and can be invoiced", starts: false },
   { value: "cancelled", label: "Cancelled", hint: "Holds nothing", starts: false },
 ];

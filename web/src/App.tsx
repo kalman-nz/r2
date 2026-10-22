@@ -300,7 +300,7 @@ function AppShell() {
               </NavSection>
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
-                {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Check in & out" />}
+                {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Equipment tracking" />}
                 {(feature("repairs") || feature("maintenance")) && <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />}
                 {can("labels.print") && <NavItem to="/label-printing" icon={icons.label} label="Label printing" />}
               </NavSection>

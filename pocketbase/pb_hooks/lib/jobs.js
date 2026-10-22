@@ -105,6 +105,8 @@ function jobInfo(app, job) {
     quoteNotes: job.getString("quoteNotes"),
     notes: job.getString("notes"),
     headings: headingsOf(job),
+    // Going without equipment tracking (lib/tracking.js).
+    untracked: job.getBool("untracked"),
     created: job.getString("created"),
     updated: job.getString("updated"),
     clientInfo: contactInfo(findOrNull(app, "contacts", job.getString("client"))),
@@ -227,69 +229,6 @@ function displayName(line, item) {
   return item ? item.getString("name") : "(deleted item)";
 }
 
-// What's been scanned out and back for a job. Bulk items count quantities;
-// serials track which units are currently out on this job.
-function packingState(app, jobId, needs, itemsById) {
-  const scans = app.findRecordsByFilter("scans", "job = {:job}", "created", 0, 0, { job: jobId });
-  const state = {};
-  const ensure = (itemId) => {
-    if (!state[itemId]) {
-      const item = itemsById[itemId] || findOrNull(app, "items", itemId);
-      state[itemId] = {
-        itemId: itemId,
-        name: item ? item.getString("name") : "(deleted item)",
-        tracking: item ? item.getString("tracking") : "",
-        needed: needs[itemId] || 0,
-        scannedOut: 0,
-        returned: 0,
-        serialsOut: {},
-      };
-    }
-    return state[itemId];
-  };
-  for (const itemId of Object.keys(needs)) ensure(itemId);
-
-  for (const scan of scans) {
-    const s = ensure(scan.getString("item"));
-    const qty = scan.getInt("quantity");
-    const serialId = scan.getString("serial");
-    if (scan.getString("direction") === "out") {
-      s.scannedOut += qty;
-      if (serialId) s.serialsOut[serialId] = true;
-    } else {
-      s.returned += qty;
-      if (serialId) delete s.serialsOut[serialId];
-    }
-  }
-
-  const serialIds = [];
-  for (const itemId of Object.keys(state)) serialIds.push.apply(serialIds, Object.keys(state[itemId].serialsOut));
-  const serialById = {};
-  for (const serial of app.findRecordsByIds("serials", serialIds)) if (serial) serialById[serial.id] = serial;
-
-  const items = Object.keys(state).map((itemId) => {
-    const s = state[itemId];
-    return {
-      itemId: s.itemId,
-      name: s.name,
-      tracking: s.tracking,
-      needed: s.needed,
-      scannedOut: s.scannedOut,
-      returned: s.returned,
-      out: s.scannedOut - s.returned,
-      serialsOut: Object.keys(s.serialsOut).map((id) => ({
-        id: id,
-        barcode: serialById[id] ? serialById[id].getString("barcode") : "",
-        label: serialById[id] ? serialById[id].getString("label") : "",
-      })),
-    };
-  });
-  items.sort((a, b) => a.name.localeCompare(b.name));
-  const packed = items.every((i) => i.scannedOut >= i.needed);
-  const allBack = items.every((i) => i.out <= 0);
-  return { items: items, packed: items.length > 0 && packed, allBack: allBack, scanCount: scans.length };
-}
-
 // The job page's whole payload. show is true for everything, or what this
 // person's role allows ({ prices, quotes } from lib/orgs.js summaryAccess):
 // without prices it's the kit list and packing state, no money.
@@ -398,6 +337,12 @@ function buildSummary(app, jobId, show) {
   });
   // A kit's own line has no stock, so flag it when any of its components is short.
   for (const view of lineViews) view.componentsShort = shortByLine[view.id] === true;
+  // Where each line's kit is (lib/tracking.js).
+  const tracking = require(`${__hooks}/lib/tracking.js`);
+  const steps = tracking.stepsOf(app, org);
+  const state = tracking.trackingState(app, job.id, needs, itemsById, steps);
+  if (!job.getBool("untracked")) tracking.shareOutToLines(lineViews, state);
+  const suggested = tracking.suggestion(app, job, state, steps);
 
   const { periodsOf } = require(`${__hooks}/lib/periods.js`);
   const summary = {
@@ -434,7 +379,9 @@ function buildSummary(app, jobId, show) {
       }
       return view;
     }),
-    packing: packingState(app, job.id, needs, itemsById),
+    packing: { items: state.items, packed: state.packed, allBack: state.allBack, scanCount: state.scanCount },
+    // A project status its kit has now all reached, to offer (lib/tracking.js).
+    trackingSuggestion: suggested,
     includesPrices: includePrices,
   };
 
@@ -889,4 +836,4 @@ function checkPriceFields(ctx, body) {
 }
 
 module.exports = {
-  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject, headingAction, issueQuote, packingState, loadLines, loadItems };
+  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject, headingAction, issueQuote, loadLines, loadItems };

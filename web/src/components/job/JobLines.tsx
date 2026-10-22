@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine, type PriceMode } from "../../lib/api";
+import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine, type PriceMode, type TrackingStep } from "../../lib/api";
 import { formatPeriod, nzd, MODE_SUFFIX } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { InlineNumber, InlineText } from "../InlineInput";
@@ -8,6 +8,9 @@ import ItemPicker from "../ItemPicker";
 import Modal from "../Modal";
 import Field from "../Field";
 import NumberInput from "../NumberInput";
+import { TrackingStatus } from "../StatusBadge";
+import { useOrg } from "../../lib/org";
+import { linesProgress, progressOf, useTrackingSteps } from "../../lib/tracking";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import NewSubprojectModal from "./NewSubprojectModal";
@@ -177,6 +180,10 @@ export default function JobLines({
   const { job, lines, subprojects = [] } = summary;
   const jobDone = job.status === "returned" || job.status === "cancelled";
   const showPrices = summary.includesPrices;
+  // Where each bit of kit is (equipment tracking), once it's more than an enquiry.
+  const { feature } = useOrg();
+  const { steps: trackingSteps } = useTrackingSteps();
+  const steps = feature("scanning") && trackingSteps.length > 0 && job.status !== "enquiry" && !job.untracked ? trackingSteps : null;
 
   const sections: Section[] = [
     {
@@ -279,7 +286,7 @@ export default function JobLines({
   }
 
   const groupNames = [...new Set([...lines.map((l) => l.group), ...(job.headings ?? []).map((h) => h.name)].filter(Boolean))];
-  const columns = showPrices ? 7 : 3;
+  const columns = (showPrices ? 7 : 3) + (steps ? 1 : 0);
   const split = subprojects.length > 0;
   const addButtons = (section: string) =>
     canEdit && (
@@ -335,6 +342,7 @@ export default function JobLines({
               <th className="px-4 py-1.5 font-medium">Item</th>
               <th className="px-2 py-1.5 font-medium text-right w-16">Qty</th>
               <th className="px-2 py-1.5 font-medium w-36">Availability</th>
+              {steps && <th className="px-2 py-1.5 font-medium w-44">Status</th>}
               {showPrices && (
                 <>
                   <th className="px-2 py-1.5 font-medium text-right w-24">Rate</th>
@@ -378,6 +386,7 @@ export default function JobLines({
                       canEdit={canEdit}
                       showPrices={showPrices}
                       jobDone={jobDone}
+                      steps={steps}
                       targets={targets}
                       first={named[0]?.name === group.name}
                       last={named[named.length - 1]?.name === group.name}
@@ -476,6 +485,7 @@ function GroupRows({
   canEdit,
   showPrices,
   jobDone,
+  steps,
   targets,
   first,
   last,
@@ -492,6 +502,7 @@ function GroupRows({
   canEdit: boolean;
   showPrices: boolean;
   jobDone: boolean;
+  steps: TrackingStep[] | null;
   targets: Target[];
   first: boolean;
   last: boolean;
@@ -519,6 +530,7 @@ function GroupRows({
               <span className={group.name ? "font-semibold text-gray-800" : "text-gray-400 text-xs uppercase tracking-wide"}>{group.name || "No heading"}</span>
             )}
             <span className="flex items-center gap-2">
+              {steps && <TrackingStatus progress={linesProgress(steps, group.lines)} />}
               {canEdit && group.name && (
                 <span className="inline-flex items-center gap-0.5 text-gray-400 text-xs">
                   <button onClick={onAddTo} className="text-signal-ink hover:text-signal-ink-hover font-medium px-1" title={`Add equipment under ${group.name}`}>
@@ -554,6 +566,8 @@ function GroupRows({
           canEdit={canEdit}
           showPrices={showPrices}
           jobDone={jobDone}
+          steps={steps}
+          kitLines={line.item?.kind === "kit" ? group.lines.filter((l) => l.parentLine === line.id) : undefined}
           targets={targets}
           onPatch={onPatch}
           onRemove={onRemove}
@@ -569,6 +583,8 @@ function LineRow({
   canEdit,
   showPrices,
   jobDone,
+  steps,
+  kitLines,
   targets,
   onPatch,
   onRemove,
@@ -578,6 +594,9 @@ function LineRow({
   canEdit: boolean;
   showPrices: boolean;
   jobDone: boolean;
+  steps: TrackingStep[] | null;
+  // A kit's contents, whose tracking is the kit's.
+  kitLines?: JobLineView[];
   // Where the line can be moved to: each part of the project and its headings.
   targets: Target[];
   onPatch: (line: JobLineView, patch: LinePatch) => void;
@@ -628,6 +647,13 @@ function LineRow({
       <td className="px-2 py-1.5 whitespace-nowrap">
         <AvailabilityCell line={line} jobDone={jobDone} />
       </td>
+      {steps && (
+        <td className="px-2 py-1.5">
+          <TrackingStatus
+            progress={kitLines ? linesProgress(steps, kitLines) : line.tracking ? progressOf(steps, line.tracking.at, Math.round(line.quantity)) : null}
+          />
+        </td>
+      )}
       {showPrices && (
         <>
           <td className="px-2 py-1.5 text-right">

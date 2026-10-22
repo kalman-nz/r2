@@ -1,22 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import { api, type Contact, type Job } from "../lib/api";
+import { api, type Contact, type Job, type JobLineView } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { invalidateMaintenance } from "../lib/maintenance";
-import { JobStatusBadge } from "../components/StatusBadge";
+import { JobStatusBadge, TrackingStatus } from "../components/StatusBadge";
+import { STATUS_COLOURS } from "../lib/statuses";
+import { linesProgress, progressOf, useTrackingSteps } from "../lib/tracking";
 import NumberInput from "../components/NumberInput";
 import NewRepairModal from "../components/repair/NewRepairModal";
+import TrackingSuggestion from "../components/job/TrackingSuggestion";
 import { useToast } from "../components/ToastProvider";
 import { orgFilter } from "../lib/currentOrg";
 import { useCan, useFeature } from "../lib/roles";
 
-// Scanning kit out to a job and back in. Works with a Bluetooth/USB scanner
-// (it types the code and presses Enter into the focused box) or the phone's
-// camera (see CameraScanner). Every rule — double scans, wrong job,
-// over-scans, broken units — is checked server-side in lib/scan.js.
+// Equipment tracking: scanning kit to a step on a project (prepped,
+// loaded, returned: each organisation's own steps). Works with a
+// Bluetooth/USB scanner (it types the code and presses Enter into the
+// focused box) or the phone's camera (see CameraScanner). Every rule —
+// double scans, wrong job, over-scans, broken units — is checked
+// server-side in lib/scan.js.
 export default function ScanPage() {
   const { id } = useParams();
   return id ? <ScanJob jobId={id} /> : <ChooseJob />;
@@ -31,7 +36,7 @@ function ChooseJob() {
     queryKey: ["jobs", "scannable"],
     queryFn: () =>
       pb.collection("jobs").getFullList<JobWithClient>({
-        filter: orgFilter("status = 'provisional' || status = 'confirmed' || status = 'out'"),
+        filter: orgFilter("(status = 'provisional' || status = 'confirmed' || status = 'out') && untracked = false"),
         sort: "prepAt",
         expand: "client",
       }),
@@ -46,8 +51,8 @@ function ChooseJob() {
 
   return (
     <div className="max-w-xl mx-auto flex flex-col gap-3">
-      <h1 className="text-lg font-semibold text-gray-900">Check in & out</h1>
-      <p className="text-sm text-gray-500">Pick the project you're packing or unpacking.</p>
+      <h1 className="text-lg font-semibold text-gray-900">Equipment tracking</h1>
+      <p className="text-sm text-gray-500">Pick the project you're prepping, loading or bringing back.</p>
       <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Project number or name" className="input py-2" />
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
       <div className="card divide-y divide-gray-100 overflow-hidden">
@@ -106,10 +111,14 @@ function beep(ok: boolean) {
 
 function ScanJob({ jobId }: { jobId: string }) {
   const queryClient = useQueryClient();
+  const [params] = useSearchParams();
   const { data: summary, error } = useQuery({ queryKey: ["job-summary", jobId], queryFn: () => api.getJobSummary(jobId) });
   const can = useCan();
-  const directions = useMemo(() => (["out", "in"] as const).filter((d) => can(d === "out" ? "scan.out" : "scan.in")), [can]);
-  const [direction, setDirection] = useState<"out" | "in">(directions[0] ?? "out");
+  const { steps: allSteps, isLoading: stepsLoading } = useTrackingSteps();
+  // The steps this person can scan to: bringing kit back is its own permission.
+  const steps = useMemo(() => allSteps.filter((s) => can(s.stage === "back" ? "scan.in" : "scan.out")), [allSteps, can]);
+  const [stepId, setStepId] = useState("");
+  const [heading, setHeading] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [code, setCode] = useState("");
   const [feed, setFeed] = useState<FeedEntry[]>([]);
@@ -121,25 +130,30 @@ function ScanJob({ jobId }: { jobId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const feedId = useRef(0);
 
-  // Opening a job that's already out defaults to scanning in. Decided once,
-  // on load: the first scan out flips the job to "out", and switching
-  // direction under someone mid-pack would scan the next unit back in.
-  const status = summary?.job.status;
-  const defaulted = useRef(false);
+  // Which step to start on, decided once: the first back step for a project
+  // that's out (or when asked, ?stage=back), else the next step its kit
+  // hasn't all reached. Not after that: switching under someone mid-pack
+  // would send the next unit somewhere else.
+  const decided = useRef(false);
   useEffect(() => {
-    if (!status || defaulted.current) return;
-    defaulted.current = true;
-    if (status === "out" && directions.includes("in")) setDirection("in");
-  }, [status, directions]);
+    if (decided.current || !summary || stepsLoading || steps.length === 0) return;
+    decided.current = true;
+    const back = steps.find((s) => s.stage === "back");
+    if ((params.get("stage") === "back" || summary.job.status === "out") && back) return setStepId(back.id);
+    const next = linesProgress(allSteps, summary.lines)?.next;
+    const going = steps.filter((s) => s.stage !== "back");
+    setStepId((next && going.some((s) => s.id === next.id) ? next : going[0] ?? steps[0]).id);
+  }, [summary, steps, allSteps, stepsLoading, params]);
+  const step = steps.find((s) => s.id === stepId) ?? null;
 
   async function submit(raw: string) {
     const value = raw.trim();
-    if (!value || busy) return;
+    if (!value || busy || !step) return;
     setBusy(true);
     try {
-      const result = await api.scan(jobId, { code: value, direction, quantity });
+      const result = await api.scan(jobId, { code: value, step: step.id, quantity });
       queryClient.setQueryData(["job-summary", jobId], result.summary);
-      const back = direction === "in" ? { item: result.item, serial: result.serial } : undefined;
+      const back = result.stage === "back" ? { item: result.item, serial: result.serial } : undefined;
       setFeed((prev) => [{ id: ++feedId.current, ok: true, text: result.message, at: new Date(), back }, ...prev].slice(0, 50));
       beep(true);
       setQuantity(1);
@@ -154,35 +168,64 @@ function ScanJob({ jobId }: { jobId: string }) {
   }
 
   if (error) return <p className="text-red-600 text-sm">Couldn't load this project: {errorText(error)}</p>;
-  if (!summary) return <p className="text-gray-500 text-sm">Loading…</p>;
+  if (!summary || stepsLoading) return <p className="text-gray-500 text-sm">Loading…</p>;
   const { job, packing } = summary;
-  if (directions.length === 0) {
-    return <p className="text-gray-500 text-sm">Your role doesn't include scanning kit out or in.</p>;
+  if (steps.length === 0) {
+    return <p className="text-gray-500 text-sm">Your role doesn't include tracking kit going out or coming back.</p>;
   }
+  if (job.untracked) {
+    return (
+      <p className="text-gray-500 text-sm">
+        <Link to={`/projects/${job.id}`} className="text-signal-ink hover:text-signal-ink-hover">
+          #{job.number} {job.name}
+        </Link>{" "}
+        goes without equipment tracking. Turn it on from the project to scan its kit.
+      </p>
+    );
+  }
+
+  // The project's physical kit by heading, and how far the chosen step's got.
+  const tracked = summary.lines.filter((l) => l.tracking);
+  const headings = [...new Set(tracked.map((l) => l.group || "No heading"))];
+  const shown = heading ? tracked.filter((l) => (l.group || "No heading") === heading) : tracked;
+  const groups = headings
+    .filter((h) => !heading || h === heading)
+    .map((h) => ({ name: h, lines: shown.filter((l) => (l.group || "No heading") === h) }));
+  const stepIndex = step ? allSteps.findIndex((s) => s.id === step.id) : -1;
+  const reached = (l: JobLineView) =>
+    allSteps.reduce((sum, s, i) => (i >= stepIndex ? sum + (l.tracking?.at[s.id] ?? 0) : sum), 0);
+  // Units out on each item, for its first line.
+  const firstLine = new Map<string, string>();
+  for (const l of tracked) if (l.item && !firstLine.has(l.item.id)) firstLine.set(l.item.id, l.id);
+  const stepName = (id: string) => allSteps.find((s) => s.id === id)?.name ?? "";
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← #{job.number} {job.name}
-      </Link>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900 min-w-0 truncate">
+          ← #{job.number} {job.name}
+        </Link>
+        <TrackingStatus progress={linesProgress(allSteps, tracked)} />
+      </div>
 
-      <div className="flex items-center gap-2">
-        {directions.map((d) => (
+      <TrackingSuggestion summary={summary} />
+
+      {/* Where the next scans take the kit. */}
+      <div className="flex items-stretch gap-2" role="radiogroup" aria-label="Tracking step">
+        {steps.map((s) => (
           <button
-            key={d}
+            key={s.id}
+            role="radio"
+            aria-checked={s.id === stepId}
             onClick={() => {
-              setDirection(d);
+              setStepId(s.id);
               inputRef.current?.focus();
             }}
-            className={`flex-1 py-3 rounded-md text-base font-semibold border transition-colors ${
-              direction === d
-                ? d === "out"
-                  ? "bg-carbon border-carbon text-white"
-                  : "bg-emerald-600 border-emerald-600 text-white"
-                : "bg-white border-gray-300 text-gray-600"
+            className={`flex-1 py-3 px-2 rounded-md text-base font-semibold border transition-colors truncate ${
+              s.id === stepId ? `${STATUS_COLOURS[s.colour || "gray"].dot} border-transparent text-white` : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
             }`}
           >
-            {d === "out" ? "Scan OUT" : "Scan IN"}
+            {s.name}
           </button>
         ))}
       </div>
@@ -199,7 +242,7 @@ function ScanJob({ jobId }: { jobId: string }) {
           autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="Scan or type a barcode, then Enter"
+          placeholder={step ? `Scan to ${step.name}, or type a barcode and Enter` : "Scan or type a barcode, then Enter"}
           className="input py-2.5 text-base flex-1 min-w-48 font-mono"
           autoComplete="off"
           autoCapitalize="off"
@@ -209,7 +252,7 @@ function ScanJob({ jobId }: { jobId: string }) {
           ×
           <NumberInput value={quantity} min={1} onChange={(n) => setQuantity(Math.max(1, Math.round(n)))} className="input w-16 py-2" />
         </label>
-        <button type="submit" disabled={busy || !code.trim()} className="btn-primary py-2.5">
+        <button type="submit" disabled={busy || !code.trim() || !step} className="btn-primary py-2.5">
           {busy ? "…" : "Enter"}
         </button>
         <button type="button" onClick={() => setCamera((c) => !c)} className="btn-secondary py-2.5">
@@ -269,40 +312,67 @@ function ScanJob({ jobId }: { jobId: string }) {
       )}
 
       <section className="card overflow-hidden">
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-sm font-semibold text-gray-500">On this project</h2>
-          <span className="text-xs text-gray-500">{packing.packed ? "Everything's out" : packing.allBack ? "" : "Some kit still out"}</span>
+          {headings.length > 1 && (
+            <select value={heading} onChange={(e) => setHeading(e.target.value)} className="input py-1 w-auto text-xs" aria-label="Heading">
+              <option value="">All headings</option>
+              {headings.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <table className="w-full text-[13px] border-collapse">
           <thead>
             <tr className="border-y border-gray-200 text-left text-gray-500">
               <th className="px-4 py-1.5 font-medium">Item</th>
-              <th className="px-2 py-1.5 font-medium text-right">Need</th>
-              <th className="px-2 py-1.5 font-medium text-right">Out</th>
-              <th className="px-4 py-1.5 font-medium text-right">Back</th>
+              <th className="px-2 py-1.5 font-medium text-right">{step ? step.name : "Done"}</th>
+              <th className="px-4 py-1.5 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
-            {packing.items.map((p) => {
-              const done = direction === "out" ? p.scannedOut >= p.needed : p.out <= 0 && p.scannedOut > 0;
-              return (
-                <tr key={p.itemId} className={done ? "text-gray-400" : ""}>
-                  <td className="px-4 py-1.5">
-                    {done && <span className="text-emerald-600 mr-1">✓</span>}
-                    {p.name}
-                    {p.serialsOut.length > 0 && (
-                      <span className="block text-xs text-gray-400">Out: {p.serialsOut.map((s) => s.label || s.barcode).join(", ")}</span>
-                    )}
+          {groups.map((g) => (
+            <tbody key={g.name} className="divide-y divide-gray-100">
+              {headings.length > 1 && (
+                <tr className="bg-gray-50/60">
+                  <td colSpan={2} className="px-4 py-1.5 font-semibold text-gray-800">
+                    {g.name}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{p.needed}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{Math.max(0, p.out)}</td>
-                  <td className="px-4 py-1.5 text-right tabular-nums">{p.returned}</td>
+                  <td className="px-4 py-1.5">
+                    <TrackingStatus progress={linesProgress(allSteps, g.lines)} compact />
+                  </td>
                 </tr>
-              );
-            })}
-          </tbody>
+              )}
+              {g.lines.map((l) => {
+                const qty = Math.round(l.quantity);
+                const done = qty > 0 && reached(l) >= qty;
+                const units = l.item && firstLine.get(l.item.id) === l.id ? packing.items.find((p) => p.itemId === l.item!.id)?.serialsOut ?? [] : [];
+                return (
+                  <tr key={l.id} className={done ? "text-gray-400" : ""}>
+                    <td className="px-4 py-1.5">
+                      {done && <span className="text-emerald-600 mr-1">✓</span>}
+                      {l.name}
+                      {units.length > 0 && (
+                        <span className="block text-xs text-gray-400">
+                          {units.map((u) => `${u.label || u.barcode} (${stepName(u.step)})`).join(", ")}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                      {reached(l)}/{qty}
+                    </td>
+                    <td className="px-4 py-1.5">
+                      <TrackingStatus progress={progressOf(allSteps, l.tracking!.at, qty)} compact />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ))}
         </table>
-        {packing.items.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No physical kit on this project.</p>}
+        {tracked.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No physical kit on this project.</p>}
       </section>
     </div>
   );

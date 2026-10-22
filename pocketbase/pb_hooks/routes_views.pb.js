@@ -223,41 +223,38 @@ routerAdd(
 );
 
 // For dashboards' "To prep next": how much of each project's physical kit
-// is needed and how much is out, by project. ?jobs=id,id,…
+// it needs, and how many units are at each tracking step (lib/tracking.js),
+// by project. ?jobs=id,id,… (up to 30, the organisation's own).
 routerAdd(
   "GET",
   "/api/home/packing",
   (e) => {
     const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { loadItems, loadLines } = require(`${__hooks}/lib/jobs.js`);
+    const { needsOf } = require(`${__hooks}/lib/scan.js`);
+    const { stepsOf, trackingState } = require(`${__hooks}/lib/tracking.js`);
     const ctx = requireOrg(e);
     const ids = String(e.requestInfo().query.jobs || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-      .slice(0, 100);
+      .slice(0, 30);
     const out = {};
     if (ids.length === 0) return e.json(200, out);
-    const params = { org: ctx.orgId };
-    const placeholders = ids.map((id, i) => {
-      params["j" + i] = id;
-      return "{:j" + i + "}";
-    });
-    const list = placeholders.join(", ");
-    for (const id of ids) out[id] = { needed: 0, out: 0 };
-    const needed = arrayOf(new DynamicModel({ job: "", n: 0 }));
-    $app
-      .db()
-      .newQuery("SELECT jl.job AS job, CAST(SUM(ROUND(jl.quantity)) AS INTEGER) AS n FROM job_lines jl JOIN items i ON i.id = jl.item WHERE jl.org = {:org} AND jl.job IN (" + list + ") AND i.kind = 'item' GROUP BY jl.job")
-      .bind(params)
-      .all(needed);
-    for (const r of needed) if (out[r.job]) out[r.job].needed = r.n;
-    const scanned = arrayOf(new DynamicModel({ job: "", n: 0 }));
-    $app
-      .db()
-      .newQuery("SELECT job, CAST(SUM(CASE WHEN direction = 'out' THEN quantity ELSE -quantity END) AS INTEGER) AS n FROM scans WHERE org = {:org} AND job IN (" + list + ") GROUP BY job")
-      .bind(params)
-      .all(scanned);
-    for (const r of scanned) if (out[r.job]) out[r.job].out = Math.max(0, r.n);
+    const steps = stepsOf($app, ctx.orgId);
+    for (const job of $app.findRecordsByIds("jobs", ids)) {
+      if (!job || job.getString("org") !== ctx.orgId || job.getBool("untracked")) continue;
+      const lines = loadLines($app, job.id);
+      const itemsById = loadItems($app, lines);
+      const state = trackingState($app, job.id, needsOf(lines, itemsById), itemsById, steps);
+      const at = {};
+      let needed = 0;
+      for (const item of state.items) {
+        needed += item.needed;
+        for (const step of Object.keys(item.at)) at[step] = (at[step] || 0) + item.at[step];
+      }
+      out[job.id] = { needed: needed, at: at };
+    }
     return e.json(200, out);
   },
   $apis.requireAuth("users"),

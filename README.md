@@ -78,9 +78,10 @@ One database holds every organisation. Every business record has an `org`, and c
 
 Every organisation starts set up the usual way, and can change it to fit how it actually works (Settings → How you work):
 
-- **Features.** Check in & out, repairs, maintenance plans, labels, prices and quotes, and the Xero export can each be turned off. A theatre with a small crew might not scan kit or keep repair jobs; a touring production company wants both. Off, a feature is hidden for everyone and the server stops doing it: its permissions count for nobody, and its routes refuse. Nothing's deleted, so turning it back on picks up where it left off. With repairs off, a unit can be flagged In repair by hand (`lib/features.js`, `organisations.features`).
-- **Project statuses.** Each organisation names, orders and colours its own (Confirmed → Prepping → Prepped → Loaded → Out, say). Each sits on one of six fixed stages that availability, scanning, the calendar feed and the Xero export run on: enquiry (holds nothing), pencilled in, confirmed, out, done and cancelled. A project keeps both: `jobStatus` (its status) and `status` (that status's stage), kept together on every save. A project's first scan out moves it to the first status on the out stage. Removing a status asks where its projects go; changing a status's stage takes its projects with it (`lib/jobStatuses.js`).
+- **Features.** Equipment tracking, repairs, maintenance plans, labels, prices and quotes, and the Xero export can each be turned off. A theatre with a small crew might not scan kit or keep repair jobs; a touring production company wants both. Off, a feature is hidden for everyone and the server stops doing it: its permissions count for nobody, and its routes refuse. Nothing's deleted, so turning it back on picks up where it left off. With repairs off, a unit can be flagged In repair by hand (`lib/features.js`, `organisations.features`).
+- **Project statuses.** Each organisation names, orders and colours its own (Confirmed → Prepping → Prepped → Loaded → Out, say). Each sits on one of six fixed stages that availability, scanning, the calendar feed and the Xero export run on: enquiry (holds nothing), pencilled in, confirmed, out, done and cancelled. A project keeps both: `jobStatus` (its status) and `status` (that status's stage), kept together on every save. Equipment tracking offers the next status as its kit goes out and comes back (see below). Removing a status asks where its projects go; changing a status's stage takes its projects with it (`lib/jobStatuses.js`).
 - **Repair statuses** work the same way, on three stages (see Repairs and maintenance).
+- **Equipment tracking steps** too: the steps kit goes through on its way to a project and back (see Equipment tracking).
 
 New organisations get the defaults from a hook when they're created, however they're made.
 
@@ -95,7 +96,7 @@ People see what they need rather than one page for everyone: a workshop tech see
 
 ### Roles and permissions
 
-Each organisation defines its own roles (Settings → Roles). A role is a name plus a set of per-action permissions, such as "Add items", "Delete units", "Issue quotes", "Scan kit out" or "Invite and remove people". The catalogue is in `pocketbase/pb_hooks/lib/permissions.js`. Every member can look up inventory, jobs, contacts and venues; everything else needs a permission.
+Each organisation defines its own roles (Settings → Roles). A role is a name plus a set of per-action permissions, such as "Add items", "Delete units", "Issue quotes", "Track kit going out" or "Invite and remove people". The catalogue is in `pocketbase/pb_hooks/lib/permissions.js`. Every member can look up inventory, jobs, contacts and venues; everything else needs a permission.
 
 - Every organisation starts with **Admin** (locked: always every permission, including ones added later), **Planner**, **Tech** and **Crew** (no permissions: they look things up and see their own projects). All but Admin can be edited or deleted like any other role.
 - Some permissions need others: seeing quotes needs seeing prices, and issuing quotes needs seeing them. The editor ticks these for you, and the server enforces them.
@@ -142,7 +143,16 @@ Everything that keeps the kit working lives under Maintenance: what's due, repai
 
 The label designer's templates can be any size. Brother QL tape widths (12/29/62mm) print straight to the networked printer. Every size, including the Zebra presets, can be downloaded as a PDF: one page per label at its real size, for any printer with a driver.
 
-### Scanning
+### Equipment tracking
+
+Every bit of equipment on a project has its own status, so the audio can be loaded while the lighting's only prepped. Kit is scanned to a **step**: each organisation's own list (Settings → Equipment tracking), starting as Prepped → Loaded → Returned. Each step sits on one of three fixed stages: getting ready (pulled for the project, still in the building), gone (left with the project) and back (returned to stock) (`lib/tracking.js`, `pb_migrations/0037_tracking_steps.js`).
+
+- Kit can skip steps (a workshop that loads straight from the shelves doesn't need a prep step), and a unit can go back one (unloaded to the bay).
+- Each line on a project gets its share of its item's units, furthest along first, so every line, every heading and the whole project shows where it's at: the furthest step everything's reached, and how much has reached the next.
+- A project's status is set by people, never by tracking. But a step can name a status to **offer** once everything's reached it: scan the last unit onto the truck and you're asked "Everything's Loaded. Set the project to Out?" (Prepped → Prepped, Loaded → Out, Returned → Returned to start with). Only forwards, and only the status the kit's actually reached can be taken up (`POST /api/jobs/{id}/tracking-status`), so whoever's scanning can do it without being able to edit the project.
+- Any project can go **without tracking**, with the feature on (a small dry hire, say): planners switch it off on the project, once nothing it tracked is still out (`jobs.untracked`).
+- The scan ledger (`scans`) keeps the step each scan took kit to and from. Its direction is "out" when kit leaves stock, "move" between steps on the same project, "in" when it comes back. Getting ready and gone steps need "Track kit going out"; back steps need "Track kit coming back".
+- A step kit's been tracked to keeps its stage. Removing one moves its kit to the next step on the same stage (or, for the last getting-ready step, the first gone one).
 
 The scan page takes a Bluetooth/USB barcode scanner (it types the code and presses Enter) or the phone camera. The camera uses the browser's own barcode reader where there is one (Chrome on Android), and otherwise loads the ZXing decoder on demand (iPhone, iPad, Firefox). Every scan rule is checked on the server.
 
@@ -177,7 +187,7 @@ The brief's MVP is built:
 - **Projects:** schedules with usage and billing periods, subprojects, equipment headings, clients, venues and statuses.
 - **Quotes:** GST, day factors and discounts, as frozen snapshots and server-side PDFs.
 - **Kits and accessories:** a kit's contents and an item's accessories are added to a job automatically.
-- **Warehouse:** a packing list PDF, and scan out/in from an installable web app (scanner or camera, iPhone included).
+- **Warehouse:** a packing list PDF, and equipment tracking (prepped, loaded, returned) from an installable web app (scanner or camera, iPhone included).
 - **Getting data in:** CSV import for items and contacts, and Rentman import of equipment, contacts and projects.
 - **Getting data out:** the iCal feed and the Xero CSV export.
 - **Accounts:** organisations, invitations with email verification, custom roles with per-action permissions in each organisation, a platform admin panel, and first-run setup.

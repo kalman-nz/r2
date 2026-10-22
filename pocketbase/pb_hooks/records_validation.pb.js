@@ -31,8 +31,10 @@ onRecordValidate((e) => {
 onRecordValidate((e) => {
   const { validateJob } = require(`${__hooks}/lib/validation.js`);
   const { syncJobStatus } = require(`${__hooks}/lib/jobStatuses.js`);
+  const { checkUntracked } = require(`${__hooks}/lib/tracking.js`);
   syncJobStatus(e.app, e.record);
   validateJob(e.app, e.record);
+  checkUntracked(e.app, e.record);
   e.next();
 }, "jobs");
 

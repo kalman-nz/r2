@@ -169,6 +169,33 @@ export interface JobStatusDef extends RecordModel {
 
 export type JobStatusInput = Pick<JobStatusDef, "name" | "stage" | "colour" | "isDefault"> & { id?: string };
 
+// Equipment tracking (pb_hooks/lib/tracking.js): where kit is on its way
+// to a project and back. Each organisation's steps sit on fixed stages:
+// prep (pulled, still in the building), out (gone with the project), back.
+export type TrackingStage = "prep" | "out" | "back";
+
+export interface TrackingStep extends RecordModel {
+  org: string;
+  name: string;
+  stage: TrackingStage;
+  colour: StatusColour | "";
+  sortOrder: number;
+  // Once everything on a project's reached this step, it moves to this status.
+  jobStatus: string;
+}
+
+export type TrackingStepInput = Pick<TrackingStep, "name" | "stage" | "colour" | "jobStatus"> & { id?: string };
+
+export interface TrackingSuggestion {
+  step: string;
+  stepName: string;
+  status: string;
+  statusName: string;
+}
+
+// Units at each tracking step, by step id; the rest haven't started.
+export type TrackedAt = Record<string, number>;
+
 // What an organisation uses (Settings → Features, pb_hooks/lib/features.js).
 export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "xero";
 export type Features = Record<FeatureKey, boolean>;
@@ -276,6 +303,8 @@ export interface Venue extends RecordModel {
 
 export interface Job extends RecordModel {
   org: string;
+  // Going without equipment tracking, with the feature on.
+  untracked: boolean;
   number: number;
   name: string;
   // The stage, which availability and scanning read; jobStatus is the
@@ -382,6 +411,8 @@ export interface JobLineView {
   notes: string;
   availability: LineAvailability | null;
   componentsShort: boolean;
+  // Physical lines: where its units are (lib/tracking.js).
+  tracking?: { at: TrackedAt };
   // Planners and admins only:
   unitPrice?: number;
   discountPct?: number;
@@ -413,6 +444,8 @@ export interface JobInfo {
   notes: string;
   // Equipment headings in order, per part ("" = the main project).
   headings?: { section: string; name: string }[];
+  // Going without equipment tracking (pb_hooks/lib/tracking.js).
+  untracked: boolean;
   created: string;
   updated: string;
   clientInfo: ContactInfo | null;
@@ -424,10 +457,14 @@ export interface PackingItem {
   name: string;
   tracking: string;
   needed: number;
+  // The units it needs that are at each step (up to needed).
+  at: TrackedAt;
+  // Units that have reached any step.
   scannedOut: number;
   returned: number;
+  // With the project now (not back yet).
   out: number;
-  serialsOut: { id: string; barcode: string; label: string }[];
+  serialsOut: { id: string; step: string; barcode: string; label: string }[];
 }
 
 export interface JobTotals {
@@ -500,6 +537,8 @@ export interface JobSummary {
   periods: JobPeriod[];
   lines: JobLineView[];
   packing: { items: PackingItem[]; packed: boolean; allBack: boolean; scanCount: number };
+  // A project status its kit has all reached now, to offer (never set by itself).
+  trackingSuggestion: TrackingSuggestion | null;
   includesPrices: boolean;
   pricing?: JobPricing;
   quotes?: QuoteSummary[];
@@ -946,8 +985,8 @@ export const api = {
   lookup: (code: string) =>
     request<{ kind: "serial" | "item"; id: string; itemId: string }>(`/api/lookup?code=${encodeURIComponent(code)}`),
   // item and serial say what was scanned ("" serial for bulk), for reporting a fault with it.
-  scan: (jobId: string, body: { code: string; direction: "out" | "in"; quantity?: number }) =>
-    request<{ message: string; item: string; serial: string; summary: JobSummary }>(`/api/jobs/${jobId}/scan`, json("POST", body)),
+  scan: (jobId: string, body: { code: string; step: string; quantity?: number }) =>
+    request<{ message: string; item: string; serial: string; stage: TrackingStage; summary: JobSummary }>(`/api/jobs/${jobId}/scan`, json("POST", body)),
   setSerialStatus: (id: string, status: SerialStatus, note?: string) =>
     request<Serial>(`/api/serials/${id}/status`, json("POST", { status, note })),
   // Delete an inventory folder, with everything in it or keeping it (moved
@@ -978,6 +1017,8 @@ export const api = {
   deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
+  acceptTrackingStatus: (jobId: string, status: string) => request<JobSummary>(`/api/jobs/${jobId}/tracking-status`, json("POST", { status })),
+  saveTrackingSteps: (steps: TrackingStepInput[]) => request<TrackingStep[]>("/api/tracking-steps", json("PUT", { steps })),
   saveJobStatuses: (statuses: JobStatusInput[], moves: Record<string, string> = {}) =>
     request<JobStatusDef[]>("/api/job-statuses", json("PUT", { statuses, moves })),
   updateFeatures: (orgId: string, features: Partial<Features>) => request<Features>(`/api/orgs/${orgId}/features`, json("PATCH", { features })),
@@ -1078,7 +1119,7 @@ export const api = {
     request<ListView>(`/api/views/${id}`, json("PATCH", data)),
   deleteView: (id: string) => request<{ ok: true }>(`/api/views/${id}`, json("DELETE")),
   // How much of each project's kit is needed and out, for "To prep next".
-  packing: (jobIds: string[]) => request<Record<string, { needed: number; out: number }>>(`/api/home/packing?jobs=${jobIds.join(",")}`),
+  packing: (jobIds: string[]) => request<Record<string, { needed: number; at: TrackedAt }>>(`/api/home/packing?jobs=${jobIds.join(",")}`),
   createEquipmentView: (data: EquipmentViewInput) => request<EquipmentView>("/api/equipment-views", json("POST", data)),
   updateEquipmentView: (id: string, data: EquipmentViewInput) =>
     request<EquipmentView>(`/api/equipment-views/${id}`, json("PUT", data)),
