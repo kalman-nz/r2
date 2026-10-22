@@ -1,4 +1,4 @@
-import type { JobStatus, PeriodKind, RepairStatus, SerialStatus } from "./api";
+import type { IntervalUnit, JobStatus, MaintenanceKind, PeriodKind, RepairStage, SerialStatus, StatusColour } from "./api";
 
 export const JOB_STATUSES: { value: JobStatus; label: string; hint: string }[] = [
   { value: "enquiry", label: "Enquiry", hint: "Price check only — holds no stock" },
@@ -9,12 +9,46 @@ export const JOB_STATUSES: { value: JobStatus; label: string; hint: string }[] =
   { value: "cancelled", label: "Cancelled", hint: "Stock released" },
 ];
 
-// open and in_progress keep the kit out of service; the other two close it.
-export const REPAIR_STATUSES: { value: RepairStatus; label: string; hint: string }[] = [
-  { value: "open", label: "Reported", hint: "Out of service, waiting to be looked at" },
-  { value: "in_progress", label: "Being repaired", hint: "Out of service, being worked on" },
-  { value: "completed", label: "Fixed", hint: "Back in service" },
-  { value: "written_off", label: "Written off", hint: "Beyond repair: units retired, stock reduced" },
+// What each organisation's own repair statuses can do to the kit
+// (Settings → Repair statuses names them; pb_hooks/lib/repairs.js).
+export const REPAIR_STAGES: { value: RepairStage; label: string; hint: string }[] = [
+  { value: "open", label: "Out of service", hint: "The kit's held out of service while the repair's in this status" },
+  { value: "repaired", label: "Repaired", hint: "Ends the repair: the kit goes back in service" },
+  { value: "unrepairable", label: "Unrepairable", hint: "Ends the repair: units are retired, bulk stock goes down" },
+];
+
+// Badge colours a status can have.
+export const STATUS_COLOURS: Record<StatusColour, { label: string; badge: string; dot: string }> = {
+  gray: { label: "Grey", badge: "bg-gray-100 text-gray-600", dot: "bg-gray-400" },
+  amber: { label: "Amber", badge: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
+  blue: { label: "Blue", badge: "bg-data-soft text-data-ink", dot: "bg-data" },
+  violet: { label: "Violet", badge: "bg-violet-50 text-violet-700", dot: "bg-violet-500" },
+  green: { label: "Green", badge: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
+  red: { label: "Red", badge: "bg-red-50 text-red-700", dot: "bg-red-500" },
+};
+
+// Repairs still keeping their kit out of service, as a collection filter.
+export const OPEN_REPAIRS_FILTER = "status.stage = 'open'";
+
+// Maintenance work (pb_hooks/lib/maintenance.js). Inspections and tests
+// pass or fail; a service is done or finds a problem.
+export const MAINTENANCE_KINDS: { value: MaintenanceKind; label: string; hint: string; pass: string; fail: string }[] = [
+  { value: "inspection", label: "Inspection", hint: "Checked over, like PPE, rigging or harnesses: passes or fails", pass: "Passed", fail: "Failed" },
+  {
+    value: "test_tag",
+    label: "Test & tag",
+    hint: "Electrical safety test (PAT): passes or fails, and keeps each unit's Next test & tag date",
+    pass: "Passed",
+    fail: "Failed",
+  },
+  { value: "service", label: "Service", hint: "Routine work, like cleaning, lamp changes or firmware", pass: "Done", fail: "Needs repair" },
+];
+
+export const INTERVAL_UNITS: { value: IntervalUnit; label: string }[] = [
+  { value: "day", label: "days" },
+  { value: "week", label: "weeks" },
+  { value: "month", label: "months" },
+  { value: "year", label: "years" },
 ];
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {

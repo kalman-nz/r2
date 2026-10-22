@@ -5,8 +5,11 @@ import { pb } from "../lib/pocketbase";
 import { api, type Contact, type Job } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import { errorText } from "../lib/errors";
+import { invalidateMaintenance } from "../lib/maintenance";
 import { JobStatusBadge } from "../components/StatusBadge";
 import NumberInput from "../components/NumberInput";
+import NewRepairModal from "../components/repair/NewRepairModal";
+import { useToast } from "../components/ToastProvider";
 import { orgFilter } from "../lib/currentOrg";
 import { useCan } from "../lib/roles";
 
@@ -78,6 +81,9 @@ interface FeedEntry {
   ok: boolean;
   text: string;
   at: Date;
+  // What came back in, so a fault can be reported against it.
+  back?: { item: string; serial: string };
+  repair?: { id: string; number: number };
 }
 
 // Short beeps so a scan can be confirmed without looking at the screen.
@@ -109,6 +115,8 @@ function ScanJob({ jobId }: { jobId: string }) {
   const [feed, setFeed] = useState<FeedEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [camera, setCamera] = useState(false);
+  const [reporting, setReporting] = useState<FeedEntry | null>(null);
+  const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const feedId = useRef(0);
 
@@ -130,7 +138,8 @@ function ScanJob({ jobId }: { jobId: string }) {
     try {
       const result = await api.scan(jobId, { code: value, direction, quantity });
       queryClient.setQueryData(["job-summary", jobId], result.summary);
-      setFeed((prev) => [{ id: ++feedId.current, ok: true, text: result.message, at: new Date() }, ...prev].slice(0, 50));
+      const back = direction === "in" ? { item: result.item, serial: result.serial } : undefined;
+      setFeed((prev) => [{ id: ++feedId.current, ok: true, text: result.message, at: new Date(), back }, ...prev].slice(0, 50));
       beep(true);
       setQuantity(1);
     } catch (err) {
@@ -209,6 +218,26 @@ function ScanJob({ jobId }: { jobId: string }) {
 
       {camera && <CameraScanner onCode={submit} />}
 
+      {reporting?.back && (
+        <NewRepairModal
+          itemId={reporting.back.item}
+          serials={reporting.back.serial ? [reporting.back.serial] : []}
+          job={{ id: job.id, number: job.number, name: job.name }}
+          onClose={() => {
+            setReporting(null);
+            inputRef.current?.focus();
+          }}
+          onCreated={async (repair) => {
+            const entry = reporting;
+            setReporting(null);
+            setFeed((prev) => prev.map((f) => (f.id === entry.id ? { ...f, repair: { id: repair.id, number: repair.number } } : f)));
+            showToast("success", `Opened repair R${repair.number}`);
+            await invalidateMaintenance(queryClient);
+            inputRef.current?.focus();
+          }}
+        />
+      )}
+
       {feed.length > 0 && (
         <div className="card divide-y divide-gray-100 max-h-56 overflow-y-auto">
           {feed.map((f) => (
@@ -217,7 +246,21 @@ function ScanJob({ jobId }: { jobId: string }) {
                 {f.ok ? "✓ " : "✗ "}
                 {f.text}
               </span>
-              <span className="text-xs text-gray-400 shrink-0">{f.at.toLocaleTimeString()}</span>
+              <span className="flex items-center gap-2 shrink-0">
+                {f.repair ? (
+                  <Link to={`/maintenance/repairs/${f.repair.id}`} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
+                    Repair R{f.repair.number}
+                  </Link>
+                ) : (
+                  f.back &&
+                  can("units.flag") && (
+                    <button onClick={() => setReporting(f)} className="text-xs font-medium text-gray-500 hover:text-fault-ink">
+                      Report fault
+                    </button>
+                  )
+                )}
+                <span className="text-xs text-gray-400">{f.at.toLocaleTimeString()}</span>
+              </span>
             </div>
           ))}
         </div>

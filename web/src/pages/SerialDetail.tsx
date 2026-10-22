@@ -16,6 +16,8 @@ import { SERIAL_STATUS_LABELS } from "../lib/statuses";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useFollowOrg } from "../lib/org";
+import { invalidateMaintenance, useMaintenanceJobs, useRepairStatuses, useRepairs } from "../lib/maintenance";
+import UnitMaintenanceCard from "../components/item/UnitMaintenanceCard";
 
 type SerialWithExpand = Serial & { expand?: { item?: Item; location?: Location } };
 type ScanWithExpand = Scan & { expand?: { job?: Job; who?: { name: string; email: string } } };
@@ -43,6 +45,14 @@ export default function SerialDetail() {
         expand: "job,who",
       }),
   });
+  const { data: repairs = [] } = useRepairs(pb.filter("serials.id ?= {:id}", { id }));
+  const { isOpen } = useRepairStatuses();
+  const onRepair = repairs.find((r) => isOpen(r.status));
+  // Same query as the maintenance card, so it's shared.
+  const { data: maintenance = [] } = useMaintenanceJobs(`serial = "${id}"`, "dueOn");
+  // Scans, repairs and done maintenance are its history: the server keeps
+  // units with any of them (retire those instead).
+  const hasHistory = scans.length > 0 || repairs.length > 0 || maintenance.some((j) => j.status === "done");
 
   if (isLoading) return <p className="text-gray-500 text-sm">Loading…</p>;
   if (error || !serial) return <p className="text-red-600 text-sm">Couldn't load this unit: {error ? errorText(error) : "not found"}</p>;
@@ -60,11 +70,7 @@ export default function SerialDetail() {
 
   async function refresh(next?: Serial) {
     if (next) queryClient.setQueryData(["serial", id], { ...serial, ...next, expand: serial?.expand });
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["serial", id] }),
-      queryClient.invalidateQueries({ queryKey: ["serials"] }),
-      queryClient.invalidateQueries({ queryKey: ["availability"] }),
-    ]);
+    await Promise.all([queryClient.invalidateQueries({ queryKey: ["serial", id] }), invalidateMaintenance(queryClient)]);
   }
 
   async function remove() {
@@ -109,12 +115,23 @@ export default function SerialDetail() {
         <PrintButton context={buildLabelContext(unit)} serialId={serial.id} />
       </div>
 
+      {onRepair && (
+        <div className="card bg-amber-50/60 px-4 py-2.5 text-sm text-gray-700 flex items-center justify-between gap-3 flex-wrap">
+          <span>
+            On repair R{onRepair.number}: {onRepair.fault}. It's back in service when the repair's marked repaired.
+          </span>
+          <Link to={`/maintenance/repairs/${onRepair.id}`} className="btn-secondary py-1">
+            Open repair
+          </Link>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
         <div className="md:col-span-2 flex flex-col gap-4">
           <section className="card p-4">
             <h2 className="text-sm font-semibold text-gray-500 mb-3">Details</h2>
             <SerialForm serial={serial} readOnly={!can("units.edit")} onSaved={refresh} />
-            {can("units.delete") && scans.length === 0 && (
+            {can("units.delete") && !hasHistory && (
               <div className="pt-3 mt-3 border-t border-gray-100 flex justify-end">
                 <button onClick={remove} className="text-sm text-red-600 hover:text-red-700">
                   Delete unit
@@ -149,15 +166,19 @@ export default function SerialDetail() {
           </section>
         </div>
 
-        {can("units.flag") && <StatusCard serial={serial} onSaved={refresh} />}
+        <div className="flex flex-col gap-4">
+          {can("units.flag") && <StatusCard serial={serial} onRepair={onRepair?.number ?? null} onSaved={refresh} />}
+          <UnitMaintenanceCard unit={serial} item={item} repairs={repairs} canRecord={can("units.flag")} />
+        </div>
       </div>
     </div>
   );
 }
 
 // Flagging a unit is its own permission (units.flag), so a tech who finds a
-// blown driver doesn't need someone who can edit units to take it out of stock.
-function StatusCard({ serial, onSaved }: { serial: Serial; onSaved: (s: Serial) => void }) {
+// blown driver doesn't need someone who can edit units to take it out of
+// stock. A unit on a repair comes back to Active by closing the repair.
+function StatusCard({ serial, onRepair, onSaved }: { serial: Serial; onRepair: number | null; onSaved: (s: Serial) => void }) {
   const [status, setStatus] = useState<SerialStatus>(serial.status);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -181,11 +202,15 @@ function StatusCard({ serial, onSaved }: { serial: Serial; onSaved: (s: Serial) 
     <section className="card p-4 flex flex-col gap-3 text-sm">
       <div>
         <h2 className="text-sm font-semibold text-gray-500">Status</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Only active units count as stock or can be scanned out.</p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {onRepair ? `It's on repair R${onRepair}: marking the repair fixed makes it active again.` : "Only active units count as stock or can be scanned out."}
+        </p>
       </div>
       <select value={status} onChange={(e) => setStatus(e.target.value as SerialStatus)} className="input py-1.5">
         {/* In repair comes from opening a repair, so it's tracked; it only shows while the unit is in one. */}
-        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[]).filter((s) => s !== "repair" || serial.status === "repair").map((s) => (
+        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[])
+          .filter((s) => (s !== "repair" || serial.status === "repair") && !(s === "active" && onRepair))
+          .map((s) => (
           <option key={s} value={s}>
             {SERIAL_STATUS_LABELS[s]}
           </option>

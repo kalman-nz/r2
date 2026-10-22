@@ -10,10 +10,17 @@ function summarizeLogs(rows, opts) {
   const { decodeJson } = require(`${__hooks}/lib/records.js`);
   const resolveNames = (opts && opts.resolveNames) || false;
 
-  const templates = $app.findAllRecords("label_templates");
-  const templateNameById = new Map(templates.map((t) => [t.id, t.get("name")]));
-
   const decoded = rows.map((entry) => decodeJson(entry.details));
+
+  // Only the templates these rows printed (most rows aren't prints).
+  const templateIds = [];
+  rows.forEach((entry, i) => {
+    if (entry.type === "print" && typeof decoded[i].template === "string" && decoded[i].template) templateIds.push(decoded[i].template);
+  });
+  const templateNameById = new Map();
+  if (templateIds.length > 0) {
+    for (const t of $app.findRecordsByIds("label_templates", templateIds)) if (t) templateNameById.set(t.id, t.get("name"));
+  }
   const serialName = {};
   const jobName = {};
   if (resolveNames) {
@@ -85,8 +92,22 @@ function summarizeLogs(rows, opts) {
     } else if (entry.type === "repair_open") {
       summary = "Opened repair R" + details.number + ": " + details.fault;
     } else if (entry.type === "repair_status") {
-      const label = { open: "reported", in_progress: "being repaired", completed: "fixed", written_off: "written off" };
-      summary = "Marked repair R" + details.number + " " + (label[details.to] || details.to);
+      // Status names since migration 0034; before it, these fixed ones.
+      const old = { open: "Reported", in_progress: "Being repaired", completed: "Fixed", written_off: "Written off" };
+      summary = "Set repair R" + details.number + " to " + (old[details.to] || details.to);
+    } else if (entry.type === "repair_statuses") {
+      summary = "Changed the repair statuses: " + (details.names || []).join(", ");
+    } else if (entry.type === "repair_files") {
+      const added = details.added || [];
+      summary = "Added " + (added.length === 1 ? added[0] : added.length + " files") + " to repair R" + details.number;
+    } else if (entry.type === "repair_file_removed") {
+      summary = "Removed " + details.name + " from repair R" + details.number;
+    } else if (entry.type === "maintenance_plan") {
+      summary = (details.action === "created" ? "Set up" : details.action === "deleted" ? "Deleted" : "Changed") + " the " + details.name + " plan";
+    } else if (entry.type === "maintenance_done") {
+      summary = "Recorded " + details.name + ": " + (details.result === "pass" ? "passed" : "failed") + (details.repairNumber ? ", repair R" + details.repairNumber : "");
+    } else if (entry.type === "maintenance_passed") {
+      summary = "Passed " + details.count + " maintenance job" + (details.count === 1 ? "" : "s");
     } else if (entry.type === "item_out_of_service") {
       summary = "Set " + details.name + " out of service: " + details.to + (details.note ? ' ("' + details.note + '")' : "");
     } else if (entry.type === "import_rentman") {

@@ -35,11 +35,14 @@ function serialName(serial, item) {
 }
 
 // body: { code, direction: "out" | "in", quantity? (bulk only) }
-// Returns a short message saying what happened.
+// Returns { message, item, serial }: a short message saying what happened,
+// and what was scanned (serial is "" for bulk), so the scan page can offer
+// to report a fault with it.
 function scan(jobId, body, auth) {
   const direction = body.direction;
   if (direction !== "out" && direction !== "in") throw new BadRequestError("direction must be out or in");
   let message = "";
+  let scanned = { item: "", serial: "" };
 
   $app.runInTransaction((tx) => {
     const job = jobs.requireJob(tx, jobId);
@@ -61,6 +64,7 @@ function scan(jobId, body, auth) {
     }
     const packing = jobs.packingState(tx, job.id, needs, itemsById);
     const item = found.item;
+    scanned = { item: item.id, serial: found.kind === "serial" ? found.serial.id : "" };
     const state = packing.items.find((p) => p.itemId === item.id) || { needed: 0, out: 0 };
     const scans = tx.findCollectionByNameOrId("scans");
     const record = { org: job.getString("org"), job: job.id, item: item.id, direction: direction, who: auth ? auth.id : "" };
@@ -121,7 +125,7 @@ function scan(jobId, body, auth) {
       tx.save(job);
     }
   });
-  return message;
+  return { message: message, item: scanned.item, serial: scanned.serial };
 }
 
 module.exports = { lookupCode, scan };

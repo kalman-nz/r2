@@ -369,23 +369,24 @@ await planner.fails("PATCH", `/api/collections/jobs/records/${jobA.id}`, { prepA
 await planner.fails("DELETE", `/api/collections/job_periods/records/${usageA.id}`, null, 400, /at least one usage period/);
 await planner.fails("PATCH", `/api/collections/job_periods/records/${billingA.id}`, { kind: "other" }, 400, /at least one billing period/);
 const crewCall = await planner.create("job_periods", { job: jobA.id, kind: "other", name: "Crew call: riggers", start: "2030-02-28 20:00:00Z", end: "2030-03-01 04:00:00Z" });
-const showDay2 = await planner.create("job_periods", { job: jobA.id, kind: "billing", name: "Encore", start: "2030-03-03 18:00:00Z", end: "2030-03-03 22:00:00Z" });
+await planner.fails("POST", "/api/collections/job_periods/records", { org: orgA, job: jobA.id, kind: "billing", name: "Encore", start: "2030-03-03 18:00:00Z", end: "2030-03-03 22:00:00Z" }, 400, /already has its billing period/);
+await planner.ok("PATCH", `/api/collections/job_periods/records/${billingA.id}`, { end: "2030-03-03 22:00:00Z" });
 let derived = await jobRecord(jobA);
 assert.equal(derived.startAt, "2030-02-28 20:00:00.000Z", "the project starts at its earliest period");
 assert.equal(derived.prepAt, "2030-03-01 08:00:00.000Z", "a crew call doesn't book the kit");
 assert.equal(derived.billingEnd, "2030-03-03 22:00:00.000Z");
 const charged = (await planner.ok("GET", `/api/jobs/${jobA.id}/summary`)).pricing;
 assert.equal(charged.basis, "billing");
-assert.equal(charged.days, 2, "overlapping billing periods count once");
+assert.equal(charged.days, 2, "every started 24 hours of the billing period is a day");
 await planner.fails("POST", "/api/collections/job_periods/records", { org: orgA, job: jobA.id, kind: "other", name: "x", start: "2030-03-02 10:00:00Z", end: "2030-03-02 09:00:00Z" }, 400, /end after it starts/);
 await tech.fails("POST", "/api/collections/job_periods/records", { org: orgA, job: jobA.id, kind: "other", name: "x", start: "2030-03-02 10:00:00Z", end: "2030-03-02 11:00:00Z" }, 400);
 await bossB.fails("POST", "/api/collections/job_periods/records", { org: orgB, job: jobA.id, kind: "other", name: "x", start: "2030-03-02 10:00:00Z", end: "2030-03-02 11:00:00Z" }, 400, /another organisation/);
 await planner.ok("DELETE", `/api/collections/job_periods/records/${crewCall.id}`);
-await planner.ok("DELETE", `/api/collections/job_periods/records/${showDay2.id}`);
+await planner.ok("PATCH", `/api/collections/job_periods/records/${billingA.id}`, { end: "2030-03-03 20:00:00Z" });
 derived = await jobRecord(jobA);
 assert.equal(derived.startAt, "2030-03-01 08:00:00.000Z", "removing periods shrinks the project back");
 assert.equal(derived.billingEnd, "2030-03-03 20:00:00.000Z");
-log("the schedule: usage books the kit, billing sets the charge, both always kept, only the project's own planners can change it");
+log("the schedule: one usage period books the kit, one billing period sets the charge, both always kept, only the project's own planners can change it");
 
 // --- price per hour / week / each ---
 // jobB is booked (and billed) 2030-03-03 08:00 → 03-05 12:00: 52 hours,
@@ -580,6 +581,8 @@ const xlrPacking = s.json.summary.packing.items.find((p) => p.itemId === xlr.id)
 assert.equal(xlrPacking.out, 5);
 s = await scanA(k12Serials[0].barcode, "in");
 assert.equal(s.status, 200);
+assert.equal(s.json.serial, k12Serials[0].id, "a scan says which unit it was, for reporting a fault");
+assert.equal(s.json.item, k12.id);
 s = await scanA("no-such-code", "out");
 assert.equal(s.status, 404);
 s = await scanA(`BONLY-${run}`, "out");
@@ -587,19 +590,206 @@ assert.equal(s.status, 404, "another organisation's barcode means nothing here")
 await bossB.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: `XLR-${run}`, direction: "in" }, 403);
 log("scanning: double-scans, cross-job scans, over-scans and other organisations' codes refused");
 
-// --- flags ---
-await tech.ok("POST", `/api/serials/${k12Serials[1].id}/status`, { status: "repair", note: "blown driver" });
+// --- flags and repairs ---
+await tech.fails("POST", `/api/serials/${k12Serials[1].id}/status`, { status: "repair" }, 400, /Open a repair/);
+await tech.fails("POST", "/api/repairs", { item: k12.id, serials: [k12Serials[1].id], fault: "Blown driver", job: jobInB.id }, 400, /another organisation/);
+const statusesOf = async (who) =>
+  (await who.ok("GET", `/api/collections/repair_statuses/records?sort=sortOrder&filter=${encodeURIComponent(`org = "${who.org}"`)}`)).items;
+const statusesA = await statusesOf(tech);
+assert.deepEqual(statusesA.map((st) => st.name), ["Backlog", "To repair", "In repair", "Repaired", "Unrepairable"], "every organisation starts with these");
+const st = Object.fromEntries(statusesA.map((x) => [x.name, x.id]));
+const repair = await tech.ok("POST", "/api/repairs", { item: k12.id, serials: [k12Serials[1].id], fault: "Blown driver", job: jobA.id });
+assert.equal(repair.number, 1);
+assert.equal(repair.status, st["To repair"], "new repairs start in the default status");
+assert.equal(repair.job, jobA.id, "the project it came back from");
 s = await scanA(k12Serials[1].barcode, "out");
 assert.match(s.json.message, /flagged repair/);
 const afterRepair = await tech.ok("GET", `/api/availability?start=2030-06-01T00:00:00Z&end=2030-06-02T00:00:00Z`);
-assert.equal(afterRepair[k12.id].stock, 1, "a unit in repair isn't stock");
+assert.equal(afterRepair[k12.id].stock, 1, "a unit on repair isn't stock");
 await tech.fails("PATCH", `/api/collections/serials/records/${k12Serials[1].id}`, { status: "active" }, 404);
+await tech.fails("POST", `/api/serials/${k12Serials[1].id}/status`, { status: "active" }, 400, /on repair R1/);
+await tech.fails("POST", "/api/repairs", { item: k12.id, serials: [k12Serials[1].id], fault: "Again" }, 400, /already on repair R1/);
+await bossB.fails("PATCH", `/api/repairs/${repair.id}`, { notes: "mine now" }, 403);
+
+// Files: anything goes, one per request, only members can open them.
+async function upload(who, repairId, name, bytes, type) {
+  const form = new FormData();
+  form.append("files", new Blob([bytes], { type }), name);
+  const r = await fetch(`${BASE}/api/repairs/${repairId}/files`, { method: "POST", headers: { Authorization: who.token, "X-Org": who.org }, body: form });
+  return { status: r.status, json: await r.json() };
+}
+let up = await upload(tech, repair.id, "Damage photo.png", whitePng(40, 20), "image/png");
+assert.equal(up.status, 200, JSON.stringify(up.json));
+up = await upload(tech, repair.id, "PO 4471 (Sennheiser).pdf", Buffer.from("%PDF-1.4\n%%EOF\n"), "application/pdf");
+assert.equal(up.json.files.length, 2);
+const [photoFile, poFile] = up.json.files;
+assert.equal(up.json.fileInfo[poFile].name, "PO 4471 (Sennheiser).pdf", "the name it was uploaded with");
+assert.equal(up.json.fileInfo[poFile].by, `tech ${run}`, "and who added it");
+assert.equal((await upload(bossB, repair.id, "x.txt", Buffer.from("x"), "text/plain")).status, 403);
+assert.match((await upload(tech, repair.id, "huge.bin", Buffer.alloc(25.5 * 1024 * 1024), "application/octet-stream")).json.message, /too big/);
+assert.equal((await fetch(`${BASE}/api/files/repairs/${repair.id}/${photoFile}`)).status, 404, "files need a token");
+const fileToken = async (who) => (await ok(who.token, "POST", "/api/files/token")).token;
+assert.equal((await fetch(`${BASE}/api/files/repairs/${repair.id}/${photoFile}?token=${await fileToken(tech)}`)).status, 200);
+assert.equal((await fetch(`${BASE}/api/files/repairs/${repair.id}/${photoFile}?token=${await fileToken(bossB)}`)).status, 404, "not for other organisations");
+assert.equal((await fetch(`${BASE}/api/files/repairs/${repair.id}/${photoFile}?thumb=200x200&token=${await fileToken(tech)}`)).status, 200);
+const lessFiles = await tech.ok("DELETE", `/api/repairs/${repair.id}/files/${poFile}`);
+assert.deepEqual(lessFiles.files, [photoFile]);
+assert.equal(lessFiles.fileInfo[poFile], undefined);
+await tech.fails("DELETE", `/api/repairs/${repair.id}/files/${poFile}`, null, 404);
+
+const unitStatus = async () => (await tech.ok("GET", `/api/collections/serials/records/${k12Serials[1].id}`)).status;
+await tech.fails("PATCH", `/api/repairs/${repair.id}`, { status: (await statusesOf(bossB))[0].id }, 400, /Pick one of the repair statuses/);
+await tech.ok("PATCH", `/api/repairs/${repair.id}`, { status: st["Backlog"] });
+assert.equal(await unitStatus(), "repair", "the backlog still keeps it out of service");
+await tech.ok("PATCH", `/api/repairs/${repair.id}`, { status: st["In repair"], repairer: "Sound Repairs Ltd" });
+let fixed = await tech.ok("PATCH", `/api/repairs/${repair.id}`, { status: st["Repaired"], cost: 120.5 });
+assert.ok(fixed.closedAt);
+assert.equal(await unitStatus(), "active", "repaired puts it back in service");
+// Moving it back (a slip, or it's playing up again) takes it out again.
+fixed = await tech.ok("PATCH", `/api/repairs/${repair.id}`, { status: st["To repair"] });
+assert.deepEqual([fixed.closedAt, await unitStatus()], ["", "repair"]);
+await tech.ok("PATCH", `/api/repairs/${repair.id}`, { status: st["Repaired"] });
+assert.equal(await unitStatus(), "active");
+up = await upload(tech, repair.id, "Invoice.pdf", Buffer.from("%PDF-1.4\n%%EOF\n"), "application/pdf");
+assert.equal(up.status, 200, "files can still be added once it's closed");
+const trail = await tech.ok("GET", `/api/repairs/${repair.id}/activity`);
+assert.deepEqual(
+  trail.map((t) => t.type),
+  ["repair_open", "repair_files", "repair_files", "repair_file_removed", ...Array(5).fill("repair_status"), "repair_files"],
+);
+assert.equal(trail[3].summary, "Removed PO 4471 (Sennheiser).pdf from repair R1");
+assert.equal(trail[6].summary, "Set repair R1 to Repaired");
+await bossB.fails("GET", `/api/repairs/${repair.id}/activity`, null, 403);
+
+// Bulk: a quantity out of service until it's repaired; unrepairable, it's gone.
 await tech.ok("POST", `/api/items/${stand.id}/out-of-service`, { quantity: 1 });
 await tech.fails("POST", `/api/items/${stand.id}/out-of-service`, { quantity: 9 }, 400, /more than the stock/);
+const standRepair = await tech.ok("POST", "/api/repairs", { item: stand.id, quantity: 2, fault: "Bent legs" });
+assert.equal((await tech.ok("GET", `/api/collections/items/records/${stand.id}`)).outOfServiceQty, 3);
+await tech.fails("POST", `/api/items/${stand.id}/out-of-service`, { quantity: 1 }, 400, /on open repairs/);
+const standStock = async () => {
+  const it = await tech.ok("GET", `/api/collections/items/records/${stand.id}`);
+  return [it.stockQty, it.outOfServiceQty];
+};
+await tech.ok("PATCH", `/api/repairs/${standRepair.id}`, { status: st["Unrepairable"] });
+assert.deepEqual(await standStock(), [2, 1], "unrepairable: out of stock for good");
+await tech.ok("PATCH", `/api/repairs/${standRepair.id}`, { status: st["In repair"] });
+assert.deepEqual(await standStock(), [4, 3], "moved back: in stock, out of service");
+await tech.ok("PATCH", `/api/repairs/${standRepair.id}`, { status: st["Unrepairable"] });
+assert.deepEqual(await standStock(), [2, 1]);
+
+// Statuses are each organisation's own, within limits.
+await tech.fails("PUT", "/api/repair-statuses", { statuses: statusesA }, 403);
+const parts = { name: "Waiting for parts", stage: "open", colour: "violet" };
+let mine = await admin.ok("PUT", "/api/repair-statuses", { statuses: [...statusesA.slice(0, 3), parts, ...statusesA.slice(3)] });
+assert.deepEqual(mine.map((x) => x.name), ["Backlog", "To repair", "In repair", "Waiting for parts", "Repaired", "Unrepairable"]);
+await admin.fails("PUT", "/api/repair-statuses", { statuses: mine.map((x) => (x.name === "Unrepairable" ? { ...x, stage: "repaired" } : x)) }, 400, /has repairs in it/);
+await admin.fails("PUT", "/api/repair-statuses", { statuses: mine.filter((x) => x.stage !== "repaired") }, 400, /repaired kit/);
+await admin.fails("PUT", "/api/repair-statuses", { statuses: mine.filter((x) => x.name !== "Unrepairable") }, 400, /1 repair is Unrepairable/);
+await admin.fails("PUT", "/api/repair-statuses", { statuses: mine.filter((x) => x.stage !== "open") }, 400, /new repairs to start in/);
+await admin.fails("PUT", "/api/repair-statuses", { statuses: [...mine, { name: "backlog", stage: "open" }] }, 400, /two statuses called/);
+mine = await admin.ok("PUT", "/api/repair-statuses", {
+  statuses: mine.map((x) => ({ ...x, name: x.name === "In repair" ? "At the repairer" : x.name, isDefault: x.name === "Backlog" })),
+});
+assert.equal(mine.find((x) => x.isDefault).name, "Backlog", "the default can move");
+assert.equal((await tech.ok("POST", "/api/repairs", { item: stand.id, quantity: 1, fault: "Wobbly" })).status, st["Backlog"]);
+assert.deepEqual((await statusesOf(bossB)).map((x) => x.name), ["Backlog", "To repair", "In repair", "Repaired", "Unrepairable"], "B's are its own");
 await bossB.fails("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "lost" }, 403);
-log("techs can flag units for repair (and that removes them from stock) but not edit them");
+log("repairs: kit out of service until repaired or unrepairable, statuses each organisation's own, files and their project, and units can't be flagged around them");
+
+// --- maintenance ---
+const harness = await planner.create("items", { name: `Harness ${run}`, kind: "item", tracking: "serial" });
+const harnessUnits = [];
+for (const n of [1, 2]) harnessUnits.push(await planner.create("serials", { item: harness.id, status: "active" }));
+const hats = await planner.create("items", { name: `Hard hat ${run}`, kind: "item", tracking: "bulk", stockQty: 10 });
+const jobsOf = async (filter) =>
+  (await planner.ok("GET", `/api/collections/maintenance_jobs/records?perPage=200&sort=dueOn&filter=${encodeURIComponent(filter)}`)).items;
+const ppeBody = { name: `PPE inspection ${run}`, kind: "inspection", every: 12, unit: "month", items: [harness.id, hats.id], firstDue: "2031-01-15" };
+await tech.fails("POST", "/api/maintenance/plans", ppeBody, 403);
+await planner.fails("POST", "/api/maintenance/plans", { ...ppeBody, items: [pa.id] }, 400, /is a kit/);
+await planner.fails("POST", "/api/maintenance/plans", { ...ppeBody, every: 0 }, 400, /How often/);
+await bossB.fails("POST", "/api/maintenance/plans", ppeBody, 400, /doesn't exist/);
+const ppe = await planner.ok("POST", "/api/maintenance/plans", ppeBody);
+const ppeJobs = await jobsOf(`plan = "${ppe.id}" && status = "scheduled"`);
+assert.equal(ppeJobs.length, 3, "one job per harness, and one for the hard hats");
+assert.ok(ppeJobs.every((j) => j.dueOn === "2031-01-15" && j.name === ppeBody.name));
+const thirdHarness = await planner.create("serials", { item: harness.id, status: "active" });
+assert.equal((await jobsOf(`plan = "${ppe.id}" && status = "scheduled"`)).length, 4, "a new unit gets its own job");
+await tech.ok("POST", `/api/serials/${thirdHarness.id}/status`, { status: "retired" });
+assert.equal((await jobsOf(`plan = "${ppe.id}" && status = "scheduled"`)).length, 3, "a retired one loses its");
+
+const h1Job = ppeJobs.find((j) => j.serial === harnessUnits[0].id);
+await tech.fails("POST", `/api/maintenance/jobs/${h1Job.id}/done`, { result: "pass", doneOn: "2099-01-01" }, 400, /future/);
+let mDone = await tech.ok("POST", `/api/maintenance/jobs/${h1Job.id}/done`, { result: "pass", doneOn: "2026-03-31", notes: "All good" });
+assert.deepEqual([mDone.job.status, mDone.job.result, mDone.job.doneBy], ["done", "pass", `tech ${run}`]);
+const h1Next = await jobsOf(`plan = "${ppe.id}" && status = "scheduled" && serial = "${harnessUnits[0].id}"`);
+assert.deepEqual(h1Next.map((j) => j.dueOn), ["2027-03-31"], "the next one is a year from the day it was done");
+await tech.fails("POST", `/api/maintenance/jobs/${h1Job.id}/done`, { result: "pass" }, 400, /already been done/);
+await bossB.fails("POST", `/api/maintenance/jobs/${h1Next[0].id}/done`, { result: "pass" }, 403);
+
+const h2Job = ppeJobs.find((j) => j.serial === harnessUnits[1].id);
+mDone = await tech.ok("POST", `/api/maintenance/jobs/${h2Job.id}/done`, { result: "fail", repair: { fault: "Frayed webbing" } });
+assert.equal(mDone.job.repair, mDone.repair.id, "a fail can open a repair");
+assert.equal((await tech.ok("GET", `/api/collections/serials/records/${harnessUnits[1].id}`)).status, "repair");
+assert.equal((await jobsOf(`plan = "${ppe.id}" && status = "scheduled" && serial = "${harnessUnits[1].id}"`)).length, 1, "and it's still on the plan");
+const hatJob = ppeJobs.find((j) => j.item === hats.id);
+mDone = await tech.ok("POST", `/api/maintenance/jobs/${hatJob.id}/done`, { result: "fail", failedQty: 2, repair: { fault: "Cracked shells" } });
+assert.equal(mDone.repair.quantity, 2);
+assert.equal((await tech.ok("GET", `/api/collections/items/records/${hats.id}`)).outOfServiceQty, 2);
+up = await (async () => {
+  const form = new FormData();
+  form.append("files", new Blob([Buffer.from("%PDF-1.4\n%%EOF\n")], { type: "application/pdf" }), "Inspection cert.pdf");
+  const r = await fetch(`${BASE}/api/maintenance/jobs/${hatJob.id}/files`, { method: "POST", headers: { Authorization: tech.token, "X-Org": tech.org }, body: form });
+  return { status: r.status, json: await r.json() };
+})();
+assert.equal(up.json.fileInfo[up.json.files[0]].name, "Inspection cert.pdf", "jobs carry files too");
+
+const oneOff = await tech.ok("POST", "/api/maintenance/jobs", { name: "Replace fan", kind: "service", item: k12.id, serials: [k12Serials[0].id], dueOn: "2030-01-10" });
+assert.equal(oneOff.length, 1);
+assert.equal((await tech.ok("PATCH", `/api/maintenance/jobs/${oneOff[0].id}`, { dueOn: "2030-02-01" })).dueOn, "2030-02-01");
+await tech.fails("PATCH", `/api/maintenance/jobs/${h1Next[0].id}`, { name: "Other" }, 400, /plan's name/);
+await tech.fails("DELETE", `/api/maintenance/jobs/${h1Next[0].id}`, null, 400, /from a plan/);
+await tech.fails("DELETE", `/api/maintenance/jobs/${h1Job.id}`, null, 400, /stays on record/);
+await tech.ok("DELETE", `/api/maintenance/jobs/${oneOff[0].id}`);
+
+const batch = await jobsOf(`plan = "${ppe.id}" && status = "scheduled"`);
+const passed = await tech.ok("POST", "/api/maintenance/jobs/pass", { ids: [...batch.map((j) => j.id), h1Job.id], doneOn: "2026-04-01" });
+assert.equal(passed.done, batch.length, "an inspection day, passed in one go");
+assert.match(passed.failed[h1Job.id], /already been done/);
+
+// Taking an item off a plan takes its scheduled job; its history stays.
+await planner.ok("PATCH", `/api/maintenance/plans/${ppe.id}`, { items: [harness.id] });
+assert.equal((await jobsOf(`plan = "${ppe.id}" && status = "scheduled" && item = "${hats.id}"`)).length, 0);
+assert.equal((await jobsOf(`plan = "${ppe.id}" && status = "done" && item = "${hats.id}"`)).length, 2);
+
+// Test & tag keeps each unit's "Next test & tag" (the organisation's
+// zone is Pacific/Auckland, so local midnight is 11:00 or 12:00 UTC).
+const lamp = await planner.create("items", { name: `Work lamp ${run}`, kind: "item", tracking: "serial" });
+const lampA = await planner.create("serials", { item: lamp.id, status: "active", nextInspection: "2030-05-19 12:00:00.000Z" });
+const lampB = await planner.create("serials", { item: lamp.id, status: "active" });
+const pat = await planner.ok("POST", "/api/maintenance/plans", { name: "Test & tag", kind: "test_tag", every: 3, unit: "month", items: [lamp.id], firstDue: "2031-06-01" });
+const patJobs = await jobsOf(`plan = "${pat.id}"`);
+assert.equal(patJobs.find((j) => j.serial === lampA.id).dueOn, "2030-05-20", "a unit's own next test date carries on");
+assert.equal(patJobs.find((j) => j.serial === lampB.id).dueOn, "2031-06-01");
+assert.equal((await planner.ok("GET", `/api/collections/serials/records/${lampB.id}`)).nextInspection, "2031-05-31 12:00:00.000Z");
+await planner.ok("PATCH", `/api/collections/serials/records/${lampB.id}`, { nextInspection: "2031-07-09 12:00:00.000Z" });
+assert.equal((await jobsOf(`plan = "${pat.id}" && serial = "${lampB.id}"`))[0].dueOn, "2031-07-10", "changing it on the unit moves the test");
+await tech.ok("POST", `/api/maintenance/jobs/${patJobs.find((j) => j.serial === lampA.id).id}/done`, { result: "pass", doneOn: "2026-10-01" });
+assert.equal((await jobsOf(`plan = "${pat.id}" && status = "scheduled" && serial = "${lampA.id}"`))[0].dueOn, "2027-01-01");
+assert.equal((await planner.ok("GET", `/api/collections/serials/records/${lampA.id}`)).nextInspection, "2026-12-31 11:00:00.000Z");
+await planner.ok("DELETE", `/api/maintenance/plans/${pat.id}`);
+assert.equal((await jobsOf(`serial = "${lampB.id}"`)).length, 0, "a deleted plan's scheduled jobs go");
+const lampHistory = await jobsOf(`serial = "${lampA.id}"`);
+assert.deepEqual(lampHistory.map((j) => [j.status, j.plan]), [["done", ""]], "its done ones stay");
+await admin.fails("DELETE", `/api/collections/serials/records/${lampA.id}`, null, 400, /maintenance on record/);
+assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "maintenance_done" && a.summary === `Recorded ${ppeBody.name}: failed, repair R${mDone.repair.number}`));
+log("maintenance: repeating plans schedule each unit, done work schedules the next, fails open repairs, test & tag keeps the units' dates");
 
 // --- delete protection ---
+await admin.fails("DELETE", `/api/collections/serials/records/${k12Serials[1].id}`, null, 400, /repairs on record/);
+const spareMic = await planner.create("items", { name: `Spare mic ${run}`, kind: "item", tracking: "bulk", stockQty: 2 });
+await tech.ok("PATCH", `/api/repairs/${(await tech.ok("POST", "/api/repairs", { item: spareMic.id, quantity: 1, fault: "Dented grille" })).id}`, { status: st["Repaired"] });
+await admin.fails("DELETE", `/api/collections/items/records/${spareMic.id}`, null, 400, /repairs on record/);
 await planner.fails("DELETE", `/api/collections/items/records/${xlr.id}`, null, 400, /archive it instead/);
 await planner.fails("DELETE", `/api/collections/contacts/records/${client.id}`, null, 400, /archive it instead/);
 await planner.fails("DELETE", `/api/collections/jobs/records/${jobA.id}`, null, 400);
@@ -698,10 +888,16 @@ const itemC = await adminC.create("items", { name: "Doomed", kind: "item", track
 const jobC = await adminC.create("jobs", { name: "Doomed job", status: "confirmed", prepAt: "2030-05-01 08:00:00Z", returnAt: "2030-05-02 08:00:00Z" });
 await adminC.ok("POST", `/api/jobs/${jobC.id}/lines`, { itemId: itemC.id, quantity: 1 });
 await adminC.ok("POST", `/api/jobs/${jobC.id}/quotes`);
+const repairC = await adminC.ok("POST", "/api/repairs", { item: itemC.id, quantity: 1, fault: "Doomed too", job: jobC.id });
+assert.equal((await upload(adminC, repairC.id, "photo.png", whitePng(4, 4), "image/png")).status, 200);
+const planC = await adminC.ok("POST", "/api/maintenance/plans", { name: "Doomed plan", kind: "service", every: 1, unit: "week", items: [itemC.id] });
+const [jobOfC] = (await adminC.ok("GET", `/api/collections/maintenance_jobs/records?filter=${encodeURIComponent(`plan = "${planC.id}"`)}`)).items;
+await adminC.ok("POST", `/api/maintenance/jobs/${jobOfC.id}/done`, { result: "pass" });
 await fails(platform, "DELETE", `/api/admin/orgs/${orgC}`, { confirm: "wrong" }, 400, /exactly/);
 await ok(platform, "DELETE", `/api/admin/orgs/${orgC}`, { confirm: `Smoke C ${run}` });
 await fails(su, "GET", `/api/collections/items/records/${itemC.id}`, null, 404);
 await fails(su, "GET", `/api/collections/jobs/records/${jobC.id}`, null, 404);
+await fails(su, "GET", `/api/collections/repairs/records/${repairC.id}`, null, 404);
 assert.equal((await ok(adminUser.token, "GET", "/api/me")).memberships.some((m) => m.org.id === orgC), false);
 log("platform admin: organisation and account overview, suspension, deletion, and guard rails");
 

@@ -22,7 +22,8 @@ const GROUPS = [
       ["units.create", "Add units"],
       ["units.edit", "Edit units"],
       ["units.delete", "Delete units"],
-      ["units.flag", "Flag units for repair or lost, and stock out of service"],
+      ["units.flag", "Report repairs and record maintenance, and flag units lost or stock out of service"],
+      ["maintenance.plans", "Set up repeating maintenance, like inspections and test & tag"],
       ["categories.create", "Add categories"],
       ["categories.edit", "Rename and move categories"],
       ["categories.delete", "Delete categories"],
@@ -134,7 +135,7 @@ const TECH = ["units.flag", "scan.out", "scan.in", "labels.print"];
 const DEFAULT_ROLES = [
   { name: "Admin", description: "Everything, always. Every organisation keeps at least one.", locked: true, permissions: ALL },
   { name: "Planner", description: "Runs projects and quotes, and looks after inventory and contacts", locked: false, permissions: PLANNER },
-  { name: "Tech", description: "Looks things up, scans kit out and in, flags broken gear, prints labels", locked: false, permissions: TECH },
+  { name: "Tech", description: "Looks things up, scans kit out and in, reports broken gear and does maintenance, prints labels", locked: false, permissions: TECH },
 ];
 
 // A new organisation's starting roles. Returns { Admin, Planner, Tech }.

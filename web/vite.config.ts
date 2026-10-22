@@ -9,8 +9,9 @@ export default defineConfig({
     host: "0.0.0.0",
     proxy: {
       // PocketBase now owns both /api/* (pb_hooks) and its own /api/collections/*
-      // — point the dev proxy at a locally-running `pocketbase serve` instance.
-      "/api": "http://localhost:3001",
+      // — point the dev proxy at a locally-running `pocketbase serve` instance
+      // (R2_API_URL for another one, e.g. a throwaway copy on another port).
+      "/api": process.env.R2_API_URL || "http://localhost:3001",
     },
   },
 });

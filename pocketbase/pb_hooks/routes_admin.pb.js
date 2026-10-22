@@ -138,7 +138,10 @@ routerAdd(
         "scans",
         "quotes",
         "job_lines",
+        "job_periods",
+        "subprojects",
         "jobs",
+        "repair_statuses",
         "serials",
         "item_components",
         "custom_fields",
@@ -157,7 +160,13 @@ routerAdd(
       ]) {
         tx.db().newQuery("DELETE FROM " + table + " WHERE org = {:org}").bind({ org: org.id }).execute();
       }
-      // Items one by one so their photos are deleted from storage too.
+      // Maintenance jobs, repairs and items with files one by one, so the
+      // files are deleted from storage too. Items last: the others hold on
+      // to them.
+      tx.db().newQuery("DELETE FROM maintenance_jobs WHERE org = {:org} AND (files = '' OR files = '[]')").bind({ org: org.id }).execute();
+      for (const job of tx.findRecordsByFilter("maintenance_jobs", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(job);
+      tx.db().newQuery("DELETE FROM maintenance_plans WHERE org = {:org}").bind({ org: org.id }).execute();
+      for (const repair of tx.findRecordsByFilter("repairs", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(repair);
       for (const item of tx.findRecordsByFilter("items", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(item);
       tx.delete(org);
     });

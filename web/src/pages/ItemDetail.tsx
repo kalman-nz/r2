@@ -23,15 +23,17 @@ import { useToast } from "../components/ToastProvider";
 import { useFollowOrg } from "../lib/org";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import NewRepairModal from "../components/repair/NewRepairModal";
-import { invalidateRepairs } from "./RepairsList";
+import MaintenanceSection from "../components/item/MaintenanceSection";
+import { invalidateMaintenance } from "../lib/maintenance";
 
-type Tab = "general" | "units" | "contents" | "accessories" | "history";
+type Tab = "general" | "units" | "contents" | "accessories" | "maintenance" | "history";
 // Every tab any item can have; each item shows the ones that fit it.
 const ALL_TABS: TabDef<Tab>[] = [
   { key: "general", label: "General" },
   { key: "units", label: "Units" },
   { key: "contents", label: "Contents" },
   { key: "accessories", label: "Accessories" },
+  { key: "maintenance", label: "Maintenance" },
   { key: "history", label: "History" },
 ];
 
@@ -87,14 +89,19 @@ export default function ItemDetail() {
   const { data: history } = useQuery({
     queryKey: ["item-history", id],
     queryFn: async () => {
-      const count = async (collection: string) =>
-        (await pb.collection(collection).getList(1, 1, { filter: pb.filter("item = {:item}", { item: id }), skipTotal: false })).totalItems;
-      const [lines, scans] = await Promise.all([count("job_lines"), count("scans")]);
-      return { lines, scans };
+      const count = async (collection: string, extra = "") =>
+        (await pb.collection(collection).getList(1, 1, { filter: pb.filter("item = {:item}", { item: id }) + extra, skipTotal: false })).totalItems;
+      const [lines, scans, repairs, maintenance] = await Promise.all([
+        count("job_lines"),
+        count("scans"),
+        count("repairs"),
+        count("maintenance_jobs", " && status = 'done'"),
+      ]);
+      return { lines, scans, repairs, maintenance };
     },
     enabled: !isNew,
   });
-  const hasHistory = !!history && history.lines + history.scans > 0;
+  const hasHistory = !!history && history.lines + history.scans + history.repairs + history.maintenance > 0;
 
   async function remove() {
     if (!item) return;
@@ -163,7 +170,13 @@ export default function ItemDetail() {
   const categoryPath = paths.get(item.category) ?? "";
   const type = item.kind === "kit" ? "Kit" : item.tracking === "serial" ? "Serialised" : "Bulk";
   const serialised = item.kind === "item" && item.tracking === "serial";
-  const tabs = ALL_TABS.filter((t) => t.key === "general" || t.key === "accessories" || t.key === "history" || (t.key === "units" ? serialised : item.kind === "kit")).map((t) => ({
+  const tabs = ALL_TABS.filter(
+    (t) =>
+      t.key === "general" ||
+      t.key === "accessories" ||
+      t.key === "history" ||
+      (t.key === "maintenance" ? item.kind === "item" : t.key === "units" ? serialised : item.kind === "kit"),
+  ).map((t) => ({
     ...t,
     count:
       t.key === "units" ? serialCount : t.key === "contents" ? links.filter((l) => l.kind === "component").length : t.key === "accessories"
@@ -220,7 +233,9 @@ export default function ItemDetail() {
             <span
               title={
                 hasHistory
-                  ? `Used on ${history!.lines > 0 ? `${history!.lines} project line${history!.lines === 1 ? "" : "s"}` : "a project"}${history!.scans > 0 ? ` and scanned ${history!.scans} time${history!.scans === 1 ? "" : "s"}` : ""}, so it can't be deleted. Archive it instead`
+                  ? history!.lines + history!.scans > 0
+                    ? `Used on ${history!.lines > 0 ? `${history!.lines} project line${history!.lines === 1 ? "" : "s"}` : "a project"}${history!.scans > 0 ? ` and scanned ${history!.scans} time${history!.scans === 1 ? "" : "s"}` : ""}, so it can't be deleted. Archive it instead`
+                    : "It has repairs or maintenance on record, so it can't be deleted. Archive it instead"
                   : undefined
               }
             >
@@ -250,7 +265,7 @@ export default function ItemDetail() {
           onClose={() => setRepairing(false)}
           onCreated={async (repair) => {
             setRepairing(false);
-            await invalidateRepairs(queryClient);
+            await invalidateMaintenance(queryClient);
             showToast("success", `Opened repair R${repair.number}`);
           }}
         />
@@ -293,6 +308,7 @@ export default function ItemDetail() {
             {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
             {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
             {tab === "history" && <HistorySection item={item} />}
+            {tab === "maintenance" && <MaintenanceSection item={item} canRecord={can("units.flag")} />}
           </div>
           <div className="flex flex-col gap-4">
             {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
