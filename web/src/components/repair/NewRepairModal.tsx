@@ -1,44 +1,72 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import { api, type Item, type Repair, type Serial } from "../../lib/api";
 import { orgFilter } from "../../lib/currentOrg";
 import { errorText } from "../../lib/errors";
 import { fromDateInput } from "../../lib/format";
+import { useRepairStatuses } from "../../lib/maintenance";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
+import ProjectPicker, { type ProjectRef } from "../ProjectPicker";
 import { useToast } from "../ToastProvider";
 
 const SHOWN = 8;
 
 // Opening a repair: pick the item (or arrive with it, and its units, from
-// the units tab), then which units or how many, and what's wrong. Saving
-// takes them out of service straight away.
+// the units tab or a scan), then which units or how many, and what's
+// wrong. Saving takes them out of service straight away. The project it
+// came back damaged from, and photos of the damage, can go on it now too.
 export default function NewRepairModal({
   item: givenItem,
+  itemId,
   serials: givenSerials = [],
+  quantity: givenQuantity = 1,
+  job: givenJob = null,
   onClose,
   onCreated,
 }: {
   item?: Item;
+  // Just the id, from a scan: the item's loaded here.
+  itemId?: string;
   serials?: string[];
+  quantity?: number;
+  job?: ProjectRef | null;
   onClose: () => void;
   onCreated: (repair: Repair) => void;
 }) {
   const { showToast } = useToast();
   const [item, setItem] = useState<Item | null>(givenItem ?? null);
+  const { data: scannedItem } = useQuery({
+    queryKey: ["item", itemId],
+    queryFn: () => pb.collection("items").getOne<Item>(itemId!),
+    enabled: !givenItem && !!itemId,
+  });
+  useEffect(() => {
+    if (scannedItem && !item) setItem(scannedItem);
+  }, [scannedItem, item]);
+  const fixedItem = !!givenItem || !!itemId;
+  const [job, setJob] = useState<ProjectRef | null>(givenJob);
+  const [files, setFiles] = useState<File[]>([]);
+  const filesInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set(givenSerials));
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(givenQuantity);
   const [fault, setFault] = useState("");
   const [repairer, setRepairer] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [saving, setSaving] = useState(false);
+  const [unitSearch, setUnitSearch] = useState("");
+  // Where it starts: one of the organisation's out-of-service statuses.
+  const { statuses, defaultId } = useRepairStatuses();
+  const startable = statuses.filter((st) => st.stage === "open");
+  const [status, setStatus] = useState("");
+  const startIn = status || defaultId;
 
   const { data: items = [] } = useQuery({
     queryKey: ["items"],
     queryFn: () => pb.collection("items").getFullList<Item>({ filter: orgFilter(), sort: "name" }),
-    enabled: !givenItem,
+    enabled: !fixedItem,
   });
   const matches = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -56,6 +84,31 @@ export default function NewRepairModal({
   });
   // Lost and retired units aren't in service to begin with.
   const repairable = units.filter((u) => u.status === "active" || picked.has(u.id));
+  // Barcode, name or serial number; ticked ones stay at the top.
+  const shownUnits = useMemo(() => {
+    const term = unitSearch.trim().toLowerCase();
+    const matches = term ? repairable.filter((u) => [u.barcode, u.label, u.serialNumber].some((v) => v.toLowerCase().includes(term))) : repairable;
+    return [...matches].sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)));
+  }, [repairable, unitSearch, picked]);
+  const toggle = (id: string, on?: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (on ?? !next.has(id)) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  // Enter (a scanner sends one) ticks the unit with that exact barcode, or
+  // the only match, and clears the box for the next.
+  function pickTyped() {
+    const term = unitSearch.trim().toLowerCase();
+    if (!term) return;
+    const exact = repairable.find((u) => u.barcode.toLowerCase() === term);
+    const only = shownUnits.length === 1 ? shownUnits[0] : null;
+    const unit = exact ?? only;
+    if (!unit) return;
+    toggle(unit.id, true);
+    setUnitSearch("");
+  }
   const inService = item && !serialised ? item.stockQty - item.outOfServiceQty : 0;
 
   const ready = !!item && fault.trim() !== "" && (serialised ? picked.size > 0 : quantity >= 1 && quantity <= inService);
@@ -64,13 +117,23 @@ export default function NewRepairModal({
     if (!item) return;
     setSaving(true);
     try {
-      const repair = await api.openRepair({
+      let repair = await api.openRepair({
         item: item.id,
         ...(serialised ? { serials: [...picked] } : { quantity }),
         fault: fault.trim(),
         repairer: repairer.trim(),
         dueAt: fromDateInput(dueAt),
+        job: job?.id ?? "",
+        ...(startIn ? { status: startIn } : {}),
       });
+      // The repair's open either way; a file that won't go just says so.
+      for (const file of files) {
+        try {
+          repair = await api.uploadRepairFile(repair.id, file);
+        } catch (err) {
+          showToast("error", `Couldn't add ${file.name}: ${errorText(err)}`);
+        }
+      }
       onCreated(repair);
     } catch (err) {
       showToast("error", `Couldn't open the repair: ${errorText(err)}`);
@@ -89,7 +152,7 @@ export default function NewRepairModal({
               {item.code && <span className="font-mono text-gray-400 mr-1.5">{item.code}</span>}
               {item.name}
             </span>
-            {!givenItem && (
+            {!fixedItem && (
               <button
                 onClick={() => {
                   setItem(null);
@@ -101,6 +164,8 @@ export default function NewRepairModal({
               </button>
             )}
           </div>
+        ) : fixedItem ? (
+          <span className="text-gray-500">Loading…</span>
         ) : (
           <>
             <input
@@ -126,25 +191,41 @@ export default function NewRepairModal({
 
       {item && serialised && (
         <div className="flex flex-col gap-1 text-sm">
-          <span className="text-gray-500">Units</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-gray-500">
+              Units{picked.size > 0 && <span className="text-gray-900 font-medium"> · {picked.size} picked</span>}
+            </span>
+            {picked.size > 0 && (
+              <button type="button" onClick={() => setPicked(new Set())} className="text-xs text-gray-500 hover:text-gray-900">
+                Clear
+              </button>
+            )}
+          </div>
           {repairable.length === 0 ? (
             <p className="text-gray-500">No units in service.</p>
           ) : (
-            <div className="flex flex-col max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
-              {repairable.map((u) => (
-                <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50">
-                  <input
-                    type="checkbox"
-                    checked={picked.has(u.id)}
-                    onChange={() =>
-                      setPicked((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(u.id)) next.delete(u.id);
-                        else next.add(u.id);
-                        return next;
-                      })
+            <>
+              {repairable.length > 5 && (
+                <input
+                  value={unitSearch}
+                  onChange={(e) => setUnitSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      pickTyped();
                     }
-                  />
+                  }}
+                  placeholder={`Search or scan ${repairable.length} units: barcode, name, serial…`}
+                  className="input py-1.5"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              )}
+            <div className="flex flex-col max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+              {shownUnits.length === 0 && <p className="px-3 py-2 text-gray-500">No units match.</p>}
+              {shownUnits.map((u) => (
+                <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50">
+                  <input type="checkbox" checked={picked.has(u.id)} onChange={() => toggle(u.id)} />
                   <span className="font-mono">{u.barcode || "(no barcode)"}</span>
                   {(u.label || u.serialNumber) && (
                     <span className="text-xs text-gray-400">{[u.label, u.serialNumber].filter(Boolean).join(" · ")}</span>
@@ -152,6 +233,7 @@ export default function NewRepairModal({
                 </label>
               ))}
             </div>
+            </>
           )}
         </div>
       )}
@@ -173,6 +255,22 @@ export default function NewRepairModal({
           placeholder="e.g. Crackles when the cable moves"
         />
       </label>
+      {startable.length > 1 && (
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-gray-500">Status</span>
+          <select value={startIn} onChange={(e) => setStatus(e.target.value)} className="input py-1.5 w-auto">
+            {startable.map((st) => (
+              <option key={st.id} value={st.id}>
+                {st.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="flex flex-col gap-1 text-sm">
+        <span className="text-gray-500">Came back damaged from (optional)</span>
+        <ProjectPicker value={job} onChange={setJob} />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-gray-500">Repaired by (optional)</span>
@@ -184,6 +282,34 @@ export default function NewRepairModal({
         </label>
       </div>
 
+      <div className="flex flex-col gap-1 text-sm">
+        <span className="text-gray-500">Files (optional)</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => filesInput.current?.click()} className="btn-secondary py-1">
+            {files.length > 0 ? "Add more" : "Add photos or files"}
+          </button>
+          {files.map((f, i) => (
+            <span key={`${f.name}-${i}`} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-gray-100 text-xs text-gray-700 max-w-48">
+              <span className="truncate">{f.name}</span>
+              <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="w-4 h-4 rounded-full hover:bg-gray-300 leading-none" aria-label={`Remove ${f.name}`}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <input
+          ref={filesInput}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const chosen = Array.from(e.target.files ?? []);
+            setFiles((prev) => [...prev, ...chosen]);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
       <div className="flex items-center gap-2">
         <button onClick={save} disabled={!ready || saving} className="btn-primary">
           {saving ? "Opening…" : "Open repair"}
@@ -191,7 +317,7 @@ export default function NewRepairModal({
         <button onClick={onClose} disabled={saving} className="btn-secondary">
           Cancel
         </button>
-        <span className="text-xs text-gray-500 ml-auto">Takes it out of service until it's fixed.</span>
+        <span className="text-xs text-gray-500 ml-auto">Takes it out of service until it's repaired.</span>
       </div>
     </Modal>
   );

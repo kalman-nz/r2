@@ -15,6 +15,7 @@ import NumberInput from "../NumberInput";
 import { useToast } from "../ToastProvider";
 import { updateEach } from "./BulkEditModal";
 import NewRepairModal from "../repair/NewRepairModal";
+import NewJobModal from "../maintenance/NewJobModal";
 
 // The units tab's selection bar: the same actions as the inventory list's,
 // for units. Status goes through the status route (it logs the change and
@@ -38,7 +39,7 @@ export default function UnitBulkBar({
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { data: locations = [] } = useLocations();
-  const [open, setOpen] = useState<"edit" | "move" | "repair" | "status" | null>(null);
+  const [open, setOpen] = useState<"edit" | "move" | "repair" | "schedule" | "status" | null>(null);
   const [busy, setBusy] = useState(false);
   const what = `${units.length} unit${units.length === 1 ? "" : "s"}`;
 
@@ -122,6 +123,9 @@ export default function UnitBulkBar({
           <button onClick={() => setOpen("repair")} disabled={busy} className="btn-secondary">
             Repair
           </button>
+          <button onClick={() => setOpen("schedule")} disabled={busy} className="btn-secondary" title="Schedule one-off maintenance on these units">
+            Schedule
+          </button>
           <button onClick={() => setOpen("status")} disabled={busy} className="btn-secondary">
             Status
           </button>
@@ -168,6 +172,19 @@ export default function UnitBulkBar({
             await onChanged();
             onClear();
             showToast("success", `Opened repair R${repair.number}`);
+          }}
+        />
+      )}
+      {open === "schedule" && (
+        <NewJobModal
+          item={item}
+          serials={units.map((u) => u.id)}
+          onClose={() => setOpen(null)}
+          onCreated={async (jobs) => {
+            setOpen(null);
+            await onChanged();
+            onClear();
+            showToast("success", `Scheduled ${jobs.length} job${jobs.length === 1 ? "" : "s"}`);
           }}
         />
       )}

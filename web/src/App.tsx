@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import type { ReactNode, SVGProps } from "react";
+import Dashboard from "./pages/Dashboard";
 import JobsList from "./pages/JobsList";
 import JobDetail from "./pages/JobDetail";
 import ScanPage from "./pages/ScanPage";
@@ -10,7 +11,9 @@ import QuoteView from "./pages/QuoteView";
 import PackingList from "./pages/PackingList";
 import ItemsList from "./pages/ItemsList";
 import ItemDetail from "./pages/ItemDetail";
-import RepairsList from "./pages/RepairsList";
+import MaintenancePage from "./pages/MaintenancePage";
+import MaintenanceJobDetail from "./pages/MaintenanceJobDetail";
+import MaintenancePlanDetail from "./pages/MaintenancePlanDetail";
 import RepairDetail from "./pages/RepairDetail";
 import SerialDetail from "./pages/SerialDetail";
 import { ContactDetail, ContactsList, VenueDetail, VenuesList } from "./pages/Directory";
@@ -45,13 +48,19 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement> & { children: Reac
 }
 
 const icons = {
+  home: (
+    <Icon>
+      <path d="M3 10.5L12 3l9 7.5" />
+      <path d="M5 9v11a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9" />
+    </Icon>
+  ),
   jobs: (
     <Icon>
       <rect x="3" y="4" width="18" height="17" rx="2" />
       <path d="M8 2v4M16 2v4M3 10h18" />
     </Icon>
   ),
-  repairs: (
+  maintenance: (
     <Icon>
       <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
     </Icon>
@@ -274,14 +283,15 @@ function AppShell() {
   return (
     <div className="h-screen flex overflow-hidden">
       <aside className="w-14 md:w-56 shrink-0 flex flex-col h-screen sticky top-0 py-3 bg-carbon">
-        <Link to="/" className="flex items-center px-3.5 md:px-[1.125rem] h-10 mb-4 shrink-0 text-white" aria-label="R2 by Kalman, home">
+        <Link to="/" className="flex items-center px-3.5 md:px-[1.125rem] h-10 mb-4 shrink-0 text-white" aria-label="R2, home">
           <img src="/favicon.svg" alt="" className="w-7 h-7 rounded-md md:hidden" />
-          <R2Lockup className="hidden md:flex" />
+          <R2Lockup byline={false} className="hidden md:flex" />
         </Link>
 
         <nav className="flex-1 overflow-y-auto flex flex-col">
           {org ? (
             <>
+              <NavItem to="/" icon={icons.home} label="Home" end />
               <NavSection title="Planning">
                 <NavGroup to="/projects" icon={icons.jobs} label="Projects">
                   {projectViews}
@@ -290,7 +300,7 @@ function AppShell() {
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
                 {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Check in & out" />}
-                <NavItem to="/repairs" icon={icons.repairs} label="Repairs" />
+                <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />
                 {can("labels.print") && <NavItem to="/label-printing" icon={icons.label} label="Label printing" />}
               </NavSection>
               <NavSection title="Relations">
@@ -348,7 +358,7 @@ function AppShell() {
               />
               {org ? (
                 <>
-                  <Route path="/" element={<Navigate to="/projects" replace />} />
+                  <Route path="/" element={<Dashboard />} />
                   <Route path="/projects" element={<JobsList />} />
                   <Route path="/projects/:id" element={<JobDetail />} />
                   <Route path="/projects/:id/scan" element={<ScanPage />} />
@@ -356,8 +366,11 @@ function AppShell() {
                   <Route path="/inventory" element={<ItemsList />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />
                   <Route path="/assets/:id" element={<SerialDetail />} />
-                  <Route path="/repairs" element={<RepairsList />} />
-                  <Route path="/repairs/:id" element={<RepairDetail />} />
+                  <Route path="/maintenance" element={<MaintenancePage />} />
+                  <Route path="/maintenance/repairs" element={<Navigate to="/maintenance?tab=repairs" replace />} />
+                  <Route path="/maintenance/repairs/:id" element={<RepairDetail />} />
+                  <Route path="/maintenance/jobs/:id" element={<MaintenanceJobDetail />} />
+                  <Route path="/maintenance/plans/:id" element={<MaintenancePlanDetail />} />
                   <Route path="/contacts" element={<ContactsList />} />
                   <Route path="/contacts/:id" element={<ContactDetail />} />
                   <Route path="/locations" element={<VenuesList />} />
@@ -381,6 +394,7 @@ function AppShell() {
                   {/* Old bookmarks, calendar links and Rentman+ URLs */}
                   <Route path="/jobs/*" element={<RenamedPath from="/jobs" to="/projects" />} />
                   <Route path="/venues/*" element={<RenamedPath from="/venues" to="/locations" />} />
+                  <Route path="/repairs/*" element={<RenamedPath from="/repairs" to="/maintenance/repairs" />} />
                   <Route path="/custom-label" element={<Navigate to="/label-printing" replace />} />
                   <Route path="/exports" element={<Navigate to="/finance/xero-export" replace />} />
                   <Route path="/logs" element={<Navigate to="/settings/activity" replace />} />

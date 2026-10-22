@@ -37,9 +37,9 @@ routerAdd(
     const id = e.request.pathValue("id");
     const body = e.requestInfo().body || {};
     const ctx = requireRecordOrg(e, requireJob($app, id), body.direction === "in" ? "scan.in" : "scan.out");
-    const message = scan(id, body, e.auth);
-    logEvent(ctx.orgId, "scan_" + body.direction, whoName(e.auth), { job: id, code: String(body.code || ""), message: message });
-    return e.json(200, { message: message, summary: buildSummary($app, id, summaryAccess(ctx)) });
+    const result = scan(id, body, e.auth);
+    logEvent(ctx.orgId, "scan_" + body.direction, whoName(e.auth), { job: id, code: String(body.code || ""), message: result.message });
+    return e.json(200, { message: result.message, item: result.item, serial: result.serial, summary: buildSummary($app, id, summaryAccess(ctx)) });
   },
   $apis.requireAuth("users"),
 );
@@ -52,12 +52,19 @@ routerAdd(
     const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const { openRepairOf } = require(`${__hooks}/lib/repairs.js`);
     const serial = findOrNull($app, "serials", e.request.pathValue("id"));
     if (!serial) throw new NotFoundError("Unit not found");
     const ctx = requireRecordOrg(e, serial, "units.flag");
     const body = e.requestInfo().body || {};
     if (["active", "repair", "lost", "retired"].indexOf(body.status) === -1) throw new BadRequestError("Invalid status");
     const previous = serial.getString("status");
+    // In repair comes from opening a repair, and goes when it's closed, so
+    // the repair and the unit can't disagree. Lost or retired can still be
+    // set while it's away: closing the repair leaves those alone.
+    if (body.status === "repair" && previous !== "repair") throw new BadRequestError("Open a repair to take it out of service");
+    const repair = body.status === "active" ? openRepairOf($app, serial.id) : null;
+    if (repair) throw new BadRequestError("It's on repair R" + repair.getInt("number") + ": mark that repaired to put it back in service");
     serial.set("status", body.status);
     if (typeof body.note === "string" && body.note.trim()) {
       const stamp = new Date().toISOString().slice(0, 10) + " " + whoName(e.auth) + ": ";
@@ -94,12 +101,13 @@ routerAdd(
     const body = e.requestInfo().body || {};
     const qty = Number(body.quantity);
     if (!Number.isInteger(qty) || qty < 0) throw new BadRequestError("Quantity must be a whole number, 0 or more");
-    // Repairs keep their kit out of service until they're closed.
+    // Repairs keep their kit out of service until they're repaired (or not).
+    const { OPEN_FILTER } = require(`${__hooks}/lib/repairs.js`);
     let repairing = 0;
-    for (const r of $app.findRecordsByFilter("repairs", "item = {:item} && (status = 'open' || status = 'in_progress')", "", 0, 0, { item: item.id })) {
+    for (const r of $app.findRecordsByFilter("repairs", "item = {:item} && " + OPEN_FILTER, "", 0, 0, { item: item.id })) {
       repairing += r.getInt("quantity");
     }
-    if (qty < repairing) throw new BadRequestError(repairing + " are on open repairs: close those to put them back in service");
+    if (qty < repairing) throw new BadRequestError(repairing + " are on open repairs: mark those repaired to put them back in service");
     const previous = item.getInt("outOfServiceQty");
     item.set("outOfServiceQty", qty);
     $app.save(item);

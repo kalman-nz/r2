@@ -103,6 +103,12 @@ onRecordDelete((e) => {
   if (e.app.findRecordsByFilter("scans", "item = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
     throw new BadRequestError("This item has been scanned on a project — archive it instead");
   }
+  if (e.app.findRecordsByFilter("repairs", "item = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("This item has repairs on record — archive it instead");
+  }
+  if (e.app.findRecordsByFilter("maintenance_jobs", "item = {:id} && status = 'done'", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("This item has maintenance on record — archive it instead");
+  }
   e.next();
 }, "items");
 
@@ -131,10 +137,17 @@ onRecordDeleteRequest((e) => {
   e.next();
 }, "subprojects");
 
-// A unit's scans are its history: keep it, retired, instead.
+// A unit's scans, repairs and maintenance are its history: keep it,
+// retired, instead.
 onRecordDelete((e) => {
   if (e.app.findRecordsByFilter("scans", "serial = {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
     throw new BadRequestError("This unit has been scanned on a project — mark it retired instead");
+  }
+  if (e.app.findRecordsByFilter("repairs", "serials.id ?= {:id}", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("This unit has repairs on record — mark it retired instead");
+  }
+  if (e.app.findRecordsByFilter("maintenance_jobs", "serial = {:id} && status = 'done'", "", 1, 0, { id: e.record.id }).length > 0) {
+    throw new BadRequestError("This unit has maintenance on record — mark it retired instead");
   }
   e.next();
 }, "serials");

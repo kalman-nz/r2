@@ -12,16 +12,19 @@ export function KalmanWordmark({ height = 16, oneColour = false, className = "" 
 }
 
 // "R2 by Kalman": the product name set in Archivo Expanded Bold, then the
-// maker's wordmark. Two sizes: the sidebar and the signed-out pages.
-export function R2Lockup({ size = "sm", className = "" }: { size?: "sm" | "lg"; className?: string }) {
+// maker's wordmark. Two sizes: the sidebar and the signed-out pages. The
+// sidebar drops the byline and shows just "R2".
+export function R2Lockup({ size = "sm", byline = true, className = "" }: { size?: "sm" | "lg"; byline?: boolean; className?: string }) {
   const lg = size === "lg";
   return (
     <div className={`flex items-end gap-2.5 ${className}`}>
       <span className={`font-display leading-none tracking-tight ${lg ? "text-[2.75rem]" : "text-[1.375rem]"}`}>R2</span>
-      <span className={`flex items-center gap-1.5 ${lg ? "pb-1" : "pb-px"}`}>
-        <span className="eyebrow opacity-60">by</span>
-        <KalmanWordmark height={lg ? 18 : 16} />
-      </span>
+      {byline && (
+        <span className={`flex items-center gap-1.5 ${lg ? "pb-1" : "pb-px"}`}>
+          <span className="eyebrow opacity-60">by</span>
+          <KalmanWordmark height={lg ? 18 : 16} />
+        </span>
+      )}
     </div>
   );
 }

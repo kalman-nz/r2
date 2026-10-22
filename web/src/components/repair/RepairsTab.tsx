@@ -1,78 +1,62 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { pb } from "../lib/pocketbase";
-import type { Item, Repair, RepairStatus } from "../lib/api";
-import { orgFilter } from "../lib/currentOrg";
-import { formatDate, parseDate } from "../lib/format";
-import { useRole } from "../lib/roles";
-import { REPAIR_STATUSES } from "../lib/statuses";
-import { RepairStatusBadge } from "../components/StatusBadge";
-import NewRepairModal from "../components/repair/NewRepairModal";
+import { formatDate, parseDate } from "../../lib/format";
+import { useRepairStatuses, useRepairs } from "../../lib/maintenance";
+import { RepairStatusBadge } from "../StatusBadge";
 
-export type RepairWithItem = Repair & { expand?: { item?: Item } };
-
-type Filter = "open" | "all" | RepairStatus;
-
-export function useRepairs() {
-  return useQuery({
-    queryKey: ["repairs"],
-    queryFn: () => pb.collection("repairs").getFullList<RepairWithItem>({ filter: orgFilter(), sort: "-number", expand: "item" }),
-  });
-}
+// "open" (everything out of service), "all", or one status's id.
+type Filter = string;
 
 // What's broken: everything out of service for repair first, then the
 // history. Open repairs past their expected-back date are flagged.
-export default function RepairsList() {
+export default function RepairsTab() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { can } = useRole();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("open");
-  const [creating, setCreating] = useState(false);
   const { data: repairs = [], isLoading, error } = useRepairs();
+  const { statuses, isOpen } = useRepairStatuses();
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { open: 0, all: repairs.length };
+    for (const r of repairs) {
+      c[r.status] = (c[r.status] ?? 0) + 1;
+      if (isOpen(r.status)) c.open++;
+    }
+    return c;
+  }, [repairs, isOpen]);
 
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = search.trim().toLowerCase().replace(/^#/, "");
     return repairs.filter((r) => {
-      if (filter === "open" ? !(r.status === "open" || r.status === "in_progress") : filter !== "all" && r.status !== filter) return false;
+      if (filter === "open" ? !isOpen(r.status) : filter !== "all" && r.status !== filter) return false;
       if (!term) return true;
-      return [`r${r.number}`, String(r.number), r.expand?.item?.name ?? "", r.fault, r.repairer].some((v) => v.toLowerCase().includes(term));
+      const job = r.expand?.job;
+      return [`r${r.number}`, String(r.number), r.expand?.item?.name ?? "", r.fault, r.repairer, job ? `${job.number} ${job.name}` : ""].some((v) =>
+        v.toLowerCase().includes(term),
+      );
     });
-  }, [repairs, search, filter]);
+  }, [repairs, search, filter, isOpen]);
 
   const now = Date.now();
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Repairs</h1>
-          <p className="text-xs text-gray-500">{filtered.length.toLocaleString()} shown</p>
-        </div>
-        {can("units.flag") && (
-          <button onClick={() => setCreating(true)} className="btn-primary">
-            New repair
-          </button>
-        )}
-      </div>
-
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-1.5 flex-wrap">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search number, item, fault, repairer…"
-          className="input w-72"
+          placeholder="Search number, item, fault, repairer, project…"
+          className="input w-80 max-w-full"
         />
         <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)} className="input w-auto">
-          <option value="open">Open (out of service)</option>
-          <option value="all">All repairs</option>
-          {REPAIR_STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
+          <option value="open">Out of service ({counts.open})</option>
+          {statuses.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({counts[s.id] ?? 0})
             </option>
           ))}
+          <option value="all">All repairs ({counts.all})</option>
         </select>
+        <span className="text-xs text-gray-500 ml-auto">{filtered.length.toLocaleString()} shown</span>
       </div>
 
       {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
@@ -92,17 +76,20 @@ export default function RepairsList() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map((r) => {
-              const open = r.status === "open" || r.status === "in_progress";
+              const open = isOpen(r.status);
               const overdue = open && (parseDate(r.dueAt)?.getTime() ?? Infinity) < now;
               const serialised = r.serials.length > 0;
+              const job = r.expand?.job;
               return (
-                <tr key={r.id} onClick={() => navigate(`/repairs/${r.id}`)} className="hover:bg-gray-50 cursor-pointer">
+                <tr key={r.id} onClick={() => navigate(`/maintenance/repairs/${r.id}`)} className="hover:bg-gray-50 cursor-pointer">
                   <td className="px-3 py-2 text-gray-500 font-mono text-xs">R{r.number}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col min-w-0">
                       <span className="font-medium text-gray-900 truncate">{r.expand?.item?.name ?? "(deleted item)"}</span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-gray-500 truncate">
                         {serialised ? `${r.serials.length} unit${r.serials.length === 1 ? "" : "s"}` : `× ${r.quantity}`}
+                        {job && ` · from #${job.number} ${job.name}`}
+                        {r.files?.length > 0 && ` · ${r.files.length} file${r.files.length === 1 ? "" : "s"}`}
                       </span>
                     </div>
                   </td>
@@ -130,24 +117,6 @@ export default function RepairsList() {
           </p>
         )}
       </div>
-
-      {creating && (
-        <NewRepairModal
-          onClose={() => setCreating(false)}
-          onCreated={async (repair) => {
-            setCreating(false);
-            await invalidateRepairs(queryClient);
-            navigate(`/repairs/${repair.id}`);
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-// Everything a repair changes: the repairs, units, item stock and availability.
-export function invalidateRepairs(queryClient: ReturnType<typeof useQueryClient>) {
-  return Promise.all(
-    ["repairs", "serials", "serial", "items", "item", "availability"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
   );
 }

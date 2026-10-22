@@ -136,6 +136,7 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
                 queryClient.invalidateQueries({ queryKey: ["serials"] }),
                 queryClient.invalidateQueries({ queryKey: ["availability"] }),
                 queryClient.invalidateQueries({ queryKey: ["repairs"] }),
+                queryClient.invalidateQueries({ queryKey: ["maintenance-jobs"] }),
                 queryClient.invalidateQueries({ queryKey: ["item"] }),
               ])
             }

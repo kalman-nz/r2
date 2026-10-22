@@ -23,7 +23,8 @@ function send(path: string, init?: RequestInit): Promise<Response> {
   const org = currentOrgId();
   return fetch(path, {
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      // FormData sets its own multipart type, boundary included.
+      ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
       ...(pb.authStore.token ? { Authorization: `Bearer ${pb.authStore.token}` } : {}),
       ...(org ? { "X-Org": org } : {}),
     },
@@ -67,6 +68,13 @@ const json = (method: string, body?: unknown): RequestInit => ({
   method,
   body: body === undefined ? undefined : JSON.stringify(body),
 });
+
+// One file as multipart "files", the way the file routes take it.
+function upload(file: File): RequestInit {
+  const body = new FormData();
+  body.append("files", file);
+  return { method: "POST", body };
+}
 
 // --- records (shapes match pocketbase/pb_migrations/0020_r2_core.js) ---
 
@@ -130,7 +138,27 @@ export interface Serial extends RecordModel {
   rentmanId: string;
 }
 
-export type RepairStatus = "open" | "in_progress" | "completed" | "written_off";
+// What a repair status does to the kit (pb_hooks/lib/repairs.js): open
+// keeps it out of service, repaired puts it back, unrepairable retires it.
+export type RepairStage = "open" | "repaired" | "unrepairable";
+export type StatusColour = "gray" | "amber" | "blue" | "violet" | "green" | "red";
+
+// One of an organisation's own repair statuses (Settings → Repair statuses).
+export interface RepairStatusDef extends RecordModel {
+  org: string;
+  name: string;
+  stage: RepairStage;
+  colour: StatusColour | "";
+  sortOrder: number;
+  isDefault: boolean;
+}
+
+export type RepairStatusInput = Pick<RepairStatusDef, "name" | "stage" | "colour" | "isDefault"> & { id?: string };
+
+// Files on a repair or maintenance job (pb_hooks/lib/files.js): the stored
+// names are in `files`; this has the name each was uploaded with, its size,
+// and who added it when.
+export type FileInfo = Record<string, { name: string; size: number; by: string; at: string }>;
 
 // A repair job (pb_hooks/lib/repairs.js): one item's broken units, or a
 // quantity of a bulk item, out of service until it's closed.
@@ -140,13 +168,59 @@ export interface Repair extends RecordModel {
   item: string;
   serials: string[];
   quantity: number;
-  status: RepairStatus;
+  // A RepairStatusDef id.
+  status: string;
   fault: string;
   repairer: string;
   cost: number;
   dueAt: string;
   closedAt: string;
   notes: string;
+  // The project it came back damaged from, if any.
+  job: string;
+  files: string[];
+  fileInfo: FileInfo | null;
+  createdBy: string;
+}
+
+export type MaintenanceKind = "inspection" | "test_tag" | "service";
+export type IntervalUnit = "day" | "week" | "month" | "year";
+
+// Repeating maintenance (pb_hooks/lib/maintenance.js): each unit of its
+// serialised items, and each bulk item, gets its own scheduled job.
+export interface MaintenancePlan extends RecordModel {
+  org: string;
+  name: string;
+  kind: MaintenanceKind;
+  every: number;
+  unit: IntervalUnit;
+  items: string[];
+  // Calendar days ("2026-10-22"), like the jobs' dates.
+  firstDue: string;
+  instructions: string;
+  createdBy: string;
+}
+
+// One piece of maintenance on one unit, one bulk item or nothing in
+// particular: from a plan, or one-off.
+export interface MaintenanceJob extends RecordModel {
+  org: string;
+  plan: string;
+  name: string;
+  kind: MaintenanceKind;
+  item: string;
+  serial: string;
+  dueOn: string;
+  status: "scheduled" | "done";
+  result: "pass" | "fail" | "";
+  failedQty: number;
+  doneOn: string;
+  doneBy: string;
+  notes: string;
+  cost: number;
+  files: string[];
+  fileInfo: FileInfo | null;
+  repair: string;
   createdBy: string;
 }
 
@@ -743,6 +817,16 @@ export interface XeroJob {
   changedSinceQuote: boolean;
 }
 
+export interface PlanInput {
+  name: string;
+  kind: MaintenanceKind;
+  every: number;
+  unit: IntervalUnit;
+  items: string[];
+  firstDue: string;
+  instructions: string;
+}
+
 export interface CsvImportResult {
   dryRun: boolean;
   committed: boolean;
@@ -790,8 +874,9 @@ export const api = {
   // Warehouse
   lookup: (code: string) =>
     request<{ kind: "serial" | "item"; id: string; itemId: string }>(`/api/lookup?code=${encodeURIComponent(code)}`),
+  // item and serial say what was scanned ("" serial for bulk), for reporting a fault with it.
   scan: (jobId: string, body: { code: string; direction: "out" | "in"; quantity?: number }) =>
-    request<{ message: string; summary: JobSummary }>(`/api/jobs/${jobId}/scan`, json("POST", body)),
+    request<{ message: string; item: string; serial: string; summary: JobSummary }>(`/api/jobs/${jobId}/scan`, json("POST", body)),
   setSerialStatus: (id: string, status: SerialStatus, note?: string) =>
     request<Serial>(`/api/serials/${id}/status`, json("POST", { status, note })),
   // Delete an inventory folder, with everything in it or keeping it (moved
@@ -805,10 +890,50 @@ export const api = {
   findItemPhoto: (itemId: string) =>
     request<{ item: Item; found: { query: string; source: string; title: string; reason: string } }>(`/api/items/${itemId}/find-photo`, json("POST")),
   // Repairs: see pb_hooks/routes_repairs.pb.js.
-  openRepair: (body: { item: string; serials?: string[]; quantity?: number; fault: string; repairer?: string; dueAt?: string; notes?: string }) =>
-    request<Repair>("/api/repairs", json("POST", body)),
-  updateRepair: (id: string, body: Partial<Pick<Repair, "fault" | "repairer" | "cost" | "dueAt" | "notes" | "status">>) =>
+  openRepair: (body: {
+    item: string;
+    serials?: string[];
+    quantity?: number;
+    fault: string;
+    repairer?: string;
+    dueAt?: string;
+    notes?: string;
+    job?: string;
+    status?: string;
+  }) => request<Repair>("/api/repairs", json("POST", body)),
+  updateRepair: (id: string, body: Partial<Pick<Repair, "fault" | "repairer" | "cost" | "dueAt" | "notes" | "status" | "job">>) =>
     request<Repair>(`/api/repairs/${id}`, json("PATCH", body)),
+  uploadRepairFile: (id: string, file: File) => request<Repair>(`/api/repairs/${id}/files`, upload(file)),
+  deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
+  repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
+  saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
+
+  // Maintenance: see pb_hooks/routes_maintenance.pb.js.
+  createPlan: (body: PlanInput) => request<MaintenancePlan>("/api/maintenance/plans", json("POST", body)),
+  updatePlan: (id: string, body: Partial<PlanInput>) => request<MaintenancePlan>(`/api/maintenance/plans/${id}`, json("PATCH", body)),
+  deletePlan: (id: string) => request<{ ok: true }>(`/api/maintenance/plans/${id}`, json("DELETE")),
+  scheduleJobs: (body: { name: string; kind: MaintenanceKind; item?: string; serials?: string[]; dueOn: string; notes?: string }) =>
+    request<MaintenanceJob[]>("/api/maintenance/jobs", json("POST", body)),
+  updateJob: (id: string, body: Partial<Pick<MaintenanceJob, "name" | "dueOn" | "notes" | "cost" | "doneBy">>) =>
+    request<MaintenanceJob>(`/api/maintenance/jobs/${id}`, json("PATCH", body)),
+  deleteJob: (id: string) => request<{ ok: true }>(`/api/maintenance/jobs/${id}`, json("DELETE")),
+  completeJob: (
+    id: string,
+    body: {
+      result: "pass" | "fail";
+      doneOn?: string;
+      doneBy?: string;
+      notes?: string;
+      cost?: number;
+      failedQty?: number;
+      repair?: { fault: string; repairer?: string };
+    },
+  ) => request<{ job: MaintenanceJob; repair: Repair | null }>(`/api/maintenance/jobs/${id}/done`, json("POST", body)),
+  passJobs: (ids: string[], doneOn?: string, doneBy?: string) =>
+    request<{ done: number; failed: Record<string, string> }>("/api/maintenance/jobs/pass", json("POST", { ids, doneOn, doneBy })),
+  uploadJobFile: (id: string, file: File) => request<MaintenanceJob>(`/api/maintenance/jobs/${id}/files`, upload(file)),
+  deleteJobFile: (id: string, name: string) =>
+    request<MaintenanceJob>(`/api/maintenance/jobs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
 
   // Global search across items/units/jobs/contacts/label templates — see
   // pocketbase/pb_hooks/routes_search.pb.js.

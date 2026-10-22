@@ -12,11 +12,12 @@ import JobLines from "../components/job/JobLines";
 import JobSchedule from "../components/job/JobSchedule";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import { PERIOD_KINDS } from "../lib/statuses";
-import { JobStatusBadge, QuoteStatusBadge } from "../components/StatusBadge";
+import { JobStatusBadge, QuoteStatusBadge, RepairStatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
 import { withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
+import { useRepairs } from "../lib/maintenance";
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -363,6 +364,8 @@ function ExistingJob({ id }: { id: string }) {
             </section>
           )}
 
+          <DamageCard jobId={job.id} />
+
           <section className="card p-4 flex flex-col gap-2 text-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-500">Warehouse</h2>
@@ -388,5 +391,32 @@ function ExistingJob({ id }: { id: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Kit that came back damaged from this project (repairs opened against it),
+// so it can be followed up with the client. Only there when there's some.
+function DamageCard({ jobId }: { jobId: string }) {
+  const { data: repairs = [] } = useRepairs(`job = "${jobId}"`);
+  if (repairs.length === 0) return null;
+  const cost = repairs.reduce((sum, r) => sum + (r.cost || 0), 0);
+  return (
+    <section className="card p-4 flex flex-col gap-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-500">Came back damaged</h2>
+        {cost > 0 && <span className="text-xs text-gray-500">{nzd(cost)} in repairs</span>}
+      </div>
+      {repairs.map((r) => (
+        <Link key={r.id} to={`/maintenance/repairs/${r.id}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 -mx-2 hover:bg-gray-50">
+          <span className="min-w-0">
+            <span className="block font-medium text-gray-900 truncate">{r.expand?.item?.name ?? "(deleted item)"}</span>
+            <span className="block text-xs text-gray-500 truncate">
+              R{r.number} · {r.fault}
+            </span>
+          </span>
+          <RepairStatusBadge status={r.status} />
+        </Link>
+      ))}
+    </section>
   );
 }
