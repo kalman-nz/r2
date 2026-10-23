@@ -631,17 +631,16 @@ const packingHome = await tech.ok("GET", `/api/home/packing?jobs=${jobA.id},${jo
 assert.deepEqual(Object.keys(packingHome), [jobA.id], "only this organisation's projects");
 assert.deepEqual(packingHome[jobA.id], { needed: 10, at: { [stepId.Loaded]: 5, [stepId.Returned]: 5 } });
 
-// A project can go without tracking, but not with kit still out.
-await planner.fails("PATCH", `/api/collections/jobs/records/${jobA.id}`, { untracked: true }, 400, /still out/);
 const boardBefore = await tech.ok("GET", "/api/tracking/projects");
 const onBoard = boardBefore.find((p) => p.id === jobA.id);
 assert.deepEqual([onBoard.needed, onBoard.at], [10, { [stepId.Loaded]: 5, [stepId.Returned]: 5 }], "the board has each project's kit by step");
 assert.ok(boardBefore.some((p) => p.id === jobB.id) && !boardBefore.some((p) => p.id === jobInB.id), "this organisation's projects only");
-await planner.ok("PATCH", `/api/collections/jobs/records/${jobB.id}`, { untracked: true });
-assert.ok(!(await tech.ok("GET", "/api/tracking/projects")).some((p) => p.id === jobB.id), "untracked projects aren't on the board");
-await tech.fails("POST", `/api/jobs/${jobB.id}/scan`, { code: `XLR-${run}`, step: stepId.Prepped }, 400, /isn't tracked/);
-assert.equal((await tech.ok("GET", `/api/jobs/${jobB.id}/summary`)).lines.filter((l) => l.tracking).length, 0, "no tracking on its lines");
-await planner.ok("PATCH", `/api/collections/jobs/records/${jobB.id}`, { untracked: false });
+
+// Kit still out per project (a project's tracked once anything's scanned on
+// it; returned with kit out is overdue), for this organisation only.
+const outstanding = await tech.ok("GET", "/api/jobs/outstanding");
+assert.equal(outstanding[jobA.id]?.units, 5, "5 units still out on A");
+assert.ok(!(jobInB.id in outstanding), "only this organisation's projects");
 
 // The organisation's own steps.
 const stepBody = (list) => ({ steps: list });

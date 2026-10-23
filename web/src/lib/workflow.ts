@@ -46,6 +46,13 @@ export const FEATURES: { key: FeatureKey; label: string; hint: string; off: stri
     off: "No prices anywhere, for anyone: for kit that's only used in house.",
   },
   {
+    key: "integrations",
+    permissions: ["integrations.manage"],
+    label: "Live sync",
+    hint: "Keep R2 in step with Rentman, or pull event bookings from Momentus (Settings → Integrations).",
+    off: "Rentman and Momentus sync stop, and Settings → Integrations is hidden.",
+  },
+  {
     key: "xero",
     permissions: ["export.xero"],
     label: "Xero export",

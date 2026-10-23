@@ -91,18 +91,25 @@ routerAdd(
     const { findOrNull } = require(`${__hooks}/lib/records.js`);
     const { loadItems, loadLines } = require(`${__hooks}/lib/jobs.js`);
     const { needsOf } = require(`${__hooks}/lib/scan.js`);
-    const { stepsOf, suggestion, trackingState } = require(`${__hooks}/lib/tracking.js`);
+    const { outstandingByJob, stepsOf, suggestion, trackingState } = require(`${__hooks}/lib/tracking.js`);
     const ctx = requireOrg(e);
     requireFeature(ctx.org, "scanning");
     const since = new Date(Date.now() - 14 * 86400000).toISOString().replace("T", " ");
     const jobs = $app.findRecordsByFilter(
       "jobs",
-      "org = {:org} && untracked = false && (status = 'provisional' || status = 'confirmed' || status = 'out' || (status = 'returned' && returnAt >= {:since}))",
+      "org = {:org} && (status = 'provisional' || status = 'confirmed' || status = 'out' || (status = 'returned' && returnAt >= {:since}))",
       "prepAt",
       300,
       0,
       { org: ctx.orgId, since: since },
     );
+    // Returned a while ago but with kit still to come back: overdue, so
+    // they stay here to be scanned in.
+    const listed = {};
+    for (const job of jobs) listed[job.id] = true;
+    const outstanding = outstandingByJob($app, ctx.orgId);
+    const late = Object.keys(outstanding).filter((id) => !listed[id] && outstanding[id].status === "returned");
+    for (const job of $app.findRecordsByIds("jobs", late)) if (job) jobs.push(job);
     const steps = stepsOf($app, ctx.orgId);
     const clients = {};
     const out = [];

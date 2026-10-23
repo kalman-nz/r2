@@ -7,11 +7,16 @@
 //   imported fields edited in R2 since, so it's for the migration period.
 //   Contact and project field names were checked against a live account
 //   in October 2026.
+// - The same steps are the live sync's catch-up pass (lib/rentmanSync.js):
+//   given a `sync`, each row is merged field by field (lib/sync.js
+//   reconcile) instead of overwritten. Fields both systems keep, and how
+//   they convert, are in lib/rentmanMap.js.
 // - importCsv: items or contacts from a spreadsheet, all-or-nothing, with a
 //   dry run that reports every problem row first.
 // Every import is recorded in import_runs.
 const { idFromRef } = require("./rentman.js");
 const { errorMessage } = require("./records.js");
+const { MAPS } = require("./rentmanMap.js");
 
 const MAX_ERRORS = 500;
 
@@ -51,7 +56,30 @@ function importedIds(collection, org) {
   return map;
 }
 
-function upsert(org, collection, ids, rentmanId, data) {
+// Which Rentman list each R2 collection comes from (sync_links.remoteType).
+const REMOTE_TYPE = {
+  categories: "folders",
+  locations: "stocklocations",
+  items: "equipment",
+  serials: "serialnumbers",
+  contacts: "contacts",
+  venues: "contacts",
+  jobs: "projects",
+  job_lines: "projectequipment",
+};
+
+// Creates or updates the R2 record for one Rentman record. A plain import
+// overwrites every field it brings and remembers them as the link's base;
+// with a live sync (lib/rentmanSync.js) it's a field-by-field merge
+// instead. newRecord: fields only set when the record is created;
+// modified: Rentman's change stamp, for "newest wins" conflicts.
+function upsert(org, collection, ids, rentmanId, data, sync, newRecord, modified) {
+  const { quietSave, saveLink } = require("./sync.js");
+  if (sync) {
+    const result = sync.reconcile(collection, REMOTE_TYPE[collection], rentmanId, data, newRecord, modified);
+    if (result.record) ids[rentmanId] = result.record.id;
+    return result.record;
+  }
   let record = null;
   if (ids[rentmanId]) {
     try {
@@ -60,10 +88,11 @@ function upsert(org, collection, ids, rentmanId, data) {
       record = null;
     }
   }
-  if (!record) record = new Record($app.findCollectionByNameOrId(collection), { org: org });
+  if (!record) record = new Record($app.findCollectionByNameOrId(collection), Object.assign({ org: org }, newRecord || {}));
   for (const key of Object.keys(data)) record.set(key, data[key]);
   record.set("rentmanId", rentmanId);
-  $app.save(record);
+  quietSave(record);
+  saveLink(org, "rentman", collection, record.id, REMOTE_TYPE[collection], rentmanId, data);
   ids[rentmanId] = record.id;
   return record;
 }
@@ -75,8 +104,9 @@ function refId(value) {
 }
 
 // Equipment, serial numbers, folders (as categories), stock locations and
-// custom field names.
-function importEquipment(client, org, counts, fail) {
+// custom field names. With a live sync, equipment gone from Rentman is
+// archived in R2 (never deleted).
+function importEquipment(client, org, counts, fail, sync) {
   for (const key of ["categories", "locations", "customFields", "items", "serials"]) counts[key] = counts[key] || 0;
   // Fetch everything before writing anything, so a Rentman outage or a
   // bad token leaves R2 untouched.
@@ -102,7 +132,7 @@ function importEquipment(client, org, counts, fail) {
   for (const id of Object.keys(wanted)) {
     const f = folderById[id];
     try {
-      upsert(org, "categories", categoryIds, id, { name: f.name || f.displayname || "Folder " + id });
+      upsert(org, "categories", categoryIds, id, { name: f.name || f.displayname || "Folder " + id }, sync);
       counts.categories++;
     } catch (err) {
       fail("folder", id, f.name, err);
@@ -124,7 +154,7 @@ function importEquipment(client, org, counts, fail) {
   const locationIds = importedIds("locations", org);
   for (const l of stockLocations) {
     try {
-      upsert(org, "locations", locationIds, String(l.id), { name: l.displayname || l.name || "Location " + l.id });
+      upsert(org, "locations", locationIds, String(l.id), { name: l.displayname || l.name || "Location " + l.id }, sync);
       counts.locations++;
     } catch (err) {
       fail("stocklocation", l.id, l.displayname, err);
@@ -172,33 +202,36 @@ function importEquipment(client, org, counts, fail) {
   };
 
   const itemIds = importedIds("items", org);
+  const refs = { categoryFor: (folderId) => categoryIds[folderId] || "" };
+  const seen = {};
   for (const eq of equipment) {
     const id = String(eq.id);
-    const name = eq.displayname || eq.name || "Rentman item " + id;
+    seen[id] = true;
+    const shared = MAPS.items.fromRentman(eq, refs);
     const serialised = (serialCount[id] || 0) > 0;
     try {
-      upsert(org, "items", itemIds, id, {
-        name: name,
-        code: eq.code || "",
-        category: categoryIds[refId(eq.folder)] || "",
-        kind: "item",
-        tracking: serialised ? "serial" : "bulk",
-        stockQty: serialised ? 0 : Math.max(0, Math.round(bulkQuantity(eq))),
-        price: Number(eq.price) || 0,
-        weightKg: Number(eq.weight) || 0,
-        powerW: Number(eq.power) || 0,
-        barcode: eq.qrcodes || "",
-        locationInWarehouse: eq.location_in_warehouse || "",
-        description: eq.external_remark || "",
-        notes: eq.internal_remark || "",
-        archived: eq.in_archive === true,
-        custom: eq.custom || {},
-      });
+      // The shared fields, then the ones that only ever come in.
+      upsert(
+        org,
+        "items",
+        itemIds,
+        id,
+        Object.assign(shared, {
+          tracking: serialised ? "serial" : "bulk",
+          stockQty: serialised ? 0 : Math.max(0, Math.round(bulkQuantity(eq))),
+          barcode: eq.qrcodes || "",
+          custom: eq.custom || {},
+        }),
+        sync,
+        { kind: "item" },
+        eq.modified,
+      );
       counts.items++;
     } catch (err) {
-      fail("equipment", id, name, err);
+      fail("equipment", id, shared.name, err);
     }
   }
+  if (sync) sync.archiveMissing("items", seen);
 
   const serialIds = importedIds("serials", org);
   for (const s of serialNumbers) {
@@ -221,7 +254,7 @@ function importEquipment(client, org, counts, fail) {
         nextInspection: s.next_inspection || "",
         notes: s.remark || "",
         custom: s.custom || {},
-      });
+      }, sync, null, s.modified);
       counts.serials++;
     } catch (err) {
       fail("serialnumber", id, s.displayname, err);
@@ -241,13 +274,11 @@ function addressOf(c, prefix) {
   return [street, get("extra_address_line"), get("district"), town, get("state"), country].filter(Boolean).join("\n");
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 // Rentman keeps clients and the places jobs happen in one contacts list.
 // Contacts that projects use as their location become R2 locations
 // (venues); every other contact, and any location that's also a client,
 // becomes an R2 contact.
-function importContacts(client, org, counts, fail) {
+function importContacts(client, org, counts, fail, sync) {
   counts.contacts = counts.contacts || 0;
   counts.venues = counts.venues || 0;
   const contacts = client.listAll("contacts");
@@ -273,35 +304,46 @@ function importContacts(client, org, counts, fail) {
   const venueIds = importedIds("venues", org);
   for (const c of contacts) {
     const id = String(c.id);
-    const name = String(c.displayname || c.name || "").trim() || "Rentman contact " + id;
     const person = personOf[id];
     const personName = person ? String(person.displayname || [person.firstname, person.lastname].filter(Boolean).join(" ")).trim() : "";
-    const phone = String(c.phone_1 || c.phone_2 || (person && (person.phone || person.mobilephone)) || "").trim();
+    const shared = MAPS.contacts.fromRentman(c, null, person);
+    const name = shared.name;
     if (asLocation[id]) {
       try {
-        upsert(org, "venues", venueIds, id, {
-          name: name,
-          address: addressOf(c, "visit") || addressOf(c, "mailing") || addressOf(c, "invoice"),
-          contactName: personName,
-          phone: phone,
-        });
+        upsert(
+          org,
+          "venues",
+          venueIds,
+          id,
+          Object.assign(MAPS.venues.fromRentman(c, null, person), {
+            address: addressOf(c, "visit") || addressOf(c, "mailing") || addressOf(c, "invoice"),
+            contactName: personName,
+          }),
+          sync,
+          null,
+          c.modified,
+        );
         counts.venues++;
       } catch (err) {
         fail("contact (location)", id, name, err);
       }
     }
     if (asLocation[id] && !asCustomer[id]) continue;
-    const emails = [c.email_1, c.email_2, person && person.email].map((e) => String(e || "").trim());
     try {
-      upsert(org, "contacts", contactIds, id, {
-        name: name,
-        kind: c.type === "private" ? "person" : "company",
-        contactPerson: personName === name ? "" : personName,
-        email: emails.find((e) => EMAIL.test(e)) || "",
-        phone: phone,
-        billingAddress: addressOf(c, "invoice") || addressOf(c, "mailing") || addressOf(c, "visit"),
-        notes: String(c.contact_warning || "").trim(),
-      });
+      upsert(
+        org,
+        "contacts",
+        contactIds,
+        id,
+        Object.assign(shared, {
+          contactPerson: personName === name ? "" : personName,
+          billingAddress: addressOf(c, "invoice") || addressOf(c, "mailing") || addressOf(c, "visit"),
+          notes: String(c.contact_warning || "").trim(),
+        }),
+        sync,
+        null,
+        c.modified,
+      );
       counts.contacts++;
     } catch (err) {
       fail("contact", id, name, err);
@@ -325,8 +367,10 @@ function jobStatusFor(name) {
 // Projects (with their subprojects folded in) → R2 projects. Kit is booked
 // over Rentman's plan period and charged over its usage period. Rentman's
 // project numbers are kept where R2 hasn't already used them. Needs the
-// contacts step first for clients and locations.
-function importProjects(client, org, counts, fail) {
+// contacts step first for clients and locations. With a live sync a
+// project R2 sent as a project request is matched back to its job
+// (sync.adoptProject) rather than coming in twice.
+function importProjects(client, org, counts, fail, sync) {
   counts.projects = counts.projects || 0;
   const { toMs } = require("./time.js");
   const projects = client.listAll("projects");
@@ -370,22 +414,30 @@ function importProjects(client, org, counts, fail) {
       reference: String(p.reference || "").trim(),
     };
     const number = Number(p.number);
-    if (number > 0 && (taken[number] === undefined || taken[number] === id)) data.number = number;
+    const numbered = number > 0 && (taken[number] === undefined || taken[number] === id);
+    // A plain import keeps the number up to date; a live sync only numbers
+    // a job when it creates it.
+    if (numbered && !sync) data.number = number;
     try {
+      if (!jobIds[id] && sync) {
+        const adopted = sync.adoptProject(p, prep);
+        if (adopted) jobIds[id] = adopted;
+      }
       if (jobIds[id]) {
-        upsert(org, "jobs", jobIds, id, data);
+        upsert(org, "jobs", jobIds, id, data, sync, null, p.modified);
         updatePeriods(jobIds[id], prep, ret, billStart, billEnd);
       } else {
         // New: the dates seed its schedule (records_periods.pb.js).
         const billed = toMs(billStart) < toMs(billEnd);
-        upsert(org, "jobs", jobIds, id, Object.assign(data, {
+        upsert(org, "jobs", jobIds, id, data, sync, {
+          number: numbered ? number : undefined,
           prepAt: prep,
           returnAt: ret,
           billingStart: billed ? billStart : "",
           billingEnd: billed ? billEnd : "",
-        }));
+        }, p.modified);
       }
-      if (data.number) taken[data.number] = id;
+      if (numbered) taken[number] = id;
       counts.projects++;
     } catch (err) {
       fail("project", id, name, err);
@@ -426,9 +478,17 @@ function updatePeriods(jobId, prep, ret, billStart, billEnd) {
 // × Rentman's day factor, as a fixed price, less the line's and its
 // subproject's discounts, so totals match. Equipment R2
 // doesn't have (or text-only lines) come in as custom lines.
-function importLinesPage(client, org, counts, fail, cursor) {
-  counts.lines = counts.lines || 0;
+function importLinesPage(client, org, counts, fail, cursor, sync) {
   const page = client.page("projectequipment", cursor);
+  importLines(client, org, counts, fail, page.data, sync);
+  return page.next;
+}
+
+// Rentman project equipment rows → project lines (see importLinesPage).
+// Returns the Rentman ids it kept, for a live sync's tidy-up.
+function importLines(client, org, counts, fail, rows, sync) {
+  counts.lines = counts.lines || 0;
+  const kept = {};
   const groups = {};
   for (const g of client.listAll("projectequipmentgroup", "id,project,subproject,name,order")) groups[String(g.id)] = g;
   const subs = {};
@@ -436,9 +496,8 @@ function importLinesPage(client, org, counts, fail, cursor) {
   const jobIds = importedIds("jobs", org);
   const itemIds = importedIds("items", org);
   const lineIds = importedIds("job_lines", org);
-  const priceUnit = {};
 
-  for (const l of page.data) {
+  for (const l of rows) {
     const id = String(l.id);
     const group = groups[refId(l.equipment_group)];
     const jobId = group && jobIds[refId(group.project)];
@@ -476,13 +535,14 @@ function importLinesPage(client, org, counts, fail, cursor) {
       }
     }
     try {
-      upsert(org, "job_lines", lineIds, id, data);
+      upsert(org, "job_lines", lineIds, id, data, sync, null, l.modified);
+      kept[id] = true;
       counts.lines++;
     } catch (err) {
       fail("projectequipment", id, name, err);
     }
   }
-  return page.next;
+  return kept;
 }
 
 const RENTMAN_STEPS = { equipment: importEquipment, contacts: importContacts, projects: importProjects };
@@ -697,4 +757,4 @@ function importCsv(org, kind, rows, dryRun, who) {
   return { dryRun: dryRun === true, committed: committed, counts: counts, errors: errors };
 }
 
-module.exports = { runRentmanStep, importCsv };
+module.exports = { runRentmanStep, importCsv, importEquipment, importContacts, importProjects, importLines, importLinesPage, updatePeriods, jobStatusFor };

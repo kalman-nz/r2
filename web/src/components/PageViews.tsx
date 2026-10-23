@@ -100,8 +100,7 @@ export default function PageViews({
         label="View"
         views={views}
         currentId={currentId}
-        placeholder="View: Standard"
-        prefix="View"
+        placeholder="Standard"
         none="Standard"
         edited={edited}
         note={(v) => (v.isDefault ? "Default" : byLabel(v))}

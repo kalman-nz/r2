@@ -75,6 +75,7 @@ export default function Dashboard() {
       }),
     enabled: needsJobs,
   });
+  const { data: outstanding = {} } = useQuery({ queryKey: ["jobs", "outstanding"], queryFn: api.outstanding, enabled: has("glance") });
   const { data: maintenance = [], isLoading: maintenanceLoading } = useMaintenanceJobs(`status = 'scheduled' && dueOn <= "${inDays(7)}"`, "dueOn", maintenanceOn);
   const { data: repairs = [], isLoading: repairsLoading } = useRepairs(OPEN_REPAIRS_FILTER, repairsOn);
   const { data: crew = [], isLoading: crewLoading } = useQuery({
@@ -105,6 +106,9 @@ export default function Dashboard() {
   const out = jobs.filter((j) => j.status === "out").sort((a, b) => time(a.returnAt) - time(b.returnAt));
   const comingBack = out.filter((j) => dayOf(j.returnAt) !== "" && dayOf(j.returnAt) <= weekEnd);
   const overdueBack = out.filter((j) => time(j.returnAt) < now);
+  // Set to returned, but with kit that hasn't been tracked back in.
+  const returnedNotBack = Object.values(outstanding).filter((o) => o.status === "returned").length;
+  const overdue = overdueBack.length + returnedNotBack;
   const backToday = out.filter((j) => dayOf(j.returnAt) === todayDay && time(j.returnAt) >= now);
   const toConfirm = jobs.filter((j) => (j.status === "enquiry" || j.status === "provisional") && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= inDays(14));
   const toPrep = jobs.filter((j) => j.status === "confirmed" && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= inDays(14));
@@ -167,7 +171,13 @@ export default function Dashboard() {
               alert={lateOut.length > 0}
             />
             <Stat label="Due back today" value={loading ?? backToday.length} hint={`${comingBack.length} this week`} />
-            <Stat label="Overdue back" value={loading ?? overdueBack.length} hint={overdueBack.length > 0 ? "Chase these up" : "All on time"} alert={overdueBack.length > 0} />
+            <Stat
+              label="Overdue back"
+              value={loading ?? overdue}
+              hint={returnedNotBack > 0 ? `${returnedNotBack} returned with kit missing` : overdue > 0 ? "Chase these up" : "All on time"}
+              alert={overdue > 0}
+              to="/projects?view=overdue"
+            />
             <Stat label="Out on hire" value={loading ?? out.length} hint="Projects out now" to="/projects?view=out" />
             {feature("maintenance") && (
               <Stat
@@ -240,10 +250,11 @@ export default function Dashboard() {
                     extra={
                       <span className="flex items-center gap-3 shrink-0">
                         <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
-                        {packing[j.id] && <TrackingStatus progress={progressOf(steps, packing[j.id].at, packing[j.id].needed)} compact />}
+                        {/* Only once something's been scanned: a project nobody scans isn't tracked. */}
+                        {packing[j.id] && Object.values(packing[j.id].at).some((n) => n > 0) && <TrackingStatus progress={progressOf(steps, packing[j.id].at, packing[j.id].needed)} compact />}
                       </span>
                     }
-                    scan={canScanOut && !j.untracked ? { label: "Track" } : undefined}
+                    scan={canScanOut ? { label: "Track" } : undefined}
                     onOpen={() => navigate(`/projects/${j.id}`)}
                   />
                 ))}
@@ -269,7 +280,7 @@ export default function Dashboard() {
                     job={j}
                     when={g.late ? formatDateTime(j.prepAt) : formatTime(j.prepAt)}
                     late={time(j.prepAt) < now}
-                    scan={canScanOut && !j.untracked ? { label: "Track" } : undefined}
+                    scan={canScanOut ? { label: "Track" } : undefined}
                     onOpen={() => navigate(`/projects/${j.id}`)}
                   />
                 ))}
@@ -297,7 +308,7 @@ export default function Dashboard() {
                       job={j}
                       when={late ? `${formatDuration(now - time(j.returnAt))} late` : formatTime(j.returnAt)}
                       late={late}
-                      scan={canScanIn && !j.untracked ? { label: "Return", stage: "back" } : undefined}
+                      scan={canScanIn ? { label: "Return", stage: "back" } : undefined}
                       onOpen={() => navigate(`/projects/${j.id}`)}
                     />
                   );

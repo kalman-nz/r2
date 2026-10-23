@@ -8,6 +8,7 @@
     "build:web": "pnpm --filter web build",
     "test": "node --test pocketbase/tests/",
     "smoke": "node scripts/smoke-api.mjs",
+    "sync:e2e": "node scripts/sync-e2e.mjs",
     "seed:demo": "node scripts/seed-demo.mjs"
   }
 }

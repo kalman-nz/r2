@@ -61,7 +61,6 @@ function scan(jobId, body, auth) {
   $app.runInTransaction((tx) => {
     const job = jobs.requireJob(tx, jobId);
     const steps = tracking.stepsOf(tx, job.getString("org"));
-    if (job.getBool("untracked")) throw new BadRequestError("This project's equipment isn't tracked: turn tracking on from the project first");
     const step = tracking.stepFor(steps, body);
     const stage = step.getString("stage");
     const going = stage !== "back";

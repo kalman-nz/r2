@@ -221,7 +221,7 @@ export interface TrackedProject {
 export type TrackedAt = Record<string, number>;
 
 // What an organisation uses (Settings → Features, pb_hooks/lib/features.js).
-export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "xero";
+export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "integrations" | "xero";
 export type Features = Record<FeatureKey, boolean>;
 
 // Files on a repair or maintenance job (pb_hooks/lib/files.js): the stored
@@ -327,8 +327,6 @@ export interface Venue extends RecordModel {
 
 export interface Job extends RecordModel {
   org: string;
-  // Going without equipment tracking, with the feature on.
-  untracked: boolean;
   number: number;
   name: string;
   // The stage, which availability and scanning read; jobStatus is the
@@ -468,12 +466,33 @@ export interface JobInfo {
   notes: string;
   // Equipment headings in order, per part ("" = the main project).
   headings?: { section: string; name: string }[];
-  // Going without equipment tracking (pb_hooks/lib/tracking.js).
-  untracked: boolean;
   created: string;
   updated: string;
   clientInfo: ContactInfo | null;
   venueInfo: VenueInfo | null;
+}
+
+// Units still out on each project that has any, from its scans.
+export type Outstanding = Record<string, { units: number; status: JobStatus }>;
+
+// A project document: one of the organisation's printable forms
+// (pb_hooks/lib/documents.js, Settings → Documents).
+export type DocumentFieldType = "heading" | "note" | "text" | "textarea" | "checkbox" | "date" | "signature";
+export interface DocumentField {
+  id: string;
+  type: DocumentFieldType;
+  label: string;
+}
+export type DocumentEquipment = "none" | "list" | "checklist" | "return";
+export interface DocumentTemplate extends RecordModel {
+  org: string;
+  name: string;
+  description: string;
+  equipment: DocumentEquipment;
+  schedule: boolean;
+  notes: boolean;
+  fields: DocumentField[];
+  sortOrder: number;
 }
 
 export interface PackingItem {
@@ -974,6 +993,107 @@ export interface CsvImportResult {
   errors: { row: number; message: string }[];
 }
 
+// Live sync (Settings → Integrations, pb_hooks/lib/integrations.js).
+export type IntegrationProvider = "rentman" | "momentus";
+export type ConflictRule = "newest" | "remote" | "local";
+
+export interface RentmanSyncConfig {
+  enabled: boolean;
+  paused: boolean;
+  conflictRule: ConflictRule;
+  firstSync: "remote" | "local";
+  pollMinutes: number;
+  linesPollHours: number;
+  sync: { items: "both" | "in"; contacts: "both" | "in"; venues: "both" | "in" };
+  createInRentman: { items: boolean; contacts: boolean; venues: boolean };
+  projects: boolean;
+  projectRequests: boolean;
+  webhookKey: string;
+}
+
+export interface MomentusSyncConfig {
+  enabled: boolean;
+  paused: boolean;
+  baseUrl: string;
+  orgCode: string;
+  apiUserId: string;
+  pollMinutes: number;
+  pastDays: number;
+  windowMonths: number;
+  eventStatuses: string[];
+  onlyWithOrders: boolean;
+  departments: string[];
+  prepHours: number;
+  returnHours: number;
+  statusMap: Record<string, JobStatus>;
+  pullEvents: boolean;
+  pullOrders: boolean;
+  pushQuotes: boolean;
+  orderDepartment: string;
+  orderType: string;
+  miscResource: string;
+  pushInventory: boolean;
+  inventoryCategories: string[];
+  conflictRule: ConflictRule;
+  endpoints: Record<string, string>;
+}
+
+export interface IntegrationSummary<C> {
+  config: C;
+  state: {
+    lastPollAt: number | null;
+    lastLinesPollAt: number | null;
+    lastWebhookAt: number | null;
+    lastError: string;
+    initialDone: boolean;
+    seenStatuses: Record<string, string>;
+    inventoryBlocked: boolean;
+    lastInventoryAt: number | null;
+  };
+  pending: number;
+  failed: { id: string; action: string; collection: string; record: string; remoteId: string; attempts: number; error: string; updated: string }[];
+  links: Record<string, number>;
+  secretSet: boolean;
+  webhookUrl?: string;
+}
+
+export interface Integrations {
+  rentman: IntegrationSummary<RentmanSyncConfig>;
+  momentus: IntegrationSummary<MomentusSyncConfig>;
+}
+
+export interface SyncConflict {
+  collection: string;
+  record: string;
+  remoteId: string;
+  field: string;
+  local: unknown;
+  remote: unknown;
+  winner: "local" | "remote";
+}
+
+export interface SyncLogEntry {
+  id: string;
+  kind: string;
+  status: "ok" | "partial" | "failed";
+  counts: Record<string, number>;
+  errors: { what: string; id: string; name: string; message: string }[];
+  conflicts: SyncConflict[];
+  message: string;
+  who: string;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface SyncLink {
+  provider: IntegrationProvider;
+  remoteType: string;
+  remoteId: string;
+  syncedAt: string;
+  extra: Record<string, unknown>;
+  active: boolean;
+}
+
 export const api = {
   // First run: the login page offers to create the first admin when there
   // are no users yet — see routes_setup.pb.js.
@@ -1095,6 +1215,21 @@ export const api = {
     request<CsvImportResult>("/api/import/csv", json("POST", { kind, rows, dryRun })),
   listImportRuns: () => request<ImportRun[]>("/api/import/runs"),
 
+  // Live sync
+  getIntegrations: () => request<Integrations>("/api/integrations"),
+  updateIntegration: <P extends IntegrationProvider>(
+    provider: P,
+    changes: Partial<P extends "rentman" ? RentmanSyncConfig : MomentusSyncConfig> & { secret?: string },
+  ) => request<Integrations[P]>(`/api/integrations/${provider}`, json("PUT", changes)),
+  testIntegration: (provider: IntegrationProvider) => request<{ ok: boolean; message: string }>(`/api/integrations/${provider}/test`, json("POST")),
+  integrationAction: (provider: IntegrationProvider, action: "sync" | "retry" | "discard" | "pushInventory") =>
+    request<{ ok: boolean; retried?: number; discarded?: number }>(`/api/integrations/${provider}/actions`, json("POST", { action })),
+  integrationLog: (provider: IntegrationProvider) => request<SyncLogEntry[]>(`/api/integrations/${provider}/log`),
+  momentusResourcesCsv: () => requestFile("/api/integrations/momentus/resources.csv", "momentus-resources.csv"),
+  syncLink: (collection: "jobs" | "items" | "contacts" | "venues", id: string) =>
+    request<{ link: SyncLink | null; canSendToRentman: boolean; sending: boolean }>(`/api/integrations/link/${collection}/${id}`),
+  sendToRentman: (jobId: string) => request<{ ok: boolean }>(`/api/integrations/rentman/project-request/${jobId}`, json("POST")),
+
   // Labels
   listLabels: () => request<(LabelTemplateData & { id: string })[]>("/api/labels"),
   getLabel: (id: string) => request<LabelTemplateData & { id: string }>(`/api/labels/${id}`),
@@ -1150,6 +1285,8 @@ export const api = {
     request<ListView>(`/api/views/${id}`, json("PATCH", data)),
   deleteView: (id: string) => request<{ ok: true }>(`/api/views/${id}`, json("DELETE")),
   // How much of each project's kit is needed and out, for "To prep next".
+  // Units still out per project, for the ones with any (pb_hooks/lib/tracking.js).
+  outstanding: () => request<Outstanding>("/api/jobs/outstanding"),
   packing: (jobIds: string[]) => request<Record<string, { needed: number; at: TrackedAt }>>(`/api/home/packing?jobs=${jobIds.join(",")}`),
 
   // You: the organisations you're in and invited to — see routes_me.pb.js.

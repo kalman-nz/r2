@@ -31,10 +31,8 @@ onRecordValidate((e) => {
 onRecordValidate((e) => {
   const { validateJob } = require(`${__hooks}/lib/validation.js`);
   const { syncJobStatus } = require(`${__hooks}/lib/jobStatuses.js`);
-  const { checkUntracked } = require(`${__hooks}/lib/tracking.js`);
   syncJobStatus(e.app, e.record);
   validateJob(e.app, e.record);
-  checkUntracked(e.app, e.record);
   e.next();
 }, "jobs");
 
@@ -173,3 +171,10 @@ onRecordValidate((e) => {
   validateCrew(e.app, e.record);
   e.next();
 }, "job_crew");
+
+// A project document template's parts (lib/documents.js).
+onRecordValidate((e) => {
+  const { cleanTemplate } = require(`${__hooks}/lib/documents.js`);
+  cleanTemplate(e.record);
+  e.next();
+}, "document_templates");

@@ -9,6 +9,7 @@ import ScanPage from "./pages/ScanPage";
 import ExportsPage from "./pages/ExportsPage";
 import QuoteView from "./pages/QuoteView";
 import PackingList from "./pages/PackingList";
+import DocumentView from "./pages/DocumentView";
 import ItemsList from "./pages/ItemsList";
 import ItemDetail from "./pages/ItemDetail";
 import MaintenancePage from "./pages/MaintenancePage";
@@ -368,6 +369,14 @@ export default function App() {
         element={
           <RequireAuth>
             <QuoteView />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/print/jobs/:id/documents/:templateId"
+        element={
+          <RequireAuth>
+            <DocumentView />
           </RequireAuth>
         }
       />

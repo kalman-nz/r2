@@ -7,6 +7,7 @@ import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { useToast } from "../components/ToastProvider";
 import { JobStatusBadge } from "../components/StatusBadge";
+import { linesByHeading } from "../lib/documents";
 
 // What the warehouse packs for a job, laid out to print on A4 and tick off
 // by hand. Custom lines (delivery, labour) aren't packed, so they're left
@@ -33,18 +34,8 @@ export default function PackingList() {
   if (error || !summary) return <p className="p-6 text-red-600 text-sm">Couldn't load this project: {error ? errorText(error) : "not found"}</p>;
 
   const { job, packing } = summary;
-  const lines = summary.lines.filter((l) => l.lineType !== "custom");
   const packed = new Map(packing.items.map((p) => [p.itemId, p]));
-
-  const groups: { name: string; lines: JobLineView[] }[] = [];
-  const parentGroup = new Map<string, string>();
-  for (const line of lines) {
-    const name = line.parentLine ? (parentGroup.get(line.parentLine) ?? line.group) : line.group;
-    if (!line.parentLine) parentGroup.set(line.id, name);
-    let group = groups.find((g) => g.name === name);
-    if (!group) groups.push((group = { name, lines: [] }));
-    group.lines.push(line);
-  }
+  const groups = linesByHeading(summary.lines);
 
   return (
     <div className="min-h-screen bg-paper print:bg-white">
@@ -127,7 +118,7 @@ export default function PackingList() {
             ))}
           </tbody>
         </table>
-        {lines.length === 0 && <p className="text-gray-500">Nothing to pack on this project.</p>}
+        {groups.length === 0 && <p className="text-gray-500">Nothing to pack on this project.</p>}
 
         {job.notes && (
           <section className="break-inside-avoid">
