@@ -121,6 +121,10 @@ Adding a permission: add it to `lib/permissions.js`, check it where it applies, 
 - Issuing a quote freezes everything it prints into a numbered snapshot (`Q1042-2`), so later changes never alter it.
 - Quote, packing list and label PDFs are drawn server-side by `print/r2_pdf.py` (fpdf2, with Inter embedded so macrons print). Dates on them use the time zone in Settings → Business.
 
+### Addresses
+
+Contacts' billing addresses and locations' addresses look themselves up as you type: pick a match and it's filled in a line at a time (building or business name, street, suburb, town and postcode, and the country when it's not yours), still editable for a level or PO box. It's Photon (photon.komoot.io), OpenStreetMap's free search-as-you-type geocoder, called from the server (`GET /api/addresses`, `lib/addresses.js`) and biased to the organisation's country from its time zone. New Zealand's street addresses in OpenStreetMap come from LINZ, so they're good; venue names often aren't there, so search a venue by its street address. Swapping in a paid service (NZ Post, Addy, Google) only touches `lib/addresses.js`.
+
 ### Item photos
 
 "Find photo" under an item's photo searches the web (Bing images, no API key) and saves the best match. A local vision model in Ollama does the thinking: it turns the item's name, folder, description and custom fields into a search query, then looks at the top results and picks the one showing exactly that item. `print/r2_find_photo.py` does the work; set `R2_OLLAMA_URL` and `R2_VISION_MODEL` (default `gemma4:12b-it-qat`, any Ollama model with vision works). It takes 5–20 seconds.

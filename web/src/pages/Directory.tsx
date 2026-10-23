@@ -7,6 +7,7 @@ import type { Job, ViewConfig } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useRole } from "../lib/roles";
+import AddressInput from "../components/AddressInput";
 import ColumnsMenu from "../components/ColumnsMenu";
 import Field from "../components/Field";
 import PageViews from "../components/PageViews";
@@ -23,7 +24,8 @@ import { asBool, asString, asStrings } from "../lib/views";
 interface FieldSpec {
   key: string;
   label: string;
-  type?: "text" | "email" | "textarea" | "select";
+  // address: a textarea with lookup as you type (components/AddressInput.tsx).
+  type?: "text" | "email" | "textarea" | "select" | "address";
   options?: { value: string; label: string }[];
   hint?: string;
   wide?: boolean;
@@ -78,7 +80,7 @@ const CONTACTS: DirectoryConfig = {
     { key: "contactPerson", label: "Contact person" },
     { key: "email", label: "Email", type: "email", hint: "Where quotes go" },
     { key: "phone", label: "Phone" },
-    { key: "billingAddress", label: "Billing address", type: "textarea", wide: true, hint: "Printed on quotes" },
+    { key: "billingAddress", label: "Billing address", type: "address", wide: true, hint: "Printed on quotes" },
     { key: "notes", label: "Notes", type: "textarea", wide: true },
   ],
   columns: [
@@ -105,7 +107,7 @@ const VENUES: DirectoryConfig = {
   jobField: "venue",
   fields: [
     { key: "name", label: "Name", wide: true },
-    { key: "address", label: "Address", type: "textarea", wide: true },
+    { key: "address", label: "Address", type: "address", wide: true },
     { key: "contactName", label: "On-site contact" },
     { key: "phone", label: "Phone" },
     { key: "notes", label: "Notes", type: "textarea", wide: true, hint: "Access, loading dock, power, parking" },
@@ -309,7 +311,9 @@ function DirectoryDetail({ config }: { config: DirectoryConfig }) {
             const onChange = (v: string) => setDraft((d) => ({ ...d, [f.key]: v }));
             return (
               <Field key={f.key} label={f.label} hint={f.hint} className={f.wide ? "sm:col-span-2" : ""}>
-                {f.type === "textarea" ? (
+                {f.type === "address" ? (
+                  <AddressInput value={value} onChange={onChange} disabled={readOnly} />
+                ) : f.type === "textarea" ? (
                   <textarea value={value} onChange={(e) => onChange(e.target.value)} disabled={readOnly} rows={3} className="input py-2" />
                 ) : f.type === "select" ? (
                   <select value={value} onChange={(e) => onChange(e.target.value)} disabled={readOnly} className="input py-2">

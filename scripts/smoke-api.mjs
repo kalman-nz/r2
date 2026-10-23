@@ -1014,6 +1014,8 @@ assert.equal(desks.items[0].parent, audio.id, "category path reuses the existing
 assert.equal(desks.items[0].org, orgA);
 assert.equal((await bossB.ok("POST", "/api/import/csv", { kind: "items", rows: csvRows })).committed, true, "B can import the same codes");
 await planner.fails("POST", "/api/import/rentman", null, 403);
+// Address lookup: too short to look up (and nothing goes out for it).
+assert.deepEqual(await tech.ok("GET", "/api/addresses?q=ab"), []);
 log("search, scan lookup and CSV import (dry run, all-or-nothing, category paths, per organisation)");
 
 // --- calendar feed (covers the next year, so it needs a job inside that) ---
