@@ -203,7 +203,7 @@ function shareOutToLines(lineViews, state) {
 // POST /api/jobs/{id}/tracking-status sets it. Returns { step, stepName,
 // status, statusName } or null.
 function suggestion(app, job, state, steps) {
-  if (job.getBool("untracked") || job.getString("status") === "cancelled") return null;
+  if (job.getString("status") === "cancelled") return null;
   const needing = state.items.filter((i) => i.needed > 0);
   if (needing.length === 0) return null;
   let step = null;
@@ -224,18 +224,24 @@ function suggestion(app, job, state, steps) {
   return { step: step.id, stepName: step.getString("name"), status: target.id, statusName: target.getString("name") };
 }
 
-// A project can go without equipment tracking (jobs.untracked), but not
-// while kit it's tracked is still with it: that has to come back first.
-// Runs before every save of a project (records_validation.pb.js).
-function checkUntracked(app, record) {
-  if (!record.getBool("untracked") || record.isNew() || record.original().getBool("untracked")) return;
-  const rows = arrayOf(new DynamicModel({ n: 0 }));
+// Units still out on each of an organisation's projects, from the scan
+// ledger (out minus in; moves between steps don't change it): { jobId:
+// { units, status } } for the projects with any. A project only counts as
+// tracked once something's been scanned on it, so this is empty for
+// projects nobody scans.
+function outstandingByJob(app, org) {
+  const rows = arrayOf(new DynamicModel({ job: "", status: "", n: 0 }));
   app
     .db()
-    .newQuery("SELECT CAST(COALESCE(SUM(CASE direction WHEN 'out' THEN quantity WHEN 'in' THEN -quantity ELSE 0 END), 0) AS INTEGER) AS n FROM scans WHERE job = {:job}")
-    .bind({ job: record.id })
+    .newQuery(
+      "SELECT s.job AS job, j.status AS status, CAST(SUM(CASE s.direction WHEN 'out' THEN s.quantity WHEN 'in' THEN -s.quantity ELSE 0 END) AS INTEGER) AS n " +
+        "FROM scans s JOIN jobs j ON j.id = s.job WHERE j.org = {:org} GROUP BY s.job, j.status HAVING n > 0",
+    )
+    .bind({ org: org })
     .all(rows);
-  if (rows[0].n > 0) throw new BadRequestError("Some of this project's kit is still out: bring it back before turning tracking off");
+  const out = {};
+  for (const r of rows) out[r.job] = { units: r.n, status: r.status };
+  return out;
 }
 
 // Replaces the organisation's steps with `list`, in order: [{ id?, name,
@@ -308,4 +314,4 @@ function saveSteps(app, org, list) {
   return stepsOf(app, org);
 }
 
-module.exports = { STAGES, DEFAULT_STEPS, checkUntracked, stepsOf, createDefaultSteps, stepFor, trackingState, reachedCount, shareOutToLines, suggestion, saveSteps };
+module.exports = { STAGES, DEFAULT_STEPS, outstandingByJob, stepsOf, createDefaultSteps, stepFor, trackingState, reachedCount, shareOutToLines, suggestion, saveSteps };

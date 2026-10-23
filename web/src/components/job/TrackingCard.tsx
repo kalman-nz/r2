@@ -1,49 +1,35 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import type { JobLineView, JobSummary } from "../../lib/api";
-import { errorText } from "../../lib/errors";
-import { pb } from "../../lib/pocketbase";
 import { STATUS_COLOURS } from "../../lib/statuses";
 import { addAt, linesProgress, useTrackingSteps } from "../../lib/tracking";
 import { TrackingStatus } from "../StatusBadge";
-import Switch from "../Switch";
-import { useToast } from "../ToastProvider";
 import TrackingSuggestion from "./TrackingSuggestion";
 
 // Where a project's kit is (equipment tracking): the whole project, then each
 // heading, so the audio can be Loaded while the lighting's only Prepped.
-// A project can go without it (a small dry hire, say): planners switch it
-// off here, once nothing tracked is still out.
-export default function TrackingCard({ summary, canScan, canEdit }: { summary: JobSummary; canScan: boolean; canEdit: boolean }) {
+// There's no switch: a project's tracked once someone scans its kit, and a
+// project nobody scans just goes without.
+export default function TrackingCard({ summary, canScan }: { summary: JobSummary; canScan: boolean }) {
   const { steps } = useTrackingSteps();
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const [saving, setSaving] = useState(false);
-  const { job } = summary;
+  const { job, packing } = summary;
+  const scanLink = canScan && (
+    <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
+      Scan →
+    </Link>
+  );
 
-  async function setTracked(on: boolean) {
-    setSaving(true);
-    try {
-      await pb.collection("jobs").update(job.id, { untracked: !on });
-      await queryClient.invalidateQueries({ queryKey: ["job-summary", job.id] });
-    } catch (err) {
-      showToast("error", errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-  const toggle = canEdit && <Switch label="Track this project's equipment" checked={!job.untracked} disabled={saving} onChange={setTracked} />;
-
-  if (job.untracked) {
+  if (packing.scanCount === 0) {
     return (
       <section className="card p-4 flex flex-col gap-2 text-sm">
-        <h2 className="text-sm font-semibold text-gray-500">Equipment tracking</h2>
-        <p className="text-gray-500 text-xs">Not tracked on this project: its kit goes out without being scanned.</p>
-        {toggle}
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-500">Equipment tracking</h2>
+          {scanLink}
+        </div>
+        <p className="text-gray-500 text-xs">Nothing's been scanned yet. Scan this project's kit to track it; projects nobody scans go without.</p>
       </section>
     );
   }
+  const notBack = packing.items.reduce((sum, i) => sum + Math.max(0, i.out), 0);
   const tracked = summary.lines.filter((l) => l.tracking);
   const total = tracked.reduce((sum, l) => sum + Math.round(l.quantity), 0);
   const at = tracked.reduce((sum, l) => addAt(sum, l.tracking!.at), {} as Record<string, number>);
@@ -62,12 +48,13 @@ export default function TrackingCard({ summary, canScan, canEdit }: { summary: J
     <section className="card p-4 flex flex-col gap-2.5 text-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-500">Equipment tracking</h2>
-        {canScan && (
-          <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
-            Scan →
-          </Link>
-        )}
+        {scanLink}
       </div>
+      {job.status === "returned" && notBack > 0 && (
+        <p className="text-xs font-medium text-fault-ink">
+          Overdue: the project's returned, but {notBack} unit{notBack === 1 ? " hasn't" : "s haven't"} been tracked back in.
+        </p>
+      )}
       {canScan && <TrackingSuggestion summary={summary} />}
       {total === 0 ? (
         <p className="text-gray-500 text-xs">No physical kit on this project.</p>
@@ -106,7 +93,6 @@ export default function TrackingCard({ summary, canScan, canEdit }: { summary: J
           )}
         </>
       )}
-      {toggle && <div className="pt-2 border-t border-gray-100">{toggle}</div>}
     </section>
   );
 }

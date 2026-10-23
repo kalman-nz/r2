@@ -82,6 +82,7 @@ const GROUPS = [
     permissions: [
       ["import.csv", "Import spreadsheets"],
       ["import.rentman", "Import from Rentman"],
+      ["integrations.manage", "Set up live sync with Rentman and Momentus"],
       ["export.xero", "Export invoices for Xero"],
     ],
   },
@@ -130,7 +131,7 @@ function normalise(list) {
 
 const PLANNER = ALL.filter(
   (key) =>
-    ["settings.edit", "calendar.manage", "team.manage", "roles.manage", "logs.view", "import.rentman", "views.publish"].indexOf(key) === -1 &&
+    ["settings.edit", "calendar.manage", "team.manage", "roles.manage", "logs.view", "import.rentman", "integrations.manage", "views.publish"].indexOf(key) === -1 &&
     key.indexOf("templates.") !== 0,
 );
 const TECH = ["units.flag", "scan.out", "scan.in", "labels.print"];

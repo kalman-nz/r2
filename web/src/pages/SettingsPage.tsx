@@ -10,7 +10,9 @@ import RepairStatusesSettings from "../components/RepairStatusesSettings";
 import TrackingStepsSettings from "../components/TrackingStepsSettings";
 import JobStatusesSettings from "../components/JobStatusesSettings";
 import FeaturesSettings from "../components/FeaturesSettings";
+import DocumentsSettings from "../components/DocumentsSettings";
 import ImportSettings from "../components/ImportSettings";
+import IntegrationsSettings from "../components/IntegrationsSettings";
 import AccountingSettings from "../components/AccountingSettings";
 import MembersSettings from "../components/MembersSettings";
 import RolesSettings from "../components/RolesSettings";
@@ -67,6 +69,18 @@ const NAV_ITEMS: NavItem[] = [
         <path d="M4 6h10M4 12h16M4 18h7" />
         <circle cx="18" cy="6" r="2" />
         <circle cx="15" cy="18" r="2" />
+      </Icon>
+    ),
+  },
+  {
+    to: "documents",
+    label: "Documents",
+    group: "How you work",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <path d="M7 3h7l5 5v13H7z" />
+        <path d="M14 3v5h5M10 12h6M10 16h6" />
       </Icon>
     ),
   },
@@ -165,6 +179,21 @@ const NAV_ITEMS: NavItem[] = [
         <path d="M12 3v12" />
         <path d="M7 10l5 5 5-5" />
         <path d="M5 21h14" />
+      </Icon>
+    ),
+  },
+  {
+    to: "integrations",
+    label: "Integrations",
+    group: "Data",
+    permissions: ["integrations.manage"],
+    feature: "integrations",
+    icon: (
+      <Icon>
+        <path d="M4 12a8 8 0 0 1 13.7-5.6L20 9" />
+        <path d="M20 4v5h-5" />
+        <path d="M20 12a8 8 0 0 1-13.7 5.6L4 15" />
+        <path d="M4 20v-5h5" />
       </Icon>
     ),
   },
@@ -305,7 +334,9 @@ export default function SettingsPage() {
             <Route path="equipment-tracking" element={gate("equipment-tracking", <TrackingStepsSettings />)} />
             <Route path="project-statuses" element={gate("project-statuses", <JobStatusesSettings />)} />
             <Route path="features" element={gate("features", <FeaturesSettings />)} />
+            <Route path="documents" element={gate("documents", <DocumentsSettings />)} />
             <Route path="import" element={gate("import", <ImportSettings />)} />
+            <Route path="integrations" element={gate("integrations", <IntegrationsSettings />)} />
             <Route path="labels" element={gate("labels", <LabelsList />)} />
             <Route path="printer" element={gate("printer", <PrinterSettings />)} />
             <Route path="team" element={gate("team", <MembersSettings />)} />

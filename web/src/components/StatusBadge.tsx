@@ -38,6 +38,16 @@ export function JobStatusBadge({ status, jobStatus }: { status: JobStatus; jobSt
   return <span className={`${base} ${JOB_STYLES[status] ?? ""}`}>{label}</span>;
 }
 
+// A project that's overdue (lib/overdue.ts), with why on hover.
+export function OverdueBadge({ reason }: { reason: string }) {
+  if (!reason) return null;
+  return (
+    <span className={`${base} bg-red-50 text-red-700`} title={reason}>
+      Overdue
+    </span>
+  );
+}
+
 export function SerialStatusBadge({ status }: { status: SerialStatus }) {
   return <span className={`${base} ${SERIAL_STYLES[status] ?? ""}`}>{SERIAL_STATUS_LABELS[status] ?? status}</span>;
 }

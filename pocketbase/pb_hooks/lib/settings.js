@@ -68,7 +68,7 @@ const TIMEZONES = [
 
 // Stored like any other setting but never sent to the browser: GET only
 // says whether one is set. An admin can replace or clear it.
-const SECRET_KEYS = ["rentmanApiToken"];
+const SECRET_KEYS = ["rentmanApiToken", "momentusApiSecret"];
 
 // What GET /api/app-settings returns to any member of the organisation.
 function publicSettings(org) {

@@ -299,7 +299,7 @@ routerAdd(
     if (ids.length === 0) return e.json(200, out);
     const steps = stepsOf($app, ctx.orgId);
     for (const job of $app.findRecordsByIds("jobs", ids)) {
-      if (!job || job.getString("org") !== ctx.orgId || job.getBool("untracked")) continue;
+      if (!job || job.getString("org") !== ctx.orgId) continue;
       const lines = loadLines($app, job.id);
       const itemsById = loadItems($app, lines);
       const state = trackingState($app, job.id, needsOf(lines, itemsById), itemsById, steps);

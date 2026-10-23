@@ -259,16 +259,6 @@ function ScanJob({ jobId }: { jobId: string }) {
   if (steps.length === 0) {
     return <p className="text-gray-500 text-sm">Your role doesn't include tracking kit going out or coming back.</p>;
   }
-  if (job.untracked) {
-    return (
-      <p className="text-gray-500 text-sm">
-        <Link to={`/projects/${job.id}`} className="text-signal-ink hover:text-signal-ink-hover">
-          #{job.number} {job.name}
-        </Link>{" "}
-        goes without equipment tracking. Turn it on from the project to scan its kit.
-      </p>
-    );
-  }
 
   // The project's physical kit by heading, and how far the chosen step's got.
   const tracked = summary.lines.filter((l) => l.tracking);

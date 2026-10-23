@@ -156,6 +156,21 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
+// Units still out on each project, from its scans: { jobId: { units,
+// status } } for the ones with any (lib/tracking.js outstandingByJob). A
+// project set to returned with kit still out is overdue.
+routerAdd(
+  "GET",
+  "/api/jobs/outstanding",
+  (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { outstandingByJob } = require(`${__hooks}/lib/tracking.js`);
+    const ctx = requireOrg(e);
+    return e.json(200, outstandingByJob($app, ctx.orgId));
+  },
+  $apis.requireAuth("users"),
+);
+
 // The organisation's project statuses, in order (lib/jobStatuses.js
 // saveJobStatuses): { statuses: [{ id?, name, stage, colour, isDefault }],
 // moves: { removedId: keptId } }.

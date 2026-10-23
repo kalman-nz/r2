@@ -41,11 +41,12 @@ For a hosted, multi-organisation install:
 ## Tests
 
 ```sh
-pnpm test     # unit tests: availability engine, pricing/GST maths, Xero file, iCal feed, maintenance dates
+pnpm test     # unit tests: availability engine, pricing/GST maths, Xero file, iCal feed, maintenance dates, sync merge and mappings
 pnpm smoke    # end-to-end API checks against a running server (needs PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD)
+pnpm sync:e2e # live sync end to end, against the mock Rentman and Momentus servers (see Live sync)
 ```
 
-`pnpm smoke` creates records and leaves them, so point it at a throwaway database. Its PDF checks need the server's Python set up, which `pnpm dev:pb` does.
+`pnpm smoke` and `pnpm sync:e2e` create records and leave them, so point them at a throwaway database. The smoke test's PDF checks need the server's Python set up, which `pnpm dev:pb` does.
 
 ## How it fits together
 
@@ -171,7 +172,16 @@ Exports → Xero builds a file for Xero's sales invoice import. Each job becomes
 
 ### Rentman import
 
-Settings → Import pulls equipment, units, folders (as categories), stock locations, custom field names, contacts, locations and projects with their equipment from the customer's own Rentman account with their own token, a step at a time. Re-running it updates what it brought in before (matched on Rentman ids) and never deletes. It does overwrite imported fields edited in R2 since, so it's for the switch-over. Contacts can also come in by CSV.
+Settings → Import pulls equipment, units, folders (as categories), stock locations, custom field names, contacts, locations and projects with their equipment from the customer's own Rentman account with their own token, a step at a time. Re-running it updates what it brought in before (matched on Rentman ids) and never deletes. It does overwrite imported fields edited in R2 since, so it's for a one-off switch-over; live sync (below) is for running both. Contacts can also come in by CSV.
+
+### Live sync: Rentman and Momentus
+
+Settings → Integrations keeps R2 in step with Rentman (two-way) or with event bookings in Momentus Enterprise. Admins only (`integrations.manage`), and organisations can turn it off as a feature.
+
+- **Engine** (`lib/sync.js`): `sync_links` records which R2 record is which remote one, with `base`, the fields both sides last agreed on. Every sync is a field-by-field three-way merge (`lib/merge.js`): a field changed on one side goes to the other; changed on both is a conflict, settled by the organisation's rule (newest edit, theirs, or R2's) and listed in the sync history. Nothing is sent from inside a save: record hooks (`records_sync.pb.js`) and webhooks queue work in `sync_queue`, and a cron worker (`routes_sync.pb.js`) runs it every minute, with retries and backoff, then each connector's catch-up pass when it's due. The sync's own writes skip the hooks. Deletes never cross over: removed on one side means archived on the other.
+- **Rentman** (`lib/rentmanSync.js`): the import's own steps, merging instead of overwriting, so both share one mapping (`lib/rentmanMap.js`). Items, contacts and locations sync both ways; everything else comes in only. Rentman's API doesn't let other apps change projects, so projects and their lines come in only, and an R2 project can be sent as a project request, which links back up once accepted in Rentman. Rentman's webhook (address on the settings page) only says what changed; R2 re-reads it with the organisation's token, so a forged webhook can only cause a harmless re-read. Rentman's webhook signature format isn't published, so it isn't checked.
+- **Momentus** (`lib/momentus.js`, `lib/momentusSync.js`): events → projects (account as client, first room as location, the venue's statuses mapped to R2's), AV orders → project lines, issued quotes → an order on the event, items → Momentus resources (with a spreadsheet fallback for licences that won't allow it). Polled, as Momentus has no webhooks R2 relies on. **Built without access to a Momentus instance**: Momentus only documents its API inside each instance (`/api/help`). Every path, field name and the sign-in handshake are in `lib/momentus.js`, marked unconfirmed, and an organisation can override paths in Settings. Check them against a real instance before a venue relies on it.
+- **Trying it locally:** `node scripts/mock-rentman.mjs` and `node scripts/mock-momentus.mjs` stand in for both (Momentus with address `http://127.0.0.1:4200`, organisation code `10`, API user `R2API`, secret `mock-secret`). Start PocketBase with `RENTMAN_BASE_URL=http://127.0.0.1:4100 R2_ALLOW_HTTP_MOMENTUS=1 pnpm dev:pb`, then `pnpm sync:e2e`. `POST /api/sync/tick` (superusers) runs the worker without waiting for its minute.
 
 ### PocketBase JSVM gotchas (all hit while building this)
 
@@ -194,6 +204,7 @@ The brief's MVP is built:
 - **Kits and accessories:** a kit's contents and an item's accessories are added to a job automatically.
 - **Warehouse:** a packing list PDF, and equipment tracking (prepped, loaded, returned) from an installable web app (scanner or camera, iPhone included).
 - **Getting data in:** CSV import for items and contacts, and Rentman import of equipment, contacts and projects.
+- **Live sync:** two-way with Rentman; Momentus events, orders, quotes and inventory for venues (Momentus not yet checked against a real instance).
 - **Getting data out:** the iCal feed and the Xero CSV export.
 - **Accounts:** organisations, invitations with email verification, custom roles with per-action permissions in each organisation, a platform admin panel, and first-run setup.
 - **Fits each business:** features it can turn off, and its own project and repair statuses on fixed stages.

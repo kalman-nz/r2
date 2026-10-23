@@ -1,9 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type Item, type ViewConfig } from "../lib/api";
 import ColumnsMenu from "../components/ColumnsMenu";
+import FiltersMenu, { FilterCheck, FilterField, GroupFields, SortList } from "../components/FiltersMenu";
+import DataTable, { type TableColumn } from "../components/DataTable";
+import { readGroups, readSorts, sortRows, sortSettings, type GroupOption, type Sort } from "../lib/table";
 import PageViews from "../components/PageViews";
 import { asBool, asString, asStrings } from "../lib/views";
 import { renderItemLabelImage, sendRenderedLabel } from "../lib/print";
@@ -21,9 +24,6 @@ import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
 import BulkEditModal, { updateEach } from "../components/item/BulkEditModal";
 
-const CHECKBOX_COLUMN_WIDTH = 36;
-const MIN_COLUMN_WIDTH = 60;
-
 // An item plus what the table needs that isn't on the record itself.
 interface Row extends Item {
   categoryPath: string;
@@ -31,15 +31,9 @@ interface Row extends Item {
   freeNow: number | null;
 }
 
-interface Column {
-  key: string;
-  label: string;
-  align?: "right";
+interface Column extends TableColumn<Row> {
   toggleable: boolean;
   defaultVisible: boolean;
-  defaultWidth: number;
-  sortValue: (row: Row) => string | number;
-  render: (row: Row) => React.ReactNode;
 }
 
 const TYPE_LABEL = (i: Item) => (i.kind === "kit" ? "Kit" : i.tracking === "serial" ? "Serialised" : "Bulk");
@@ -50,13 +44,16 @@ const COLUMNS: Column[] = [
     label: "Name",
     toggleable: false,
     defaultVisible: true,
-    defaultWidth: 260,
+    width: 260,
+    minWidth: 150,
+    flex: true,
     sortValue: (i) => i.name.toLowerCase(),
+    title: (i) => i.name,
     render: (i) => (
-      <div className="flex flex-col min-w-0">
+      <span className="flex items-center gap-1.5 min-w-0">
         <span className="font-medium text-gray-900 truncate">{i.name}</span>
-        {i.archived && <span className="text-xs text-gray-400">Archived</span>}
-      </div>
+        {i.archived && <span className="shrink-0 text-[11px] text-gray-400">Archived</span>}
+      </span>
     ),
   },
   {
@@ -64,7 +61,8 @@ const COLUMNS: Column[] = [
     label: "Code",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 110,
+    width: 110,
+    minWidth: 64,
     sortValue: (i) => i.code.toLowerCase(),
     render: (i) => <span className="text-gray-600 font-mono text-xs">{i.code || "—"}</span>,
   },
@@ -73,8 +71,10 @@ const COLUMNS: Column[] = [
     label: "Folder",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 180,
+    width: 180,
+    minWidth: 90,
     sortValue: (i) => i.categoryPath.toLowerCase(),
+    title: (i) => displayPath(i.categoryPath),
     render: (i) => <span className="text-gray-600 truncate">{displayPath(i.categoryPath) || "—"}</span>,
   },
   {
@@ -82,7 +82,8 @@ const COLUMNS: Column[] = [
     label: "Type",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 100,
+    width: 100,
+    minWidth: 84,
     sortValue: (i) => TYPE_LABEL(i),
     render: (i) => <span className="text-gray-600">{TYPE_LABEL(i)}</span>,
   },
@@ -92,7 +93,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 80,
+    width: 80,
+    minWidth: 56,
     sortValue: (i) => i.stock ?? -1,
     render: (i) => <span className="text-gray-700 tabular-nums">{i.stock === null ? "—" : num(i.stock)}</span>,
   },
@@ -102,7 +104,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 100,
+    width: 100,
+    minWidth: 72,
     sortValue: (i) => i.freeNow ?? -Infinity,
     render: (i) => {
       if (i.freeNow === null) return <span className="text-gray-300">…</span>;
@@ -121,7 +124,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: false,
-    defaultWidth: 130,
+    width: 130,
+    minWidth: 80,
     sortValue: (i) => i.outOfServiceQty,
     render: (i) => <span className="text-gray-600 tabular-nums">{i.tracking === "bulk" ? num(i.outOfServiceQty) : "—"}</span>,
   },
@@ -132,7 +136,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 100,
+    width: 100,
+    minWidth: 76,
     sortValue: (i) => i.price,
     render: (i) => (
       <span className="text-gray-700 tabular-nums">
@@ -146,7 +151,8 @@ const COLUMNS: Column[] = [
     label: "Location",
     toggleable: true,
     defaultVisible: true,
-    defaultWidth: 130,
+    width: 130,
+    minWidth: 72,
     sortValue: (i) => i.locationInWarehouse.toLowerCase(),
     render: (i) => <span className="text-gray-600">{i.locationInWarehouse || "—"}</span>,
   },
@@ -155,7 +161,8 @@ const COLUMNS: Column[] = [
     label: "Barcode",
     toggleable: true,
     defaultVisible: false,
-    defaultWidth: 130,
+    width: 130,
+    minWidth: 80,
     sortValue: (i) => i.barcode.toLowerCase(),
     render: (i) => <span className="text-gray-600 font-mono text-xs">{i.barcode || "—"}</span>,
   },
@@ -165,7 +172,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: false,
-    defaultWidth: 150,
+    width: 150,
+    minWidth: 90,
     sortValue: (i) => i.replacementValue,
     render: (i) => <span className="text-gray-600 tabular-nums">{money(i.replacementValue)}</span>,
   },
@@ -175,7 +183,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: false,
-    defaultWidth: 120,
+    width: 120,
+    minWidth: 72,
     sortValue: (i) => i.weightKg,
     render: (i) => <span className="text-gray-600 tabular-nums">{i.weightKg ? num(i.weightKg) : "—"}</span>,
   },
@@ -185,7 +194,8 @@ const COLUMNS: Column[] = [
     align: "right",
     toggleable: true,
     defaultVisible: false,
-    defaultWidth: 120,
+    width: 120,
+    minWidth: 72,
     sortValue: (i) => i.powerW,
     render: (i) => <span className="text-gray-600 tabular-nums">{i.powerW ? num(i.powerW) : "—"}</span>,
   },
@@ -193,16 +203,47 @@ const COLUMNS: Column[] = [
 
 const TYPES = ["all", "Bulk", "Serialised", "Kit"];
 
+// Ways to group items (a view can group, then subgroup).
+const GROUPS: GroupOption<Row>[] = [
+  {
+    key: "folder",
+    label: "Folder",
+    value: (i) => ({ id: i.category || "", label: displayPath(i.categoryPath) || "Inventory", order: i.categoryPath.toLowerCase() }),
+  },
+  { key: "type", label: "Type", value: (i) => ({ id: TYPE_LABEL(i), label: TYPE_LABEL(i), order: TYPES.indexOf(TYPE_LABEL(i)) }) },
+  {
+    key: "location",
+    label: "Warehouse location",
+    value: (i) => {
+      const l = i.locationInWarehouse.trim();
+      return l ? { id: l, label: l, order: l.toLowerCase() } : { id: "", label: "No location", order: "\uffff" };
+    },
+  },
+  {
+    key: "free",
+    label: "Availability",
+    value: (i) =>
+      i.freeNow === null
+        ? { id: "?", label: "Checking…", order: 2 }
+        : i.freeNow <= 0
+          ? { id: "none", label: "None free now", order: 0 }
+          : { id: "some", label: "Some free now", order: 1 },
+  },
+];
+const GROUP_KEYS = GROUPS.map((g) => g.key);
+const SORT_KEYS = COLUMNS.map((c) => c.key);
+
 // The page as it comes, and what a saved view keeps (components/PageViews.tsx):
 // the filters, and the columns with their widths and sort.
 const DEFAULT_VIEW: ViewConfig = {
   type: "all",
   archived: false,
   unavailable: false,
+  where: "",
   columns: COLUMNS.filter((c) => c.toggleable && c.defaultVisible).map((c) => c.key),
   widths: {},
-  sortKey: "name",
-  sortDir: "asc",
+  ...sortSettings([{ key: "name", dir: "asc" }]),
+  groupBy: [],
 };
 
 export default function ItemsList() {
@@ -225,10 +266,12 @@ export default function ItemsList() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
   const [unavailableOnly, setUnavailableOnly] = useState(false);
+  // A warehouse location ("" for anywhere).
+  const [shelf, setShelf] = useState("");
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(DEFAULT_VIEW.columns as string[]));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const [sortKey, setSortKey] = useState("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sorts, setSorts] = useState<Sort[]>([{ key: "name", dir: "asc" }]);
+  const [groupBy, setGroupBy] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { data: categories = [] } = useCategories();
@@ -242,10 +285,11 @@ export default function ItemsList() {
     type: typeFilter,
     archived: showArchived,
     unavailable: unavailableOnly,
+    where: shelf,
     columns: COLUMNS.filter((c) => c.toggleable && visibleColumns.has(c.key)).map((c) => c.key),
     widths: columnWidths,
-    sortKey,
-    sortDir,
+    ...sortSettings(sorts),
+    groupBy,
   };
 
   function applySettings(s: ViewConfig) {
@@ -253,15 +297,15 @@ export default function ItemsList() {
     setTypeFilter(TYPES.includes(type) ? type : "all");
     setShowArchived(asBool(s.archived));
     setUnavailableOnly(asBool(s.unavailable));
+    setShelf(asString(s.where));
     setVisibleColumns(new Set(asStrings(s.columns, COLUMNS.map((c) => c.key))));
     const widths: Record<string, number> = {};
     if (s.widths && typeof s.widths === "object") {
       for (const [k, v] of Object.entries(s.widths)) if (typeof v === "number" && v > 0) widths[k] = v;
     }
     setColumnWidths(widths);
-    const key = asString(s.sortKey, "name");
-    setSortKey(COLUMNS.some((c) => c.key === key) ? key : "name");
-    setSortDir(s.sortDir === "desc" ? "desc" : "asc");
+    setSorts(readSorts(s, SORT_KEYS, { key: "name", dir: "asc" }));
+    setGroupBy(readGroups(s, GROUP_KEYS));
   }
 
   const { data: items = [], isLoading, error } = useQuery({
@@ -294,7 +338,7 @@ export default function ItemsList() {
   // Searching or filtering looks through this folder and everything in it;
   // otherwise it's like opening a folder: its subfolders, then the items
   // sitting directly in it.
-  const searching = search.trim() !== "" || typeFilter !== "all" || unavailableOnly;
+  const searching = search.trim() !== "" || typeFilter !== "all" || unavailableOnly || shelf !== "";
   const scope = useMemo(() => subtree(folders, folder), [folders, folder]);
   const subfolders = searching ? [] : (folders.children.get(folder) ?? []);
 
@@ -317,6 +361,7 @@ export default function ItemsList() {
       if (searching ? !scope.has(where) : where !== folder) return false;
       if (typeFilter !== "all" && TYPE_LABEL(i) !== typeFilter) return false;
       if (unavailableOnly && !(i.freeNow !== null && i.freeNow <= 0)) return false;
+      if (shelf && i.locationInWarehouse.trim() !== shelf) return false;
       if (
         term &&
         ![i.name, i.code, i.barcode, i.categoryPath, i.locationInWarehouse].some((v) => v.toLowerCase().includes(term))
@@ -326,16 +371,9 @@ export default function ItemsList() {
       return true;
     });
 
-    const column = COLUMNS.find((c) => c.key === sortKey) ?? COLUMNS[0];
-    const dir = sortDir === "asc" ? 1 : -1;
-    result = [...result].sort((a, b) => {
-      const av = column.sortValue(a);
-      const bv = column.sortValue(b);
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av).localeCompare(String(bv)) * dir;
-    });
+    result = sortRows(result, COLUMNS, sorts);
     return result;
-  }, [rows, search, folders, folder, scope, searching, typeFilter, showArchived, unavailableOnly, sortKey, sortDir]);
+  }, [rows, search, folders, folder, scope, searching, typeFilter, showArchived, unavailableOnly, shelf, sorts]);
 
   async function moveSelected(target: string) {
     const ids = [...selected];
@@ -408,61 +446,14 @@ export default function ItemsList() {
       );
   }
 
-  function toggleSort(key: string) {
-    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-  }
-
   const columns = COLUMNS.filter((c) => !c.toggleable || visibleColumns.has(c.key));
-  const arrow = (key: string) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  function columnWidth(c: Column): number {
-    return columnWidths[c.key] ?? c.defaultWidth;
-  }
-
-  const tableWidth = CHECKBOX_COLUMN_WIDTH + columns.reduce((sum, c) => sum + columnWidth(c), 0);
-
-  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
-
-  function onResizeMove(e: MouseEvent) {
-    const r = resizingRef.current;
-    if (!r) return;
-    const width = Math.max(MIN_COLUMN_WIDTH, Math.round(r.startWidth + (e.clientX - r.startX)));
-    setColumnWidths((prev) => ({ ...prev, [r.key]: width }));
-  }
-
-  function onResizeEnd() {
-    resizingRef.current = null;
-    document.removeEventListener("mousemove", onResizeMove);
-    document.removeEventListener("mouseup", onResizeEnd);
-  }
-
-  function startResize(e: React.MouseEvent, c: Column) {
-    e.preventDefault();
-    e.stopPropagation();
-    resizingRef.current = { key: c.key, startX: e.clientX, startWidth: columnWidth(c) };
-    document.addEventListener("mousemove", onResizeMove);
-    document.addEventListener("mouseup", onResizeEnd);
-  }
-
-  const activeFilterCount =
-    (typeFilter !== "all" ? 1 : 0) + (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0);
-
-  function toggleSelect(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    setSelected((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((i) => String(i.id)))));
-  }
+  // The filters behind the Filters button (Type has its own place).
+  const activeFilterCount = (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0) + (shelf ? 1 : 0);
+  const warehouseLocations = useMemo(
+    () => [...new Set(items.map((i) => i.locationInWarehouse.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    [items],
+  );
 
   const selectedItems = filtered.filter((i) => selected.has(String(i.id)));
 
@@ -523,7 +514,7 @@ export default function ItemsList() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={current ? `Search in ${current.name}…` : "Search name, code, barcode…"}
-            className="input w-60"
+            className="input flex-1 min-w-40 max-w-60"
           />
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input w-auto">
             <option value="all">All types</option>
@@ -531,27 +522,36 @@ export default function ItemsList() {
             <option value="Serialised">Serialised</option>
             <option value="Kit">Kits</option>
           </select>
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
-            <input type="checkbox" checked={unavailableOnly} onChange={(e) => setUnavailableOnly(e.target.checked)} />
-            None free now
-          </label>
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-            Show archived
-          </label>
-          {activeFilterCount > 0 && (
-            <button
-              onClick={() => {
-                setTypeFilter("all");
+          <div className="ml-auto flex items-center gap-1.5">
+            <FiltersMenu
+              active={activeFilterCount}
+              onReset={() => {
                 setShowArchived(false);
                 setUnavailableOnly(false);
+                setShelf("");
               }}
-              className="text-xs text-signal-ink hover:text-signal-ink-hover px-1.5"
             >
-              Clear filters
-            </button>
-          )}
-          <div className="ml-auto flex items-center gap-1.5">
+              {warehouseLocations.length > 0 && (
+                <FilterField label="Warehouse location">
+                  <select value={shelf} onChange={(e) => setShelf(e.target.value)} className="input">
+                    <option value="">Anywhere</option>
+                    {warehouseLocations.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </FilterField>
+              )}
+              <FilterCheck checked={unavailableOnly} onChange={setUnavailableOnly}>
+                Only items with none free now
+              </FilterCheck>
+              <FilterCheck checked={showArchived} onChange={setShowArchived}>
+                Show archived items
+              </FilterCheck>
+              <SortList columns={COLUMNS} sorts={sorts} onChange={setSorts} />
+              <GroupFields options={GROUPS} groupBy={groupBy} onChange={setGroupBy} />
+            </FiltersMenu>
             <ColumnsMenu
               columns={COLUMNS.filter((c) => c.toggleable)}
               visible={settings.columns as string[]}
@@ -627,95 +627,42 @@ export default function ItemsList() {
           />
         )}
 
-        <div className="card overflow-hidden flex-1 min-h-0 flex flex-col">
-          <div className="overflow-auto flex-1 min-h-0">
-            <table className="min-w-full text-[13px] border-collapse" style={{ width: tableWidth, tableLayout: "fixed" }}>
-              <colgroup>
-                <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
-                {columns.map((c) => (
-                  <col key={c.key} style={{ width: columnWidth(c) }} />
-                ))}
-              </colgroup>
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-gray-200 text-left text-gray-500">
-                  <th className="px-3 py-2">
-                    {filtered.length > 0 && (
-                      <input
-                        type="checkbox"
-                        checked={selected.size > 0 && selected.size === filtered.length}
-                        ref={(el) => {
-                          if (el) el.indeterminate = selected.size > 0 && selected.size < filtered.length;
-                        }}
-                        onChange={toggleSelectAll}
-                      />
-                    )}
-                  </th>
-                  {columns.map((c) => (
-                    <th
-                      key={c.key}
-                      onClick={() => toggleSort(c.key)}
-                      className={`relative px-3 py-2 font-medium cursor-pointer hover:text-gray-700 select-none whitespace-nowrap overflow-hidden text-ellipsis border-r border-gray-200 ${
-                        c.align === "right" ? "text-right" : "text-left"
-                      }`}
-                    >
-                      {c.label}
-                      {arrow(c.key)}
-                      <div
-                        onMouseDown={(e) => startResize(e, c)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none hover:bg-signal/30 active:bg-signal/50"
-                      />
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {subfolders.map((f) => (
-                  <tr key={f.id} onClick={() => openFolder(f.id)} className="hover:bg-gray-50 cursor-pointer">
-                    <td className="px-3 py-1.5" />
-                    <td colSpan={columns.length} className="px-3 py-1.5">
-                      <span className="flex items-center gap-2">
-                        <FolderIcon className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">{f.name}</span>
-                        <span className="font-mono text-[11px] text-gray-400">{counts.get(f.id) ?? 0}</span>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.map((item) => (
-                  <tr
-                    key={item.id}
-                    onClick={() => navigate(`/inventory/${item.id}`)}
-                    className="hover:bg-gray-50 cursor-pointer"
-                  >
-                    <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(String(item.id))}
-                        onChange={() => toggleSelect(String(item.id))}
-                      />
-                    </td>
-                    {columns.map((c) => (
-                      <td
-                        key={c.key}
-                        className={`px-3 py-1.5 overflow-hidden text-ellipsis border-r border-gray-100 ${
-                          c.align === "right" ? "text-right" : ""
-                        }`}
-                      >
-                        {c.render(item)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!isLoading && filtered.length === 0 && subfolders.length === 0 && (
-            <p className="px-4 py-6 text-gray-500 text-sm text-center">
-              {rows.length === 0 ? "No inventory yet — add items here, or import them in Settings > Import." : searching ? "No items match." : "This folder is empty."}
-            </p>
-          )}
-        </div>
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          rowKey={(i) => String(i.id)}
+          onRowClick={(i) => navigate(`/inventory/${i.id}`)}
+          sorts={sorts}
+          onSortsChange={setSorts}
+          groups={groupBy.map((k) => GROUPS.find((g) => g.key === k)!).filter(Boolean)}
+          widths={columnWidths}
+          onWidthsChange={setColumnWidths}
+          selected={selected}
+          onSelectedChange={setSelected}
+          before={(span) =>
+            subfolders.map((f) => (
+              <tr key={f.id} onClick={() => openFolder(f.id)} className="hover:bg-gray-50 cursor-pointer">
+                <td className="px-3 py-1.5" />
+                <td colSpan={span - 1} className="px-3 py-1.5">
+                  <span className="flex items-center gap-2">
+                    <FolderIcon className="w-4 h-4 text-gray-400" />
+                    <span className="font-medium text-gray-900">{f.name}</span>
+                    <span className="font-mono text-[11px] text-gray-400">{counts.get(f.id) ?? 0}</span>
+                  </span>
+                </td>
+              </tr>
+            ))
+          }
+          empty={
+            !isLoading &&
+            filtered.length === 0 &&
+            subfolders.length === 0 && (
+              <p className="px-4 py-6 text-gray-500 text-sm text-center">
+                {rows.length === 0 ? "No inventory yet — add items here, or import them in Settings > Import." : searching ? "No items match." : "This folder is empty."}
+              </p>
+            )
+          }
+        />
       </div>
     </div>
   );

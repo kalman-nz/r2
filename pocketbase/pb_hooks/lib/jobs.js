@@ -105,8 +105,6 @@ function jobInfo(app, job) {
     quoteNotes: job.getString("quoteNotes"),
     notes: job.getString("notes"),
     headings: headingsOf(job),
-    // Going without equipment tracking (lib/tracking.js).
-    untracked: job.getBool("untracked"),
     created: job.getString("created"),
     updated: job.getString("updated"),
     clientInfo: contactInfo(findOrNull(app, "contacts", job.getString("client"))),
@@ -341,7 +339,7 @@ function buildSummary(app, jobId, show) {
   const tracking = require(`${__hooks}/lib/tracking.js`);
   const steps = tracking.stepsOf(app, org);
   const state = tracking.trackingState(app, job.id, needs, itemsById, steps);
-  if (!job.getBool("untracked")) tracking.shareOutToLines(lineViews, state);
+  tracking.shareOutToLines(lineViews, state);
   const suggested = tracking.suggestion(app, job, state, steps);
 
   const { periodsOf } = require(`${__hooks}/lib/periods.js`);

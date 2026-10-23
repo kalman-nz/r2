@@ -180,10 +180,11 @@ export default function JobLines({
   const { job, lines, subprojects = [] } = summary;
   const jobDone = job.status === "returned" || job.status === "cancelled";
   const showPrices = summary.includesPrices;
-  // Where each bit of kit is (equipment tracking), once it's more than an enquiry.
+  // Where each bit of kit is (equipment tracking), once something on the
+  // project's been scanned: a project nobody scans isn't tracked.
   const { feature } = useOrg();
   const { steps: trackingSteps } = useTrackingSteps();
-  const steps = feature("scanning") && trackingSteps.length > 0 && job.status !== "enquiry" && !job.untracked ? trackingSteps : null;
+  const steps = feature("scanning") && trackingSteps.length > 0 && summary.packing.scanCount > 0 ? trackingSteps : null;
 
   const sections: Section[] = [
     {

@@ -27,7 +27,7 @@ const START: Values = { price: 0, priceUnit: "day", replacementValue: 0, locatio
 // Saved a few at a time: quicker than one by one, without flooding the server.
 const CONCURRENCY = 8;
 
-export async function updateEach<T extends { id: string }>(collection: "items" | "serials", records: T[], body: (record: T) => Record<string, unknown>) {
+export async function updateEach<T extends { id: string }>(collection: "items" | "serials" | "jobs", records: T[], body: (record: T) => Record<string, unknown>) {
   const failed: { record: T; error: unknown }[] = [];
   for (let i = 0; i < records.length; i += CONCURRENCY) {
     const chunk = records.slice(i, i + CONCURRENCY);

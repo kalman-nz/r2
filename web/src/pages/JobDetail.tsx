@@ -12,7 +12,8 @@ import JobLines from "../components/job/JobLines";
 import JobSchedule from "../components/job/JobSchedule";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import { PERIOD_KINDS } from "../lib/statuses";
-import { JobStatusBadge, QuoteStatusBadge, RepairStatusBadge } from "../components/StatusBadge";
+import { JobStatusBadge, OverdueBadge, QuoteStatusBadge, RepairStatusBadge } from "../components/StatusBadge";
+import { overdueReason } from "../lib/overdue";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
 import { withOrg } from "../lib/currentOrg";
@@ -20,6 +21,8 @@ import { useFollowOrg } from "../lib/org";
 import { useRepairs } from "../lib/maintenance";
 import CrewCard from "../components/job/CrewCard";
 import TrackingCard from "../components/job/TrackingCard";
+import DocumentsMenu from "../components/job/DocumentsMenu";
+import SyncCard from "../components/job/SyncCard";
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -242,6 +245,7 @@ function ExistingJob({ id }: { id: string }) {
             <span className="text-xl text-gray-400 tabular-nums">#{job.number}</span>
             <h1 className="text-xl font-semibold text-gray-900">{job.name}</h1>
             <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
+            <OverdueBadge reason={overdueReason(job, packing.items.reduce((sum, i) => sum + Math.max(0, i.out), 0))} />
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
             {[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ") || "No client or location yet"}
@@ -251,12 +255,10 @@ function ExistingJob({ id }: { id: string }) {
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          <Link to={`/print/jobs/${job.id}/packing`} className="btn-secondary">
-            Packing list
-          </Link>
-          {feature("scanning") && !job.untracked && (can("scan.out") || can("scan.in")) && (
+          <DocumentsMenu jobId={job.id} />
+          {feature("scanning") && (can("scan.out") || can("scan.in")) && (
             <Link to={`/projects/${job.id}/scan`} className="btn-secondary">
-              Track equipment
+              Open in warehouse
             </Link>
           )}
           {can("quotes.issue") && (
@@ -339,6 +341,8 @@ function ExistingJob({ id }: { id: string }) {
         <div className="flex flex-col gap-4">
           {pricing && <TotalsCard pricing={pricing} lines={summary.lines} />}
 
+          <SyncCard jobId={job.id} />
+
           {summary.quotes && (
             <section className="card p-4 flex flex-col gap-2 text-sm">
               <h2 className="text-sm font-semibold text-gray-500">Quotes</h2>
@@ -368,7 +372,7 @@ function ExistingJob({ id }: { id: string }) {
 
           {feature("repairs") && <DamageCard jobId={job.id} />}
 
-          {feature("scanning") && <TrackingCard summary={summary} canScan={can("scan.out") || can("scan.in")} canEdit={can("jobs.edit")} />}
+          {feature("scanning") && <TrackingCard summary={summary} canScan={can("scan.out") || can("scan.in")} />}
         </div>
       </div>
     </div>

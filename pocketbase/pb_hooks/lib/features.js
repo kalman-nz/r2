@@ -40,6 +40,12 @@ const FEATURES = [
     permissions: ["prices.view", "quotes.view", "quotes.issue", "quotes.status", "export.xero"],
   },
   {
+    key: "integrations",
+    label: "Live sync",
+    hint: "Keeping R2 in step with Rentman, or with event bookings in Momentus (Settings → Integrations)",
+    permissions: ["integrations.manage"],
+  },
+  {
     key: "xero",
     label: "Xero export",
     hint: "Invoices for Xero from accepted quotes",

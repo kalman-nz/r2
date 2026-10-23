@@ -9,6 +9,7 @@ import { errorText } from "../lib/errors";
 import { useRole } from "../lib/roles";
 import AddressInput from "../components/AddressInput";
 import ColumnsMenu from "../components/ColumnsMenu";
+import FiltersMenu, { FilterCheck } from "../components/FiltersMenu";
 import Field from "../components/Field";
 import PageViews from "../components/PageViews";
 import { JobStatusBadge } from "../components/StatusBadge";
@@ -183,11 +184,12 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
             ))}
           </select>
         )}
-        <label className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
-        </label>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1.5">
+          <FiltersMenu active={showArchived ? 1 : 0} onReset={() => setShowArchived(false)}>
+            <FilterCheck checked={showArchived} onChange={setShowArchived}>
+              Show archived {config.title.toLowerCase()}
+            </FilterCheck>
+          </FiltersMenu>
           <ColumnsMenu columns={pickable} visible={shown} onChange={setShown} />
         </div>
       </div>

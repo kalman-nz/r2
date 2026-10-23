@@ -1,6 +1,7 @@
 // Thin wrapper around the Rentman public API (https://api.rentman.net), used
-// only by the importer (lib/rentmanImport.js) to pull a customer's own data
-// out of their own Rentman account with their own API token. Built on
+// by the importer (lib/imports.js) and the live sync (lib/rentmanSync.js)
+// to work with a customer's own Rentman account with their own API token.
+// Writes are limited to what the sync sends (lib/rentmanMap.js). Built on
 // PocketBase JSVM's $http.send, with sleep() for the 429 backoff (JSVM
 // hooks run synchronously, no timers).
 //
@@ -27,14 +28,17 @@ function buildUrl(path, searchParams) {
 function createRentmanClient(token) {
   if (!token) throw new Error("No Rentman API token — add one in Settings > Import");
 
-  function rentmanFetch(path, searchParams) {
+  function rentmanFetch(path, searchParams, method, body) {
     const url = buildUrl(path, searchParams);
     const maxAttempts = 5;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const headers = { Authorization: "Bearer " + token, Accept: "application/json" };
+      if (body !== undefined) headers["Content-Type"] = "application/json";
       const res = $http.send({
-        method: "GET",
+        method: method || "GET",
         url: url,
-        headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+        headers: headers,
+        body: body !== undefined ? JSON.stringify(body) : "",
         timeout: 120,
       });
 
@@ -48,7 +52,11 @@ function createRentmanClient(token) {
         throw new Error("Rentman rejected the API token (" + res.statusCode + ") — check it in Settings > Import");
       }
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw new Error("Rentman API " + res.statusCode + " for " + path + ": " + String(res.raw).slice(0, 500));
+        const err = new Error("Rentman API " + res.statusCode + " for " + (method || "GET") + " " + path + ": " + String(res.raw).slice(0, 500));
+        err.status = res.statusCode;
+        // A refused write (bad field, not allowed) won't succeed on retry.
+        err.permanent = res.statusCode >= 400 && res.statusCode < 500 && res.statusCode !== 408;
+        throw err;
       }
       return res.json;
     }
@@ -79,9 +87,32 @@ function createRentmanClient(token) {
     return { data: result.data, next: result.next_page_url || null };
   }
 
+  // One record, or null if it's gone.
+  function get(resource, id) {
+    try {
+      return rentmanFetch("/" + resource + "/" + encodeURIComponent(String(id))).data;
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  // Creates a record (path like "/equipment" or
+  // "/projectrequests/12/projectrequestequipment"); returns it.
+  function create(path, body) {
+    return rentmanFetch(path, null, "POST", body).data;
+  }
+
+  function update(resource, id, body) {
+    return rentmanFetch("/" + resource + "/" + encodeURIComponent(String(id)), null, "PUT", body).data;
+  }
+
   return {
     listAll: listAll,
     page: page,
+    get: get,
+    create: create,
+    update: update,
     listAllEquipment: () => listAll("equipment"),
     listAllSerialNumbers: () => listAll("serialnumbers"),
     listAllStockLocations: () => listAll("stocklocations"),
