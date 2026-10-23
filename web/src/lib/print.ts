@@ -70,10 +70,23 @@ export function renderTemplateImage(template: LabelTemplateData & { id: string }
   return renderToDataUrl(template, context);
 }
 
-export async function renderCustomTextImage(text: string, widthMm: number, heightMm: number, rotate90: boolean) {
-  const { renderCustomTextCanvas } = await import("./customLabel");
-  const canvas = await renderCustomTextCanvas(text, widthMm, heightMm, dotsPerMm(widthMm), rotate90, SAMPLE_CONTEXT);
+// A one-off label built on the Custom label page, never saved as a template.
+type LabelDesign = Pick<LabelTemplateData, "widthMm" | "heightMm" | "elements">;
+
+export async function renderDesignImage(design: LabelDesign) {
+  const { renderLabelToCanvas } = await import("./renderLabel");
+  const canvas = await renderLabelToCanvas(design, SAMPLE_CONTEXT, dotsPerMm(design.widthMm));
   return canvas.toDataURL("image/png");
+}
+
+// The print log names the label by its text, e.g. Printed custom label "Jam Stands".
+export async function printDesign(design: LabelDesign): Promise<{ ok: boolean; message: string }> {
+  const text = design.elements
+    .filter((el) => el.type === "staticText" && el.text?.trim())
+    .map((el) => el.text!.trim().replace(/\s+/g, " "))
+    .join(" / ");
+  const imageDataUrl = await renderDesignImage(design);
+  return api.print({ customText: text || "Custom label", imageDataUrl, label: labelIdForWidth(design.widthMm) });
 }
 
 // One PDF page per label at its real size, for printers other than the

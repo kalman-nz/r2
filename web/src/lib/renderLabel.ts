@@ -120,8 +120,8 @@ export function wrapText(
 }
 
 function valueFor(el: LabelElement, context: LabelDataContext): string {
-  if (el.type === "staticText") return el.text ?? "";
-  if (!el.dataField) return "";
+  // Static text, or a barcode/QR on a one-off label, holds its own value.
+  if (el.type === "staticText" || !el.dataField) return el.text ?? "";
   const raw = context[el.dataField] ?? "";
   if (el.dataField === "equipmentFolder") return applyFolderLevels(raw, el.folderLevels);
   return raw;

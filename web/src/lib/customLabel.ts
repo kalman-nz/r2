@@ -1,7 +1,7 @@
 import { renderLabelToCanvas, rotateCanvas90, wrapText } from "./renderLabel";
 import type { LabelDataContext, LabelElement, LabelTemplateData } from "./labelSpec";
 
-const PADDING_MM = 3;
+export const PADDING_MM = 3;
 // Purely for text measurement precision — any consistent scale works here
 // since we're solving for the mm font size, independent of final print
 // resolution (the real render applies its own dots-per-mm separately).

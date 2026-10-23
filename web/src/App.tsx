@@ -29,7 +29,6 @@ import GlobalSearch from "./components/GlobalSearch";
 import { OrgSwitcher, UserMenu } from "./components/HeaderMenus";
 import { R2Lockup } from "./components/Brand";
 import { useRole } from "./lib/roles";
-import { PROJECT_VIEWS } from "./lib/statuses";
 import { useOrg } from "./lib/org";
 import { api } from "./lib/api";
 
@@ -161,80 +160,6 @@ function NavSection({ title, children }: { title: string; children: ReactNode })
   );
 }
 
-// A link with views under it (md up), open while you're in its section.
-// The chevron folds it away without leaving the page.
-function NavGroup({
-  to,
-  icon,
-  label,
-  children,
-}: {
-  to: string;
-  icon: ReactNode;
-  label: string;
-  children: { to: string; label: string; active: boolean }[];
-}) {
-  const location = useLocation();
-  const inSection = location.pathname === to || location.pathname.startsWith(`${to}/`);
-  const [open, setOpen] = useState(inSection);
-  useEffect(() => {
-    if (inSection) setOpen(true);
-  }, [inSection]);
-  return (
-    <div className="flex flex-col gap-0.5">
-      <div className="relative">
-        <NavLink
-          to={to}
-          className={() =>
-            // A highlighted view below already says where you are.
-            inSection && children.some((c) => c.active) ? `${sidebarLinkClass(false)} !text-white` : sidebarLinkClass(inSection)
-          }
-          title={label}
-        >
-          {icon}
-          <span className="hidden md:inline truncate">{label}</span>
-        </NavLink>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 items-center justify-center rounded text-steel/70 hover:text-white hover:bg-white/10"
-          aria-label={open ? `Collapse ${label}` : `Expand ${label}`}
-          aria-expanded={open}
-        >
-          <svg viewBox="0 0 20 20" className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M8 5l5 5-5 5" />
-          </svg>
-        </button>
-      </div>
-      {open && (
-        <div className="hidden md:flex flex-col gap-0.5 ml-[1.6rem] mr-2 pl-3 border-l border-graphite">
-          {children.map((c) => (
-            <Link
-              key={c.to}
-              to={c.to}
-              className={`flex items-center px-2.5 h-8 rounded-md text-[13px] ${
-                c.active ? "text-white bg-graphite font-medium" : "text-steel hover:text-white hover:bg-graphite/60"
-              }`}
-            >
-              {c.label}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function useProjectViewLinks() {
-  const location = useLocation();
-  const onList = location.pathname === "/projects";
-  const current = new URLSearchParams(location.search).get("view") ?? "active";
-  return PROJECT_VIEWS.map((v) => ({
-    to: v.value === "active" ? "/projects" : `/projects?view=${v.value}`,
-    label: v.label,
-    active: onList && current === v.value,
-  }));
-}
-
 // Keeps the rest of the path (a record id, /scan) when a section is renamed.
 function RenamedPath({ from, to }: { from: string; to: string }) {
   const location = useLocation();
@@ -277,7 +202,6 @@ function AppShell() {
   const { can, isPlatformAdmin } = useRole();
   const { feature } = useOrg();
   const settingsOpen = useSettingsAccess().length > 0;
-  const projectViews = useProjectViewLinks();
   useTabTitle(!!org);
   const online = useOnline();
   usePageViewLogging();
@@ -294,15 +218,13 @@ function AppShell() {
             <>
               <NavItem to="/" icon={icons.home} label="Home" end />
               <NavSection title="Planning">
-                <NavGroup to="/projects" icon={icons.jobs} label="Projects">
-                  {projectViews}
-                </NavGroup>
+                <NavItem to="/projects" icon={icons.jobs} label="Projects" />
               </NavSection>
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
                 {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Equipment tracking" />}
                 {(feature("repairs") || feature("maintenance")) && <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />}
-                {can("labels.print") && <NavItem to="/label-printing" icon={icons.label} label="Label printing" />}
+                {can("labels.print") && <NavItem to="/custom-label" icon={icons.label} label="Custom label" />}
               </NavSection>
               <NavSection title="Relations">
                 <NavItem to="/contacts" icon={icons.contacts} label="Contacts" />
@@ -377,7 +299,7 @@ function AppShell() {
                   <Route path="/locations" element={<VenuesList />} />
                   <Route path="/locations/:id" element={<VenueDetail />} />
                   <Route
-                    path="/label-printing"
+                    path="/custom-label"
                     element={
                       <RequireRole permission="labels.print">
                         <CustomLabelPage />
@@ -396,7 +318,7 @@ function AppShell() {
                   <Route path="/jobs/*" element={<RenamedPath from="/jobs" to="/projects" />} />
                   <Route path="/venues/*" element={<RenamedPath from="/venues" to="/locations" />} />
                   <Route path="/repairs/*" element={<RenamedPath from="/repairs" to="/maintenance/repairs" />} />
-                  <Route path="/custom-label" element={<Navigate to="/label-printing" replace />} />
+                  <Route path="/label-printing" element={<Navigate to="/custom-label" replace />} />
                   <Route path="/exports" element={<Navigate to="/finance/xero-export" replace />} />
                   <Route path="/logs" element={<Navigate to="/settings/activity" replace />} />
                   <Route path="/equipment/*" element={<Navigate to="/inventory" replace />} />

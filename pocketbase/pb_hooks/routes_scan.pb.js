@@ -79,6 +79,68 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
+// The equipment tracking board: every tracked project that's on its way out,
+// out, or back in the last fortnight, with how many units it needs and how
+// many are at each step (lib/tracking.js), soonest first.
+routerAdd(
+  "GET",
+  "/api/tracking/projects",
+  (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { requireFeature } = require(`${__hooks}/lib/features.js`);
+    const { findOrNull } = require(`${__hooks}/lib/records.js`);
+    const { loadItems, loadLines } = require(`${__hooks}/lib/jobs.js`);
+    const { needsOf } = require(`${__hooks}/lib/scan.js`);
+    const { stepsOf, suggestion, trackingState } = require(`${__hooks}/lib/tracking.js`);
+    const ctx = requireOrg(e);
+    requireFeature(ctx.org, "scanning");
+    const since = new Date(Date.now() - 14 * 86400000).toISOString().replace("T", " ");
+    const jobs = $app.findRecordsByFilter(
+      "jobs",
+      "org = {:org} && untracked = false && (status = 'provisional' || status = 'confirmed' || status = 'out' || (status = 'returned' && returnAt >= {:since}))",
+      "prepAt",
+      300,
+      0,
+      { org: ctx.orgId, since: since },
+    );
+    const steps = stepsOf($app, ctx.orgId);
+    const clients = {};
+    const out = [];
+    for (const job of jobs) {
+      const lines = loadLines($app, job.id);
+      const itemsById = loadItems($app, lines);
+      const state = trackingState($app, job.id, needsOf(lines, itemsById), itemsById, steps);
+      const at = {};
+      let needed = 0;
+      for (const item of state.items) {
+        needed += item.needed;
+        for (const step of Object.keys(item.at)) at[step] = (at[step] || 0) + item.at[step];
+      }
+      const clientId = job.getString("client");
+      if (clientId && clients[clientId] === undefined) {
+        const client = findOrNull($app, "contacts", clientId);
+        clients[clientId] = client ? client.getString("name") : "";
+      }
+      const offered = suggestion($app, job, state, steps);
+      out.push({
+        id: job.id,
+        number: job.getInt("number"),
+        name: job.getString("name"),
+        status: job.getString("status"),
+        jobStatus: job.getString("jobStatus"),
+        client: clientId ? clients[clientId] : "",
+        prepAt: job.getString("prepAt"),
+        returnAt: job.getString("returnAt"),
+        needed: needed,
+        at: at,
+        suggestion: offered ? offered.statusName : "",
+      });
+    }
+    return e.json(200, out);
+  },
+  $apis.requireAuth("users"),
+);
+
 // Replaces the organisation's tracking steps (Settings → Equipment
 // tracking, lib/tracking.js). body: { steps: [{ id?, name, stage, colour,
 // jobStatus }] }.
