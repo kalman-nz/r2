@@ -193,6 +193,14 @@ export interface TrackingSuggestion {
   statusName: string;
 }
 
+// An address found by the lookup (pb_hooks/lib/addresses.js).
+export interface AddressMatch {
+  // On one line, for the list.
+  label: string;
+  // One line each, as it's written on an envelope.
+  address: string;
+}
+
 // A project on the equipment tracking board (GET /api/tracking/projects).
 export interface TrackedProject {
   id: string;
@@ -1039,6 +1047,7 @@ export const api = {
   deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
+  searchAddresses: (q: string) => request<AddressMatch[]>(`/api/addresses?q=${encodeURIComponent(q)}`),
   trackingProjects: () => request<TrackedProject[]>("/api/tracking/projects"),
   acceptTrackingStatus: (jobId: string, status: string) => request<JobSummary>(`/api/jobs/${jobId}/tracking-status`, json("POST", { status })),
   saveTrackingSteps: (steps: TrackingStepInput[]) => request<TrackingStep[]>("/api/tracking-steps", json("PUT", { steps })),
