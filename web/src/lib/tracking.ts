@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "./pocketbase";
 import type { JobLineView, TrackedAt, TrackingStage, TrackingStep } from "./api";
@@ -70,4 +70,31 @@ export function linesProgress(steps: TrackingStep[], lines: JobLineView[]): Prog
     total += Math.round(l.quantity);
   }
   return progressOf(steps, at, total);
+}
+
+export type Layout = "board" | "list";
+
+const LAYOUT_KEY = "tracking.layout";
+
+// Board or list, remembered in this browser (a convenience, so storage
+// failing just means the default).
+export function useLayout(): [Layout, (layout: Layout) => void] {
+  const [layout, setLayout] = useState<Layout>(() => {
+    try {
+      return localStorage.getItem(LAYOUT_KEY) === "list" ? "list" : "board";
+    } catch {
+      return "board";
+    }
+  });
+  return [
+    layout,
+    (next) => {
+      setLayout(next);
+      try {
+        localStorage.setItem(LAYOUT_KEY, next);
+      } catch {
+        // not remembered, that's all
+      }
+    },
+  ];
 }

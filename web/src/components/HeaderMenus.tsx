@@ -15,7 +15,7 @@ function MenuLink({ to, onClick, children }: { to: string; onClick: () => void; 
 
 // Where to land after switching organisation: the same section, but not a
 // record page — that record belongs to the organisation you just left.
-const SECTIONS = ["projects", "inventory", "scan", "contacts", "locations", "label-printing", "finance", "settings"];
+const SECTIONS = ["projects", "inventory", "scan", "contacts", "locations", "custom-label", "finance", "settings"];
 function sectionRoot(pathname: string): string {
   const first = pathname.split("/")[1] ?? "";
   if (first === "assets") return "/inventory";

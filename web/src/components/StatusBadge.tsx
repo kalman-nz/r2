@@ -57,7 +57,7 @@ export function TrackingStatus({ progress, compact = false }: { progress: Progre
       {current ? (
         <span className={`${base} ${STATUS_COLOURS[current.colour || "gray"].badge}`}>{current.name}</span>
       ) : (
-        <span className={`${base} bg-white text-gray-500 ring-1 ring-inset ring-gray-200`}>Not started</span>
+        <span className={`${base} bg-white text-gray-500 ring-1 ring-inset ring-gray-200`}>{progress.started > 0 ? "In progress" : "Not started"}</span>
       )}
       {next && nextCount > 0 && (
         <span className="text-xs text-gray-500 tabular-nums" title={`${nextCount} of ${total} ${next.name} or further along`}>

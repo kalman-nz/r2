@@ -1,24 +1,39 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { renderLabelToCanvas } from "../lib/renderLabel";
-import { renderCustomTextCanvas } from "../lib/customLabel";
+import { buildCustomTextTemplate } from "../lib/customLabel";
+import { downloadLabelsPdf, printDesign, printWithManualData, renderDesignImage, renderTemplateImage } from "../lib/print";
+import { generateId } from "../lib/id";
 import {
-  downloadLabelsPdf,
-  printCustomText,
-  printWithManualData,
-  renderCustomTextImage,
-  renderTemplateImage,
-} from "../lib/print";
-import { DATA_FIELDS, SAMPLE_CONTEXT, isBrotherWidth, type LabelDataContext, type LabelTemplateData } from "../lib/labelSpec";
+  DATA_FIELDS,
+  isBrotherWidth,
+  type LabelDataContext,
+  type LabelElement,
+  type LabelTemplateData,
+} from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
-import LabelSizeControls from "../components/LabelSizeControls";
+import LabelDesigner from "../components/LabelDesigner";
 import { useToast } from "../components/ToastProvider";
 import NumberInput from "../components/NumberInput";
 import { api } from "../lib/api";
 
-const PREVIEW_SCALE = 6; // px per mm — matches LabelEditor's on-screen scale
+// px per mm the preview is drawn at. It's shown smaller when that doesn't
+// fit, but never larger, so it stays sharp.
+const PREVIEW_SCALE = 10;
 
-type Mode = "text" | "template";
+type Mode = "build" | "template";
+
+interface Design {
+  widthMm: number;
+  heightMm: number;
+  elements: LabelElement[];
+}
+
+// A fresh label starts as one big centred line of text filling it, ready to type over.
+function starterDesign(): Design {
+  const [text] = buildCustomTextTemplate("Label text", 62, 29).elements;
+  return { widthMm: 62, heightMm: 29, elements: [{ ...text, id: generateId() }] };
+}
 
 function tabClass(active: boolean) {
   return active ? "tab-underline-active" : "tab-underline-inactive";
@@ -49,58 +64,141 @@ async function printCopies(
 }
 
 export default function CustomLabelPage() {
-  const [mode, setMode] = useState<Mode>("text");
+  const [mode, setMode] = useState<Mode>("build");
+  // Kept here so switching to "From template" and back doesn't lose the label.
+  const [design, setDesign] = useState(starterDesign);
 
   return (
-    <div className="max-w-2xl mx-auto flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-gray-900">Label printing</h1>
+    <div className="lg:h-full flex flex-col gap-4 lg:min-h-0">
+      <h1 className="text-lg font-semibold text-gray-900">Custom label</h1>
 
-      <div className="flex items-center gap-5 border-b border-gray-200 w-fit">
-        <button className={tabClass(mode === "text")} onClick={() => setMode("text")}>
-          Big text
+      <div className="flex items-center gap-5 border-b border-gray-200">
+        <button className={tabClass(mode === "build")} onClick={() => setMode("build")}>
+          Build a label
         </button>
         <button className={tabClass(mode === "template")} onClick={() => setMode("template")}>
           From template
         </button>
       </div>
 
-      {mode === "text" ? <BigTextMode /> : <FromTemplateMode />}
+      {mode === "build" ? <BuildMode design={design} onChange={setDesign} /> : <FromTemplateMode />}
     </div>
   );
 }
 
-function BigTextMode() {
-  const [text, setText] = useState("");
-  const [widthMm, setWidthMm] = useState(62);
-  const [heightMm, setHeightMm] = useState(29);
-  const [rotate90, setRotate90] = useState(false);
+// Settings on the left; the preview takes the rest of the screen, with the
+// print actions under it. Stacks on phones.
+function Workspace({ controls, preview, actions }: { controls: ReactNode; preview: ReactNode; actions: ReactNode }) {
+  return (
+    <div className="flex-1 lg:min-h-0 flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-5">
+      <div className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">{controls}</div>
+      <div className="flex flex-col gap-3 lg:min-h-0">
+        {preview}
+        {actions}
+      </div>
+    </div>
+  );
+}
+
+// Fits the rendered label into whatever space the panel has.
+function LabelPreview({ image, caption, placeholder }: { image: HTMLCanvasElement | null; caption?: string; placeholder?: string }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [box, setBox] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setBox({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) return;
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext("2d")?.drawImage(image, 0, 0);
+  }, [image]);
+
+  const fit = image && box.width > 0 ? Math.min(1, box.width / image.width, box.height / image.height) : 0;
+
+  return (
+    <div className="flex-1 min-h-[18rem] lg:min-h-0 flex flex-col rounded-lg border border-gray-200 bg-gray-100">
+      <div className="relative flex-1 min-h-0">
+        <div ref={boxRef} className="absolute inset-6 flex items-center justify-center">
+          {image ? (
+            <canvas
+              ref={canvasRef}
+              className="bg-white shadow-sm"
+              style={{ width: image.width * fit, height: image.height * fit }}
+            />
+          ) : (
+            <p className="text-sm text-gray-500">{placeholder}</p>
+          )}
+        </div>
+      </div>
+      {image && caption && <p className="pb-3 text-center text-xs text-gray-500">{caption}</p>}
+    </div>
+  );
+}
+
+function PrintActions({
+  copies,
+  onCopies,
+  onDownload,
+  downloading,
+  onPrint,
+  printing,
+  disabled,
+  widthMm,
+}: {
+  copies: number;
+  onCopies: (n: number) => void;
+  onDownload: () => void;
+  downloading: boolean;
+  onPrint: () => void;
+  printing: boolean;
+  disabled: boolean;
+  widthMm: number | undefined;
+}) {
+  const brother = widthMm !== undefined && isBrotherWidth(widthMm);
+  return (
+    <div className="flex items-center justify-end gap-3">
+      <label className="flex items-center gap-2 text-sm text-gray-500">
+        Copies
+        <NumberInput min={1} value={copies} onChange={onCopies} className="w-14 input py-1" />
+      </label>
+      <button onClick={onDownload} disabled={downloading || disabled} className="btn-secondary py-2">
+        {downloading ? "Making PDF…" : "Download PDF"}
+      </button>
+      <button
+        onClick={onPrint}
+        disabled={printing || disabled || !brother}
+        title={disabled || brother ? undefined : "Not a Brother tape width — download a PDF instead"}
+        className="btn-primary py-2 px-4"
+      >
+        {printing ? "Printing…" : "Print"}
+      </button>
+    </div>
+  );
+}
+
+function BuildMode({ design, onChange }: { design: Design; onChange: (update: (prev: Design) => Design) => void }) {
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [firstElementId] = useState(() => design.elements[0]?.id ?? null);
   const { showToast } = useToast();
-
-  useEffect(() => {
-    let cancelled = false;
-    renderCustomTextCanvas(text || "Sample text", widthMm, heightMm, PREVIEW_SCALE, rotate90, SAMPLE_CONTEXT).then(
-      (rendered) => {
-        const canvas = canvasRef.current;
-        if (!canvas || cancelled) return;
-        canvas.width = rendered.width;
-        canvas.height = rendered.height;
-        canvas.getContext("2d")?.drawImage(rendered, 0, 0);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [text, widthMm, heightMm, rotate90]);
+  const empty = design.elements.length === 0;
 
   async function print() {
-    if (!text.trim()) return;
     setPrinting(true);
     try {
-      await printCopies(copies, () => printCustomText(text, widthMm, heightMm, rotate90), showToast);
+      await printCopies(copies, () => printDesign(design), showToast);
     } catch (err) {
       showToast("error", `Print failed: ${(err as Error).message}`);
     } finally {
@@ -109,11 +207,10 @@ function BigTextMode() {
   }
 
   async function downloadPdf() {
-    if (!text.trim()) return;
     setDownloading(true);
     try {
-      const imageDataUrl = await renderCustomTextImage(text, widthMm, heightMm, rotate90);
-      await downloadLabelsPdf([{ imageDataUrl, widthMm, heightMm, copies }]);
+      const imageDataUrl = await renderDesignImage(design);
+      await downloadLabelsPdf([{ imageDataUrl, widthMm: design.widthMm, heightMm: design.heightMm, copies }]);
     } catch (err) {
       showToast("error", errorText(err));
     } finally {
@@ -122,56 +219,28 @@ function BigTextMode() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="customText" className="text-sm text-gray-500">
-          Label text
-        </label>
-        <textarea
-          id="customText"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="e.g. Jam Stands"
-          rows={2}
-          className="input resize-none"
-        />
-      </div>
-
-      <LabelSizeControls
-        widthMm={widthMm}
-        heightMm={heightMm}
-        onChange={(w, h) => {
-          setWidthMm(w);
-          setHeightMm(h);
-        }}
-      >
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={rotate90} onChange={(e) => setRotate90(e.target.checked)} />
-          <span className="text-gray-500">Rotate 90°</span>
-        </label>
-      </LabelSizeControls>
-
-      <div className="flex items-center justify-center border border-gray-200 rounded-lg p-6 bg-gray-100 overflow-auto">
-        <canvas ref={canvasRef} className="bg-white shadow-sm" />
-      </div>
-
-      <div className="flex items-center justify-end gap-3">
-        <label className="flex items-center gap-2 text-sm text-gray-500">
-          Copies
-          <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
-        </label>
-        <button onClick={downloadPdf} disabled={downloading || !text.trim()} className="btn-secondary py-2">
-          {downloading ? "Making PDF…" : "Download PDF"}
-        </button>
-        <button
-          onClick={print}
-          disabled={printing || !text.trim() || !isBrotherWidth(widthMm)}
-          title={isBrotherWidth(widthMm) ? undefined : "Not a Brother tape width — download a PDF instead"}
-          className="btn-primary py-2 px-4"
-        >
-          {printing ? "Printing…" : "Print"}
-        </button>
-      </div>
+    <div className="flex-1 lg:min-h-0 flex flex-col gap-3">
+      <LabelDesigner
+        widthMm={design.widthMm}
+        heightMm={design.heightMm}
+        elements={design.elements}
+        onSizeChange={(widthMm, heightMm) => onChange((prev) => ({ ...prev, widthMm, heightMm }))}
+        onElementsChange={(update) =>
+          onChange((prev) => ({ ...prev, elements: typeof update === "function" ? update(prev.elements) : update }))
+        }
+        dataFields={false}
+        initialSelectedId={firstElementId}
+      />
+      <PrintActions
+        copies={copies}
+        onCopies={setCopies}
+        onDownload={downloadPdf}
+        downloading={downloading}
+        onPrint={print}
+        printing={printing}
+        disabled={empty}
+        widthMm={design.widthMm}
+      />
     </div>
   );
 }
@@ -197,7 +266,7 @@ function FromTemplateMode() {
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [preview, setPreview] = useState<HTMLCanvasElement | null>(null);
   const { showToast } = useToast();
 
   const fieldLabel = useMemo(() => {
@@ -212,14 +281,13 @@ function FromTemplateMode() {
   const context: LabelDataContext = { ...EMPTY_CONTEXT, ...fieldValues };
 
   useEffect(() => {
-    if (!template) return;
+    if (!template) {
+      setPreview(null);
+      return;
+    }
     let cancelled = false;
     renderLabelToCanvas(template, context, PREVIEW_SCALE).then((rendered) => {
-      const canvas = canvasRef.current;
-      if (!canvas || cancelled) return;
-      canvas.width = rendered.width;
-      canvas.height = rendered.height;
-      canvas.getContext("2d")?.drawImage(rendered, 0, 0);
+      if (!cancelled) setPreview(rendered);
     });
     return () => {
       cancelled = true;
@@ -253,31 +321,31 @@ function FromTemplateMode() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="template" className="text-sm text-gray-500">
-          Template
-        </label>
-        <select
-          id="template"
-          value={templateId}
-          onChange={(e) => {
-            setTemplateId(e.target.value);
-            setFieldValues({});
-          }}
-          className="input py-2"
-        >
-          <option value="">Select a template…</option>
-          {templates?.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.widthMm}×{t.heightMm}mm)
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {template && (
+    <Workspace
+      controls={
         <>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="template" className="text-sm text-gray-500">
+              Template
+            </label>
+            <select
+              id="template"
+              value={templateId}
+              onChange={(e) => {
+                setTemplateId(e.target.value);
+                setFieldValues({});
+              }}
+              className="input py-2"
+            >
+              <option value="">Select a template…</option>
+              {templates?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.widthMm}×{t.heightMm}mm)
+                </option>
+              ))}
+            </select>
+          </div>
+
           {fields.length > 0 && (
             <div className="flex flex-col gap-3 card p-3">
               {fields.map((key) => {
@@ -299,30 +367,27 @@ function FromTemplateMode() {
               })}
             </div>
           )}
-
-          <div className="flex items-center justify-center border border-gray-200 rounded-lg p-6 bg-gray-100 overflow-auto">
-            <canvas ref={canvasRef} className="bg-white shadow-sm" />
-          </div>
-
-          <div className="flex items-center justify-end gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-500">
-              Copies
-              <NumberInput min={1} value={copies} onChange={setCopies} className="w-14 input py-1" />
-            </label>
-            <button onClick={downloadPdf} disabled={downloading} className="btn-secondary py-2">
-              {downloading ? "Making PDF…" : "Download PDF"}
-            </button>
-            <button
-              onClick={print}
-              disabled={printing || !isBrotherWidth(template.widthMm)}
-              title={isBrotherWidth(template.widthMm) ? undefined : "Not a Brother tape width — download a PDF instead"}
-              className="btn-primary py-2 px-4"
-            >
-              {printing ? "Printing…" : "Print"}
-            </button>
-          </div>
         </>
-      )}
-    </div>
+      }
+      preview={
+        <LabelPreview
+          image={template ? preview : null}
+          caption={template ? `${template.widthMm} × ${template.heightMm} mm` : undefined}
+          placeholder="Choose a template to preview it here."
+        />
+      }
+      actions={
+        <PrintActions
+          copies={copies}
+          onCopies={setCopies}
+          onDownload={downloadPdf}
+          downloading={downloading}
+          onPrint={print}
+          printing={printing}
+          disabled={!template}
+          widthMm={template?.widthMm}
+        />
+      }
+    />
   );
 }

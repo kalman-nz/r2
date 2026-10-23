@@ -193,6 +193,22 @@ export interface TrackingSuggestion {
   statusName: string;
 }
 
+// A project on the equipment tracking board (GET /api/tracking/projects).
+export interface TrackedProject {
+  id: string;
+  number: number;
+  name: string;
+  status: JobStatus;
+  jobStatus: string;
+  client: string;
+  prepAt: string;
+  returnAt: string;
+  needed: number;
+  at: TrackedAt;
+  // A project status its kit has all reached, to offer ("" for none).
+  suggestion: string;
+}
+
 // Units at each tracking step, by step id; the rest haven't started.
 export type TrackedAt = Record<string, number>;
 
@@ -1023,6 +1039,7 @@ export const api = {
   deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
+  trackingProjects: () => request<TrackedProject[]>("/api/tracking/projects"),
   acceptTrackingStatus: (jobId: string, status: string) => request<JobSummary>(`/api/jobs/${jobId}/tracking-status`, json("POST", { status })),
   saveTrackingSteps: (steps: TrackingStepInput[]) => request<TrackingStep[]>("/api/tracking-steps", json("PUT", { steps })),
   saveJobStatuses: (statuses: JobStatusInput[], moves: Record<string, string> = {}) =>

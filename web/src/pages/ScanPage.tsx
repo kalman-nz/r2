@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { pb } from "../lib/pocketbase";
-import { api, type Contact, type Job, type JobLineView } from "../lib/api";
-import { formatDateTime } from "../lib/format";
+import { api, type JobLineView, type TrackedProject } from "../lib/api";
+import { formatDateTime, parseDate } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { invalidateMaintenance } from "../lib/maintenance";
 import { JobStatusBadge, TrackingStatus } from "../components/StatusBadge";
 import { STATUS_COLOURS } from "../lib/statuses";
-import { linesProgress, progressOf, useTrackingSteps } from "../lib/tracking";
+import { linesProgress, progressOf, useLayout, useTrackingSteps } from "../lib/tracking";
 import NumberInput from "../components/NumberInput";
 import NewRepairModal from "../components/repair/NewRepairModal";
 import TrackingSuggestion from "../components/job/TrackingSuggestion";
 import { useToast } from "../components/ToastProvider";
-import { orgFilter } from "../lib/currentOrg";
+import TrackingBoard, { LayoutSwitch, NextStep } from "../components/tracking/TrackingBoard";
 import { useCan, useFeature } from "../lib/roles";
 
 // Equipment tracking: scanning kit to a step on a project (prepped,
@@ -27,56 +26,114 @@ export default function ScanPage() {
   return id ? <ScanJob jobId={id} /> : <ChooseJob />;
 }
 
-type JobWithClient = Job & { expand?: { client?: Contact } };
-
+// Every tracked project going out, out or just back, as a board (a column
+// per tracking step) or a list; pick one to scan its kit.
 function ChooseJob() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const { data: jobs = [], isLoading } = useQuery({
-    queryKey: ["jobs", "scannable"],
-    queryFn: () =>
-      pb.collection("jobs").getFullList<JobWithClient>({
-        filter: orgFilter("(status = 'provisional' || status = 'confirmed' || status = 'out') && untracked = false"),
-        sort: "prepAt",
-        expand: "client",
-      }),
+  const [layout, setLayout] = useLayout();
+  const { steps } = useTrackingSteps();
+  const {
+    data: projects = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["tracking-projects"],
+    queryFn: api.trackingProjects,
+    refetchInterval: 30_000,
   });
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase().replace(/^#/, "");
-    if (!term) return jobs;
-    return jobs.filter((j) =>
-      [String(j.number), j.name, j.expand?.client?.name].filter(Boolean).some((v) => String(v).toLowerCase().includes(term)),
-    );
-  }, [jobs, search]);
+    return projects.filter((p) => !term || [String(p.number), p.name, p.client].some((v) => v.toLowerCase().includes(term)));
+  }, [projects, search]);
+  const withKit = filtered.filter((p) => p.needed > 0);
+  const noKit = filtered.length - withKit.length;
+  const now = Date.now();
+  const open = (p: TrackedProject) => navigate(`/projects/${p.id}/scan`);
+  // When it goes out, or (once it's out) when it's due back.
+  const when = (p: TrackedProject) => {
+    const back = p.status === "out" || p.status === "returned";
+    const at = back ? p.returnAt : p.prepAt;
+    const late = p.status !== "returned" && (parseDate(at)?.getTime() ?? Infinity) < now;
+    return {
+      text: `${back ? "Back" : "Goes out"} ${formatDateTime(at)}`,
+      late,
+    };
+  };
 
   return (
-    <div className="max-w-xl mx-auto flex flex-col gap-3">
-      <h1 className="text-lg font-semibold text-gray-900">Equipment tracking</h1>
-      <p className="text-sm text-gray-500">Pick the project you're prepping, loading or bringing back.</p>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Project number or name" className="input py-2" />
-      {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
-      <div className="card divide-y divide-gray-100 overflow-hidden">
-        {filtered.map((job) => (
-          <button
-            key={job.id}
-            onClick={() => navigate(`/projects/${job.id}/scan`)}
-            className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between gap-3"
-          >
-            <span className="flex flex-col min-w-0">
-              <span className="font-medium text-gray-900 truncate">
-                #{job.number} {job.name}
-              </span>
-              <span className="text-xs text-gray-500 truncate">
-                {[job.expand?.client?.name, `prep ${formatDateTime(job.prepAt)}`].filter(Boolean).join(" · ")}
-              </span>
-            </span>
-            <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
-          </button>
-        ))}
-        {!isLoading && filtered.length === 0 && (
-          <p className="px-4 py-6 text-sm text-gray-500 text-center">No provisional, confirmed or out projects.</p>
-        )}
+    <div className={`${layout === "board" ? "max-w-none" : "max-w-2xl mx-auto"} w-full flex flex-col gap-3`}>
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">Equipment tracking</h1>
+          <p className="text-sm text-gray-500">Where every project's kit is. Pick one to prep, load or bring back its kit.</p>
+        </div>
+        <LayoutSwitch layout={layout} onChange={setLayout} />
       </div>
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Project number, name or client" className="input py-2 w-full max-w-sm" />
+      {isLoading && <p className="text-gray-500 text-sm">Loading…</p>}
+      {error && <p className="text-red-600 text-sm">Couldn't load projects: {errorText(error)}</p>}
+      {!isLoading && layout === "board" && (
+        <TrackingBoard
+          steps={steps}
+          items={withKit}
+          itemKey={(p) => p.id}
+          at={(p) => p.at}
+          total={(p) => p.needed}
+          empty="No projects"
+          card={(p, progress) => {
+            const w = when(p);
+            return (
+              <button
+                onClick={() => open(p)}
+                className="w-full text-left card px-3 py-2.5 flex flex-col gap-1.5 hover:border-gray-300 hover:shadow-sm transition-shadow"
+              >
+                <span className="flex items-start justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="block text-xs font-mono text-gray-500">#{p.number}</span>
+                    <span className="block font-medium text-gray-900 leading-snug">{p.name}</span>
+                  </span>
+                  <JobStatusBadge status={p.status} jobStatus={p.jobStatus} />
+                </span>
+                {p.client && <span className="text-xs text-gray-500 truncate">{p.client}</span>}
+                <span className={`text-xs ${w.late ? "text-fault-ink font-medium" : "text-gray-500"}`}>{w.text}</span>
+                <span className="flex items-center justify-between gap-2">
+                  <NextStep progress={progress} />
+                  <span className="text-[11px] text-gray-400 ml-auto">{p.needed} units</span>
+                </span>
+                {p.suggestion && <span className="text-xs font-medium text-signal-ink">Everything's here: set to {p.suggestion}?</span>}
+              </button>
+            );
+          }}
+        />
+      )}
+      {!isLoading && layout === "list" && (
+        <div className="card divide-y divide-gray-100 overflow-hidden">
+          {withKit.map((p) => {
+            const w = when(p);
+            return (
+              <button key={p.id} onClick={() => open(p)} className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between gap-3">
+                <span className="flex flex-col min-w-0">
+                  <span className="font-medium text-gray-900 truncate">
+                    #{p.number} {p.name}
+                  </span>
+                  <span className={`text-xs truncate ${w.late ? "text-fault-ink" : "text-gray-500"}`}>{[p.client, w.text].filter(Boolean).join(" · ")}</span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <TrackingStatus progress={progressOf(steps, p.at, p.needed)} compact />
+                  <JobStatusBadge status={p.status} jobStatus={p.jobStatus} />
+                </span>
+              </button>
+            );
+          })}
+          {withKit.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No projects to track.</p>}
+        </div>
+      )}
+      {noKit > 0 && (
+        <p className="text-xs text-gray-500">
+          {noKit} project{noKit === 1 ? "" : "s"} with no physical kit {noKit === 1 ? "isn't" : "aren't"} shown.
+        </p>
+      )}
     </div>
   );
 }
@@ -112,13 +169,17 @@ function beep(ok: boolean) {
 function ScanJob({ jobId }: { jobId: string }) {
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
-  const { data: summary, error } = useQuery({ queryKey: ["job-summary", jobId], queryFn: () => api.getJobSummary(jobId) });
+  const { data: summary, error } = useQuery({
+    queryKey: ["job-summary", jobId],
+    queryFn: () => api.getJobSummary(jobId),
+  });
   const can = useCan();
   const { steps: allSteps, isLoading: stepsLoading } = useTrackingSteps();
   // The steps this person can scan to: bringing kit back is its own permission.
   const steps = useMemo(() => allSteps.filter((s) => can(s.stage === "back" ? "scan.in" : "scan.out")), [allSteps, can]);
   const [stepId, setStepId] = useState("");
   const [heading, setHeading] = useState("");
+  const [layout, setLayout] = useLayout();
   const [quantity, setQuantity] = useState(1);
   const [code, setCode] = useState("");
   const [feed, setFeed] = useState<FeedEntry[]>([]);
@@ -142,7 +203,7 @@ function ScanJob({ jobId }: { jobId: string }) {
     if ((params.get("stage") === "back" || summary.job.status === "out") && back) return setStepId(back.id);
     const next = linesProgress(allSteps, summary.lines)?.next;
     const going = steps.filter((s) => s.stage !== "back");
-    setStepId((next && going.some((s) => s.id === next.id) ? next : going[0] ?? steps[0]).id);
+    setStepId((next && going.some((s) => s.id === next.id) ? next : (going[0] ?? steps[0])).id);
   }, [summary, steps, allSteps, stepsLoading, params]);
   const step = steps.find((s) => s.id === stepId) ?? null;
 
@@ -151,14 +212,39 @@ function ScanJob({ jobId }: { jobId: string }) {
     if (!value || busy || !step) return;
     setBusy(true);
     try {
-      const result = await api.scan(jobId, { code: value, step: step.id, quantity });
+      const result = await api.scan(jobId, {
+        code: value,
+        step: step.id,
+        quantity,
+      });
       queryClient.setQueryData(["job-summary", jobId], result.summary);
       const back = result.stage === "back" ? { item: result.item, serial: result.serial } : undefined;
-      setFeed((prev) => [{ id: ++feedId.current, ok: true, text: result.message, at: new Date(), back }, ...prev].slice(0, 50));
+      setFeed((prev) =>
+        [
+          {
+            id: ++feedId.current,
+            ok: true,
+            text: result.message,
+            at: new Date(),
+            back,
+          },
+          ...prev,
+        ].slice(0, 50),
+      );
       beep(true);
       setQuantity(1);
     } catch (err) {
-      setFeed((prev) => [{ id: ++feedId.current, ok: false, text: errorText(err), at: new Date() }, ...prev].slice(0, 50));
+      setFeed((prev) =>
+        [
+          {
+            id: ++feedId.current,
+            ok: false,
+            text: errorText(err),
+            at: new Date(),
+          },
+          ...prev,
+        ].slice(0, 50),
+      );
       beep(false);
     } finally {
       setBusy(false);
@@ -190,17 +276,19 @@ function ScanJob({ jobId }: { jobId: string }) {
   const shown = heading ? tracked.filter((l) => (l.group || "No heading") === heading) : tracked;
   const groups = headings
     .filter((h) => !heading || h === heading)
-    .map((h) => ({ name: h, lines: shown.filter((l) => (l.group || "No heading") === h) }));
+    .map((h) => ({
+      name: h,
+      lines: shown.filter((l) => (l.group || "No heading") === h),
+    }));
   const stepIndex = step ? allSteps.findIndex((s) => s.id === step.id) : -1;
-  const reached = (l: JobLineView) =>
-    allSteps.reduce((sum, s, i) => (i >= stepIndex ? sum + (l.tracking?.at[s.id] ?? 0) : sum), 0);
+  const reached = (l: JobLineView) => allSteps.reduce((sum, s, i) => (i >= stepIndex ? sum + (l.tracking?.at[s.id] ?? 0) : sum), 0);
   // Units out on each item, for its first line.
   const firstLine = new Map<string, string>();
   for (const l of tracked) if (l.item && !firstLine.has(l.item.id)) firstLine.set(l.item.id, l.id);
   const stepName = (id: string) => allSteps.find((s) => s.id === id)?.name ?? "";
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col gap-4">
+    <div className={`${layout === "board" ? "max-w-6xl" : "max-w-3xl"} w-full mx-auto flex flex-col gap-4`}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900 min-w-0 truncate">
           ← #{job.number} {job.name}
@@ -222,7 +310,9 @@ function ScanJob({ jobId }: { jobId: string }) {
               inputRef.current?.focus();
             }}
             className={`flex-1 py-3 px-2 rounded-md text-base font-semibold border transition-colors truncate ${
-              s.id === stepId ? `${STATUS_COLOURS[s.colour || "gray"].dot} border-transparent text-white` : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
+              s.id === stepId
+                ? `${STATUS_COLOURS[s.colour || "gray"].dot} border-transparent text-white`
+                : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
             }`}
           >
             {s.name}
@@ -314,64 +404,95 @@ function ScanJob({ jobId }: { jobId: string }) {
       <section className="card overflow-hidden">
         <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-sm font-semibold text-gray-500">On this project</h2>
-          {headings.length > 1 && (
-            <select value={heading} onChange={(e) => setHeading(e.target.value)} className="input py-1 w-auto text-xs" aria-label="Heading">
-              <option value="">All headings</option>
-              {headings.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          )}
+          <span className="flex items-center gap-2">
+            {headings.length > 1 && (
+              <select value={heading} onChange={(e) => setHeading(e.target.value)} className="input py-1 w-auto text-xs" aria-label="Heading">
+                <option value="">All headings</option>
+                {headings.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+            )}
+            <LayoutSwitch layout={layout} onChange={setLayout} />
+          </span>
         </div>
-        <table className="w-full text-[13px] border-collapse">
-          <thead>
-            <tr className="border-y border-gray-200 text-left text-gray-500">
-              <th className="px-4 py-1.5 font-medium">Item</th>
-              <th className="px-2 py-1.5 font-medium text-right">{step ? step.name : "Done"}</th>
-              <th className="px-4 py-1.5 font-medium">Status</th>
-            </tr>
-          </thead>
-          {groups.map((g) => (
-            <tbody key={g.name} className="divide-y divide-gray-100">
-              {headings.length > 1 && (
-                <tr className="bg-gray-50/60">
-                  <td colSpan={2} className="px-4 py-1.5 font-semibold text-gray-800">
-                    {g.name}
-                  </td>
-                  <td className="px-4 py-1.5">
-                    <TrackingStatus progress={linesProgress(allSteps, g.lines)} compact />
-                  </td>
-                </tr>
-              )}
-              {g.lines.map((l) => {
-                const qty = Math.round(l.quantity);
-                const done = qty > 0 && reached(l) >= qty;
-                const units = l.item && firstLine.get(l.item.id) === l.id ? packing.items.find((p) => p.itemId === l.item!.id)?.serialsOut ?? [] : [];
+        {layout === "board" && tracked.length > 0 && (
+          <div className="px-3 pb-3 pt-1 bg-gray-50/60 border-t border-gray-200">
+            <TrackingBoard
+              steps={allSteps}
+              items={shown}
+              itemKey={(l) => l.id}
+              at={(l) => l.tracking!.at}
+              total={(l) => Math.round(l.quantity)}
+              empty="Nothing here"
+              card={(l, progress) => {
+                const units = l.item && firstLine.get(l.item.id) === l.id ? (packing.items.find((p) => p.itemId === l.item!.id)?.serialsOut ?? []) : [];
                 return (
-                  <tr key={l.id} className={done ? "text-gray-400" : ""}>
-                    <td className="px-4 py-1.5">
-                      {done && <span className="text-emerald-600 mr-1">✓</span>}
-                      {l.name}
-                      {units.length > 0 && (
-                        <span className="block text-xs text-gray-400">
-                          {units.map((u) => `${u.label || u.barcode} (${stepName(u.step)})`).join(", ")}
-                        </span>
-                      )}
+                  <div className="card px-3 py-2.5 flex flex-col gap-1">
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-gray-900 leading-snug">{l.name}</span>
+                      <span className="text-xs tabular-nums text-gray-500 shrink-0">× {Math.round(l.quantity)}</span>
+                    </span>
+                    {headings.length > 1 && !heading && <span className="text-[11px] uppercase tracking-wide text-gray-400">{l.group || "No heading"}</span>}
+                    {units.length > 0 && (
+                      <span className="text-xs text-gray-400">{units.map((u) => `${u.label || u.barcode} (${stepName(u.step)})`).join(", ")}</span>
+                    )}
+                    <NextStep progress={progress} />
+                  </div>
+                );
+              }}
+            />
+          </div>
+        )}
+        {layout === "list" && (
+          <table className="w-full text-[13px] border-collapse">
+            <thead>
+              <tr className="border-y border-gray-200 text-left text-gray-500">
+                <th className="px-4 py-1.5 font-medium">Item</th>
+                <th className="px-2 py-1.5 font-medium text-right">{step ? step.name : "Done"}</th>
+                <th className="px-4 py-1.5 font-medium">Status</th>
+              </tr>
+            </thead>
+            {groups.map((g) => (
+              <tbody key={g.name} className="divide-y divide-gray-100">
+                {headings.length > 1 && (
+                  <tr className="bg-gray-50/60">
+                    <td colSpan={2} className="px-4 py-1.5 font-semibold text-gray-800">
+                      {g.name}
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
-                      {reached(l)}/{qty}
-                    </td>
                     <td className="px-4 py-1.5">
-                      <TrackingStatus progress={progressOf(allSteps, l.tracking!.at, qty)} compact />
+                      <TrackingStatus progress={linesProgress(allSteps, g.lines)} compact />
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          ))}
-        </table>
+                )}
+                {g.lines.map((l) => {
+                  const qty = Math.round(l.quantity);
+                  const done = qty > 0 && reached(l) >= qty;
+                  const units = l.item && firstLine.get(l.item.id) === l.id ? (packing.items.find((p) => p.itemId === l.item!.id)?.serialsOut ?? []) : [];
+                  return (
+                    <tr key={l.id} className={done ? "text-gray-400" : ""}>
+                      <td className="px-4 py-1.5">
+                        {done && <span className="text-emerald-600 mr-1">✓</span>}
+                        {l.name}
+                        {units.length > 0 && (
+                          <span className="block text-xs text-gray-400">{units.map((u) => `${u.label || u.barcode} (${stepName(u.step)})`).join(", ")}</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                        {reached(l)}/{qty}
+                      </td>
+                      <td className="px-4 py-1.5">
+                        <TrackingStatus progress={progressOf(allSteps, l.tracking!.at, qty)} compact />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            ))}
+          </table>
+        )}
         {tracked.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No physical kit on this project.</p>}
       </section>
     </div>
