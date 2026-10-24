@@ -21,7 +21,7 @@ export default function FiltersMenu({ active, onReset, children }: { active: num
           <path d="M3 5h14M6 10h8M8.5 15h3" />
         </svg>
         Filters
-        {active > 0 && <span className="min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-signal text-white text-[11px] font-semibold leading-[1.125rem] text-center">{active}</span>}
+        {active > 0 && <span className="font-semibold text-signal-ink tabular-nums">{active}</span>}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-80 max-w-[calc(100vw-1.5rem)] max-h-[75vh] overflow-y-auto card shadow-lg z-40">
