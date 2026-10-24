@@ -119,7 +119,7 @@ const COLUMNS: Column[] = [
     sortValue: (j) => j.statusOrder,
     title: (j) => (j.overdue ? `${j.statusName}: overdue. ${j.overdue}` : j.statusName),
     render: (j) => (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-3">
         <OverdueBadge reason={j.overdue} />
         <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
       </span>
