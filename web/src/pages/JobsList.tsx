@@ -475,9 +475,11 @@ export default function JobsList() {
     : view === "overdue"
       ? "Overdue"
       : (PROJECT_VIEWS.find((v) => v.value === view)?.label ?? JOB_STAGES.find((s) => s.value === view)?.label ?? "Projects");
-  const activeFilters = (when !== "any" ? 1 : 0) + (client ? 1 : 0) + (venue ? 1 : 0) + (crewUser ? 1 : 0);
+  const current = statusId ? `status:${statusId}` : view;
+  const activeFilters = (current !== "active" ? 1 : 0) + (when !== "any" ? 1 : 0) + (client ? 1 : 0) + (venue ? 1 : 0) + (crewUser ? 1 : 0);
   const filtersOn = activeFilters > 0;
   function clearFilters() {
+    if (current !== "active") show("active");
     setWhen("any");
     setClient("");
     setVenue("");
@@ -544,7 +546,6 @@ export default function JobsList() {
   }
 
   const counted = (key: string) => (counts.get(key) ?? 0).toLocaleString();
-  const current = statusId ? `status:${statusId}` : view;
 
   return (
     <div className="w-full h-full flex flex-col gap-3 min-h-0">
@@ -577,22 +578,6 @@ export default function JobsList() {
 
       <div className="flex items-center gap-1.5 flex-wrap shrink-0">
         <PageViews page="projects" settings={settings} defaults={DEFAULT_VIEW} onApply={applySettings} applyOnLoad={!linked} />
-        <select value={current} onChange={(e) => show(e.target.value)} className="input w-auto" aria-label="Show">
-          <option value="active">Active ({counted("active")})</option>
-          <option value="mine">Mine ({counted("mine")})</option>
-          <option value="overdue">Overdue ({counted("overdue")})</option>
-          <option value="all">All projects ({counted("all")})</option>
-          {statuses.length > 0 && (
-            <optgroup label="Status">
-              {statuses.map((s) => (
-                <option key={s.id} value={`status:${s.id}`}>
-                  {s.name} ({counted(`status:${s.id}`)})
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {!statusId && !["active", "mine", "overdue", "all"].includes(view) && <option value={view}>{title}</option>}
-        </select>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -601,6 +586,24 @@ export default function JobsList() {
         />
         <div className="ml-auto flex items-center gap-1.5">
           <FiltersMenu active={activeFilters} onReset={clearFilters}>
+            <FilterField label="Show">
+              <select value={current} onChange={(e) => show(e.target.value)} className="input">
+                <option value="active">Active ({counted("active")})</option>
+                <option value="mine">Mine ({counted("mine")})</option>
+                <option value="overdue">Overdue ({counted("overdue")})</option>
+                <option value="all">All projects ({counted("all")})</option>
+                {statuses.length > 0 && (
+                  <optgroup label="Status">
+                    {statuses.map((s) => (
+                      <option key={s.id} value={`status:${s.id}`}>
+                        {s.name} ({counted(`status:${s.id}`)})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {!statusId && !["active", "mine", "overdue", "all"].includes(view) && <option value={view}>{title}</option>}
+              </select>
+            </FilterField>
             <FilterField label="When">
               <select value={when} onChange={(e) => setWhen(e.target.value as When)} className="input">
                 {WHEN.map((w) => (
