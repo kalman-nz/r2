@@ -13,7 +13,7 @@ const DEFAULT_DASHBOARDS = [
 ];
 // List pages with saved views (each view keeps that page's filters and
 // column settings, as the page itself defines them).
-const PAGES = ["projects", "inventory", "contacts", "locations"];
+const PAGES = ["projects", "inventory", "contacts", "locations", "crew", "rostering"];
 
 function text(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";

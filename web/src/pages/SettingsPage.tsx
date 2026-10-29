@@ -7,6 +7,7 @@ import PricingSettings from "../components/PricingSettings";
 import CatalogSettings from "../components/CatalogSettings";
 import CustomFieldsSettings from "../components/CustomFieldsSettings";
 import RepairStatusesSettings from "../components/RepairStatusesSettings";
+import CrewRolesSettings from "../components/CrewRolesSettings";
 import TrackingStepsSettings from "../components/TrackingStepsSettings";
 import JobStatusesSettings from "../components/JobStatusesSettings";
 import FeaturesSettings from "../components/FeaturesSettings";
@@ -93,6 +94,20 @@ const NAV_ITEMS: NavItem[] = [
     icon: (
       <Icon>
         <path d="M4 7V5h3M17 5h3v2M20 17v2h-3M7 19H4v-2M8 9v6M11 9v6M14 9v6M17 9v6" />
+      </Icon>
+    ),
+  },
+  {
+    to: "crew-roles",
+    label: "Crew roles",
+    group: "How you work",
+    feature: "crew",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <circle cx="9" cy="7" r="3" />
+        <path d="M3 20a6 6 0 0 1 12 0" />
+        <path d="M16 11h5M16 15h5M18.5 8.5v0" />
       </Icon>
     ),
   },
@@ -331,6 +346,7 @@ export default function SettingsPage() {
             <Route path="inventory" element={gate("inventory", <CatalogSettings />)} />
             <Route path="custom-fields" element={gate("custom-fields", <CustomFieldsSettings />)} />
             <Route path="repair-statuses" element={gate("repair-statuses", <RepairStatusesSettings />)} />
+            <Route path="crew-roles" element={gate("crew-roles", <CrewRolesSettings />)} />
             <Route path="equipment-tracking" element={gate("equipment-tracking", <TrackingStepsSettings />)} />
             <Route path="project-statuses" element={gate("project-statuses", <JobStatusesSettings />)} />
             <Route path="features" element={gate("features", <FeaturesSettings />)} />

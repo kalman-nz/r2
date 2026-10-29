@@ -14,6 +14,9 @@ import NewSubprojectModal from "./NewSubprojectModal";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Segmented from "../Segmented";
 import Modal from "../Modal";
+import { PeriodNeeds } from "../crew/Needs";
+import { useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
+import { useOrg } from "../../lib/org";
 
 const HOUR = 3600000;
 const VIEW_KEY = "schedule.view";
@@ -57,6 +60,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { job, periods, pricing, subprojects = [] } = summary;
+  const { feature } = useOrg();
   const [editingId, setEditingId] = useState<string | null>(null);
   // A new period and the section it goes in ("" for the main project).
   const [adding, setAdding] = useState<{ section: string; draft: Draft } | null>(null);
@@ -210,6 +214,8 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
         <PeriodRow
           key={p.id}
           period={p}
+          jobId={job.id}
+          canPlan={canEdit}
           canEdit={canEdit && !busy}
           locked={onlyOfKind(p)}
           onEdit={() => {
@@ -358,6 +364,11 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
               {calendarEdit.notes && <span className="text-gray-500 whitespace-pre-line">{calendarEdit.notes}</span>}
             </div>
           )}
+          {feature("crew") && (
+            <div className="pt-3 border-t border-gray-100">
+              <ItemCrew jobId={job.id} period={calendarEdit} canEdit={canEdit} />
+            </div>
+          )}
         </Modal>
       )}
 
@@ -418,6 +429,18 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
       {addingSubproject && <NewSubprojectModal summary={summary} onSaved={() => refresh()} onClose={() => setAddingSubproject(false)} />}
     </div>
   );
+}
+
+// A schedule item's crew needs (Crew rostering on), shared queries so every
+// row reads the same ones.
+function ItemCrew({ jobId, period, canEdit }: { jobId: string; period: JobPeriod; canEdit: boolean }) {
+  const { feature } = useOrg();
+  const on = feature("crew");
+  const { roles } = useCrewRoles();
+  const { data: needs = [] } = useJobCrewNeeds(jobId, on);
+  const { data: crew = [] } = useJobCrew(jobId);
+  if (!on) return null;
+  return <PeriodNeeds jobId={jobId} period={period} needs={needs} crew={crew} roles={roles} canEdit={canEdit} rosterHref={`/projects/${jobId}?tab=crew`} />;
 }
 
 function Stat({ label, value, bar }: { label: string; value: string; bar?: string }) {
@@ -502,12 +525,17 @@ function KindBadge({ kind }: { kind: PeriodKind }) {
 
 function PeriodRow({
   period: p,
+  jobId,
+  canPlan,
   canEdit,
   locked,
   onEdit,
   onRemove,
 }: {
   period: JobPeriod;
+  jobId: string;
+  // Can change who's on it (planners); canEdit is that, when nothing's saving.
+  canPlan: boolean;
   canEdit: boolean;
   locked: boolean;
   onEdit: () => void;
@@ -516,16 +544,19 @@ function PeriodRow({
   return (
     <div className="flex items-start gap-3 px-4 py-3">
       <span className={`mt-1 w-1 self-stretch rounded-full shrink-0 ${kindInfo(p.kind).bar}`} />
-      <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-[14rem_minmax(0,1fr)_auto] gap-x-4 gap-y-0.5">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-medium text-gray-900 truncate">{p.name}</span>
-          <KindBadge kind={p.kind} />
+      <div className="flex-1 min-w-0 flex flex-col gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-[14rem_minmax(0,1fr)_auto] gap-x-4 gap-y-0.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium text-gray-900 truncate">{p.name}</span>
+            <KindBadge kind={p.kind} />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm text-gray-700">{formatPeriod(p.start, p.end)}</span>
+            {p.notes && <span className="text-xs text-gray-500 whitespace-pre-line">{p.notes}</span>}
+          </div>
+          <span className="text-xs text-gray-500 tabular-nums md:text-right md:pt-0.5">{formatDuration(ms(p.end) - ms(p.start))}</span>
         </div>
-        <div className="flex flex-col min-w-0">
-          <span className="text-sm text-gray-700">{formatPeriod(p.start, p.end)}</span>
-          {p.notes && <span className="text-xs text-gray-500 whitespace-pre-line">{p.notes}</span>}
-        </div>
-        <span className="text-xs text-gray-500 tabular-nums md:text-right md:pt-0.5">{formatDuration(ms(p.end) - ms(p.start))}</span>
+        <ItemCrew jobId={jobId} period={p} canEdit={canPlan} />
       </div>
       {canEdit && (
         <div className="flex items-center gap-1 shrink-0">

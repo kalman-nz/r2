@@ -46,6 +46,13 @@ export const FEATURES: { key: FeatureKey; label: string; hint: string; off: stri
     off: "No prices anywhere, for anyone: for kit that's only used in house.",
   },
   {
+    key: "crew",
+    permissions: ["crew.manage"],
+    label: "Crew rostering",
+    hint: "Crew needs on schedule items (2× Audio operator for the pack in), a crew list with skills and freelancers, and rostering people onto them.",
+    off: "Crew are just added to projects, with no crew needs, crew list or rostering.",
+  },
+  {
     key: "integrations",
     permissions: ["integrations.manage"],
     label: "Live sync",

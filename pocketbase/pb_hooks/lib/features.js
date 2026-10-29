@@ -40,6 +40,12 @@ const FEATURES = [
     permissions: ["prices.view", "quotes.view", "quotes.issue", "quotes.status", "export.xero"],
   },
   {
+    key: "crew",
+    label: "Crew rostering",
+    hint: "Crew needs on schedule items (2× Audio operator for the pack in), a crew list with skills and freelancers, and rostering people onto them",
+    permissions: ["crew.manage"],
+  },
+  {
     key: "integrations",
     label: "Live sync",
     hint: "Keeping R2 in step with Rentman, or with event bookings in Momentus (Settings → Integrations)",

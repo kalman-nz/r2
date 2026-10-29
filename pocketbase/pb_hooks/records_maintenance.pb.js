@@ -43,7 +43,7 @@ onRecordUpdate((e) => {
 }, "items");
 
 // Every organisation starts with the default project and repair statuses,
-// dashboards and project documents, however it's made (first-run setup,
+// crew roles, dashboards and project documents, however it's made (first-run setup,
 // the admin panel, a script).
 onRecordAfterCreateSuccess((e) => {
   const { createDefaultStatuses } = require(`${__hooks}/lib/repairs.js`);
@@ -51,7 +51,9 @@ onRecordAfterCreateSuccess((e) => {
   const { createDefaultDashboards } = require(`${__hooks}/lib/views.js`);
   const { createDefaultSteps } = require(`${__hooks}/lib/tracking.js`);
   const { createDefaultDocuments } = require(`${__hooks}/lib/documents.js`);
+  const { createDefaultCrewRoles } = require(`${__hooks}/lib/crew.js`);
   createDefaultJobStatuses(e.app, e.record.id);
+  createDefaultCrewRoles(e.app, e.record.id);
   // After the statuses: its steps move projects to them.
   createDefaultSteps(e.app, e.record.id);
   createDefaultStatuses(e.app, e.record.id);

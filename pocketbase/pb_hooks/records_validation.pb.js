@@ -166,12 +166,6 @@ onRecordDelete((e) => {
   e.next();
 }, "venues");
 
-onRecordValidate((e) => {
-  const { validateCrew } = require(`${__hooks}/lib/validation.js`);
-  validateCrew(e.app, e.record);
-  e.next();
-}, "job_crew");
-
 // A project document template's parts (lib/documents.js).
 onRecordValidate((e) => {
   const { cleanTemplate } = require(`${__hooks}/lib/documents.js`);

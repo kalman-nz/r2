@@ -109,6 +109,8 @@ function summarizeLogs(rows, opts) {
       summary = "Set " + jobLabel(details.job) + " to " + details.status + " (everything " + details.step + ")";
     } else if (entry.type === "tracking_steps") {
       summary = "Changed the equipment tracking steps: " + (details.names || []).join(", ");
+    } else if (entry.type === "crew_roles") {
+      summary = "Changed the crew roles: " + (details.names || []).join(", ");
     } else if (entry.type === "repair_statuses") {
       summary = "Changed the repair statuses: " + (details.names || []).join(", ");
     } else if (entry.type === "repair_files") {

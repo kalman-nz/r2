@@ -79,10 +79,11 @@ One database holds every organisation. Every business record has an `org`, and c
 
 Every organisation starts set up the usual way, and can change it to fit how it actually works (Settings → How you work):
 
-- **Features.** Equipment tracking, repairs, maintenance plans, labels, prices and quotes, and the Xero export can each be turned off. A theatre with a small crew might not scan kit or keep repair jobs; a touring production company wants both. Off, a feature is hidden for everyone and the server stops doing it: its permissions count for nobody, and its routes refuse. Nothing's deleted, so turning it back on picks up where it left off. With repairs off, a unit can be flagged In repair by hand (`lib/features.js`, `organisations.features`).
+- **Features.** Equipment tracking, repairs, maintenance plans, labels, prices and quotes, crew rostering, live sync and the Xero export can each be turned off. A theatre with a small crew might not scan kit or keep repair jobs; a touring production company wants both. Off, a feature is hidden for everyone and the server stops doing it: its permissions count for nobody, and its routes refuse. Nothing's deleted, so turning it back on picks up where it left off. With repairs off, a unit can be flagged In repair by hand (`lib/features.js`, `organisations.features`).
 - **Project statuses.** Each organisation names, orders and colours its own (Confirmed → Prepping → Prepped → Loaded → Out, say). Each sits on one of six fixed stages that availability, scanning, the calendar feed and the Xero export run on: enquiry (holds nothing), pencilled in, confirmed, out, done and cancelled. A project keeps both: `jobStatus` (its status) and `status` (that status's stage), kept together on every save. Equipment tracking offers the next status as its kit goes out and comes back (see below). Removing a status asks where its projects go; changing a status's stage takes its projects with it (`lib/jobStatuses.js`).
 - **Repair statuses** work the same way, on three stages (see Repairs and maintenance).
 - **Equipment tracking steps** too: the steps kit goes through on its way to a project and back (see Equipment tracking).
+- **Crew roles**: what crew are booked to do (see Crew rostering).
 
 New organisations get the defaults from a hook when they're created, however they're made.
 
@@ -91,9 +92,18 @@ New organisations get the defaults from a hook when they're created, however the
 People see what they need rather than one page for everyone: a workshop tech sees what to prep next, crew see their own projects, the office sees what's waiting on a decision.
 
 - **Dashboards.** Home shows a dashboard: panels picked and put in order from a set (at a glance, my projects, to prep next with packing progress, going out, coming back, out now, needs confirming, maintenance, repairs, quotes; `web/src/lib/home.ts`). Anyone can design their own, or copy someone else's to change. Each organisation starts with Overview (everyone's Home until they pick their own), Workshop and My projects. Panels for a turned-off feature, or one someone's role can't see (quotes), don't show for them.
-- **Saved views.** Every list page works like Home: Inventory, Projects, Contacts and Locations each have views that keep the page's filters and column settings (on Inventory, the columns' widths and sort too; searches aren't kept). One dropdown picks a view (yours, shared with you, everyone's, or Standard, the page as it comes), with edit, save changes, new, copy, share and manage at its foot; the page says "edited" when it's changed since. Your pick is remembered per page on your account (`memberships.views`), and people who can publish set the organisation's default for each page. A link with its own filter (the sidebar's Projects → Mine) wins over the saved view (`list_views`, `pb_migrations/0038_page_views.js`).
+- **Saved views.** Every list page works like Home: Inventory, Projects, Contacts, Locations, Crew and Rostering each have views that keep the page's filters and column settings (on Inventory, the columns' widths and sort too; searches aren't kept). One dropdown picks a view (yours, shared with you, everyone's, or Standard, the page as it comes), with edit, save changes, new, copy, share and manage at its foot; the page says "edited" when it's changed since. Your pick is remembered per page on your account (`memberships.views`), and people who can publish set the organisation's default for each page. A link with its own filter (the sidebar's Projects → Mine) wins over the saved view (`list_views`, `pb_migrations/0038_page_views.js`).
 - **Sharing.** Dashboards and views are their owner's until they share them: with people they pick, or with everyone in the organisation. Sharing with everyone, and picking the default Home, take the "Share dashboards and views with everyone" permission, which only Admin has to start with. People use and copy what's shared with them; only the owner changes it. The organisation's own (the defaults) can be changed by anyone with that permission (`lib/sharing.js`, `routes_views.pb.js`).
-- **Crew.** Planners put people on a project with what they're doing (Sound op, Crew chief), on its page. They see it under My projects and in Projects → Mine.
+- **Crew.** People on a project see it under My projects and in Projects → Mine (see Crew rostering).
+
+### Crew rostering
+
+Crew are booked by what they do and when, not just "on the project" (`pb_migrations/0041_crew_rostering.js`, `lib/crew.js`). A feature: off, planners just add people to a project with what they're doing.
+
+- **Crew roles.** Each organisation's own list of what crew are booked to do (Audio operator, Technical labour, Rigger…), in Settings → Crew roles. Not the permission roles in Settings → Roles.
+- **The crew list** (Crew, in the sidebar): everyone who can be rostered. Every member is on it under their account's name; freelancers who don't log in are added there (name, phone, email). Skills are the crew roles someone does. "Add freelancers to the crew list and set people's crew skills" is its own permission, Admin's and Planner's to start with. Someone who's been rostered is archived rather than deleted, and members who leave are archived for them.
+- **Crew needs.** A schedule item says what crew it needs: 1× Audio operator and 3× Technical labour for the pack in. A need runs over its item's times and moves with it, unless it has its own (audio in an hour early). Removing the item takes its needs, and whoever was on them, with it.
+- **Rostering.** A project's Crew tab lists each schedule item's needs with a slot for each person; picking someone offers the people with that skill first, and says where else anyone's booked at the time. Double bookings are allowed but marked. The Rostering page does the same across every project over a week or more, by day or by person (who's free). Each person fills a slot once, and a need takes no more people than it asks for. People can also be on a whole project (a project manager). `job_crew.user` is filled in from the person, so My projects still reads it.
 
 ### Roles and permissions
 
@@ -208,7 +218,8 @@ The brief's MVP is built:
 - **Getting data out:** the iCal feed and the Xero CSV export.
 - **Accounts:** organisations, invitations with email verification, custom roles with per-action permissions in each organisation, a platform admin panel, and first-run setup.
 - **Fits each business:** features it can turn off, and its own project and repair statuses on fixed stages.
-- **Fits each person:** dashboards and saved views of their own, shared with people or (by admins) with everyone, and crew on projects.
+- **Fits each person:** dashboards and saved views of their own, shared with people or (by admins) with everyone.
+- **Crew:** crew roles, a crew list of members and freelancers with skills, crew needs on schedule items, and rostering per project and across projects.
 
 From the brief's v1 so far:
 
@@ -219,7 +230,7 @@ Next, from the brief's v1:
 - invoices and deposits with a live Xero connection
 - subhires
 - online quote acceptance
-- crew basics and vehicles
+- vehicles, and crew availability (days off)
 - the hosting control plane
 
 The offline scan queue is v2.

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb, useAuthRecord } from "../lib/pocketbase";
-import { api, type Contact, type CrewMember, type Job, type JobStatus, type Venue, type ViewConfig } from "../lib/api";
+import { api, type Contact, type CrewMember, type CrewPerson, type Job, type JobStatus, type Venue, type ViewConfig } from "../lib/api";
 import { formatDateTimeYear, num, parseDate } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge, OverdueBadge } from "../components/StatusBadge";
@@ -23,6 +23,7 @@ import { useConfirm } from "../components/ConfirmProvider";
 import { updateEach } from "../components/item/BulkEditModal";
 
 type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
+type CrewWithPerson = CrewMember & { expand?: { person?: CrewPerson } };
 
 // A project plus what the table shows that isn't on the record itself.
 interface Row extends JobWithExpand {
@@ -354,7 +355,7 @@ export default function JobsList() {
   });
   const { data: crew = [] } = useQuery({
     queryKey: ["job-crew", "all"],
-    queryFn: () => pb.collection("job_crew").getFullList<CrewMember>({ filter: orgFilter(), sort: "sortOrder,created" }),
+    queryFn: () => pb.collection("job_crew").getFullList<CrewWithPerson>({ filter: orgFilter(), sort: "sortOrder,created", expand: "person" }),
   });
   // Kit still out per project, for "Overdue" (returned with kit not back).
   const { data: outstanding = {} } = useQuery({ queryKey: ["jobs", "outstanding"], queryFn: api.outstanding });
@@ -367,7 +368,13 @@ export default function JobsList() {
   const rows = useMemo<Row[]>(() => {
     const names = new Map(members.map((m) => [m.userId, m.name || m.email || "Someone"]));
     const crewOf = new Map<string, string[]>();
-    for (const c of crew) crewOf.set(c.job, [...(crewOf.get(c.job) ?? []), names.get(c.user) ?? "Someone"]);
+    // Each person once, however many of its crew slots they fill.
+    const seen = new Set<string>();
+    for (const c of crew) {
+      if (seen.has(`${c.job}:${c.person}`)) continue;
+      seen.add(`${c.job}:${c.person}`);
+      crewOf.set(c.job, [...(crewOf.get(c.job) ?? []), c.expand?.person?.name ?? names.get(c.user) ?? "Someone"]);
+    }
     const order = new Map(statuses.map((s, i) => [s.id, i]));
     const stageOrder = (stage: JobStatus) => 1000 + JOB_STAGES.findIndex((s) => s.value === stage);
     const now = Date.now();
@@ -383,11 +390,20 @@ export default function JobsList() {
   }, [jobs, crew, members, statuses, byId, outstanding]);
 
   const mine = useMemo(() => new Set(crew.filter((c) => c.user === me?.id).map((c) => c.job)), [crew, me?.id]);
-  // Projects each person's on, for the crew filter.
+  // Projects each person's on, for the crew filter: by their crew list
+  // record, and (for views saved before freelancers) by their login.
   const onCrew = useMemo(() => {
     const out = new Map<string, Set<string>>();
-    for (const c of crew) out.set(c.user, (out.get(c.user) ?? new Set()).add(c.job));
+    for (const c of crew) {
+      for (const key of [c.person, c.user]) if (key) out.set(key, (out.get(key) ?? new Set()).add(c.job));
+    }
     return out;
+  }, [crew]);
+  // Everyone on a crew somewhere, for the filter's list.
+  const crewChoices = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const c of crew) if (c.person) names.set(c.person, c.expand?.person?.name ?? "Someone");
+    return [...names].sort((a, b) => a[1].localeCompare(b[1]));
   }, [crew]);
 
   // The clients and locations the projects have, for the filters.
@@ -636,11 +652,12 @@ export default function JobsList() {
             <FilterField label="Crew">
               <select value={crewUser} onChange={(e) => setCrewUser(e.target.value)} className="input">
                 <option value="">Anyone</option>
-                {members.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {m.name || m.email || "Someone"}
+                {crewChoices.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
                   </option>
                 ))}
+                {crewUser && !crewChoices.some(([id]) => id === crewUser) && <option value={crewUser}>Someone</option>}
               </select>
             </FilterField>
             <SortList columns={SORTABLE} sorts={sorts} onChange={setSorts} />

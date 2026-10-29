@@ -221,7 +221,7 @@ export interface TrackedProject {
 export type TrackedAt = Record<string, number>;
 
 // What an organisation uses (Settings → Features, pb_hooks/lib/features.js).
-export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "integrations" | "xero";
+export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "crew" | "integrations" | "xero";
 export type Features = Record<FeatureKey, boolean>;
 
 // Files on a repair or maintenance job (pb_hooks/lib/files.js): the stored
@@ -911,7 +911,7 @@ export interface Dashboards {
 }
 
 // The list pages with saved views (pb_hooks/lib/views.js).
-export type ViewPage = "projects" | "inventory" | "contacts" | "locations";
+export type ViewPage = "projects" | "inventory" | "contacts" | "locations" | "crew" | "rostering";
 
 // A saved view's settings: the page's filters and columns, as JSON.
 export type ViewConfig = Record<string, unknown>;
@@ -934,12 +934,51 @@ export interface PageViewsData {
   defaultId: string;
 }
 
-// Someone on a project (job_crew), with what they're doing.
+// Someone on a project (job_crew): filling one of its crew needs (a slot),
+// or on the whole project when need is "". user is the person's login, if
+// they're a member ("" for freelancers).
 export interface CrewMember extends RecordModel {
   org: string;
   job: string;
+  person: string;
+  need: string;
   user: string;
   function: string;
+  sortOrder: number;
+}
+
+// One of the organisation's crew roles (Settings → Crew roles).
+export interface CrewRole extends RecordModel {
+  org: string;
+  name: string;
+  sortOrder: number;
+}
+
+// Someone who can be rostered: a member (user set) or a freelancer.
+// skills: the crew roles they do.
+export interface CrewPerson extends RecordModel {
+  org: string;
+  user: string;
+  name: string;
+  phone: string;
+  email: string;
+  skills: string[];
+  notes: string;
+  archived: boolean;
+}
+
+// What a schedule item needs: quantity × role, over the item's times
+// unless customTimes.
+export interface CrewNeed extends RecordModel {
+  org: string;
+  job: string;
+  period: string;
+  role: string;
+  quantity: number;
+  start: string;
+  end: string;
+  customTimes: boolean;
+  notes: string;
   sortOrder: number;
 }
 
@@ -1167,6 +1206,7 @@ export const api = {
   deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
+  saveCrewRoles: (roles: { id?: string; name: string }[]) => request<CrewRole[]>("/api/crew-roles", json("PUT", { roles })),
   searchAddresses: (q: string) => request<AddressMatch[]>(`/api/addresses?q=${encodeURIComponent(q)}`),
   trackingProjects: () => request<TrackedProject[]>("/api/tracking/projects"),
   acceptTrackingStatus: (jobId: string, status: string) => request<JobSummary>(`/api/jobs/${jobId}/tracking-status`, json("POST", { status })),

@@ -20,6 +20,7 @@ import { withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
 import { useRepairs } from "../lib/maintenance";
 import CrewCard from "../components/job/CrewCard";
+import JobCrew from "../components/job/JobCrew";
 import TrackingCard from "../components/job/TrackingCard";
 import DocumentsMenu from "../components/job/DocumentsMenu";
 import SyncCard from "../components/job/SyncCard";
@@ -103,12 +104,14 @@ function TotalsCard({ pricing, lines }: { pricing: JobPricing; lines: JobSummary
   );
 }
 
-type Tab = "general" | "schedule" | "equipment";
+type Tab = "general" | "schedule" | "equipment" | "crew";
 const TABS: TabDef<Tab>[] = [
   { key: "general", label: "General" },
   { key: "schedule", label: "Schedule" },
   { key: "equipment", label: "Equipment" },
 ];
+// With Crew rostering on (Settings → Features).
+const WITH_CREW: TabDef<Tab>[] = [...TABS, { key: "crew", label: "Crew" }];
 
 // The schedule at a glance on the General tab.
 function ScheduleOverview({ summary, onOpen }: { summary: JobSummary; onOpen: () => void }) {
@@ -151,7 +154,8 @@ function ExistingJob({ id }: { id: string }) {
   const [draft, setDraft] = useState<JobDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [quoting, setQuoting] = useState(false);
-  const [tab, openTab] = useTab(TABS);
+  const tabs = feature("crew") ? WITH_CREW : TABS;
+  const [tab, openTab] = useTab(tabs);
 
   const { data: summary, isLoading, error } = useQuery({
     queryKey: ["job-summary", id],
@@ -286,7 +290,7 @@ function ExistingJob({ id }: { id: string }) {
         label="Project sections"
         current={tab}
         onOpen={openTab}
-        tabs={TABS.map((t) => ({ ...t, count: t.key === "schedule" ? summary.periods.length : t.key === "equipment" ? summary.lines.length : undefined }))}
+        tabs={tabs.map((t) => ({ ...t, count: t.key === "schedule" ? summary.periods.length : t.key === "equipment" ? summary.lines.length : undefined }))}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_19rem] gap-4 items-start">
@@ -294,6 +298,8 @@ function ExistingJob({ id }: { id: string }) {
           {tab === "equipment" && <JobLines summary={summary} canEdit={can("jobs.lines")} onSummary={setSummary} />}
 
           {tab === "schedule" && <JobSchedule summary={summary} canEdit={can("jobs.edit")} />}
+
+          {tab === "crew" && <JobCrew summary={summary} canEdit={can("jobs.edit")} />}
 
           {tab === "general" && (
             <>
@@ -368,7 +374,7 @@ function ExistingJob({ id }: { id: string }) {
             </section>
           )}
 
-          <CrewCard jobId={job.id} canEdit={can("jobs.edit")} />
+          <CrewCard summary={summary} canEdit={can("jobs.edit")} />
 
           {feature("repairs") && <DamageCard jobId={job.id} />}
 

@@ -13,6 +13,8 @@ import DocumentView from "./pages/DocumentView";
 import ItemsList from "./pages/ItemsList";
 import ItemDetail from "./pages/ItemDetail";
 import MaintenancePage from "./pages/MaintenancePage";
+import RosteringPage from "./pages/RosteringPage";
+import CrewPage from "./pages/CrewPage";
 import MaintenanceJobDetail from "./pages/MaintenanceJobDetail";
 import MaintenancePlanDetail from "./pages/MaintenancePlanDetail";
 import RepairDetail from "./pages/RepairDetail";
@@ -76,6 +78,21 @@ const icons = {
     <Icon>
       <path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2" />
       <path d="M8 8v8M11 8v8M14 8v8M17 8v8" />
+    </Icon>
+  ),
+  rostering: (
+    <Icon>
+      <rect x="3" y="4.5" width="18" height="16" rx="2" />
+      <path d="M3 9.5h18M8 3v3M16 3v3" />
+      <circle cx="9" cy="15" r="1.6" />
+      <path d="M13 14h4M13 17h3" />
+    </Icon>
+  ),
+  crew: (
+    <Icon>
+      <circle cx="12" cy="7" r="3" />
+      <path d="M6 20a6 6 0 0 1 12 0" />
+      <path d="M9.5 4.5 12 2l2.5 2.5" />
     </Icon>
   ),
   contacts: (
@@ -220,6 +237,8 @@ function AppShell() {
               <NavItem to="/" icon={icons.home} label="Home" end />
               <NavSection title="Planning">
                 <NavItem to="/projects" icon={icons.jobs} label="Projects" />
+                {feature("crew") && <NavItem to="/rostering" icon={icons.rostering} label="Rostering" />}
+                {feature("crew") && <NavItem to="/crew" icon={icons.crew} label="Crew" />}
               </NavSection>
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
@@ -286,6 +305,8 @@ function AppShell() {
                   <Route path="/projects" element={<JobsList />} />
                   <Route path="/projects/:id" element={<JobDetail />} />
                   <Route path="/projects/:id/scan" element={<ScanPage />} />
+                  <Route path="/rostering" element={<RosteringPage />} />
+                  <Route path="/crew" element={<CrewPage />} />
                   <Route path="/scan" element={<ScanPage />} />
                   <Route path="/inventory" element={<ItemsList />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />

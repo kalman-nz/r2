@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import { api, type CrewMember, type Dashboard, type Quote } from "../lib/api";
+import { api, type CrewMember, type CrewNeed, type CrewRole, type Dashboard, type JobPeriod, type Quote } from "../lib/api";
 import { orgFilter } from "../lib/currentOrg";
 import { formatDate, formatDateTime, formatDuration, formatTime, nzd, parseDate } from "../lib/format";
 import { assetLabel, dueLabel, inDays, invalidateMaintenance, today, useMaintenanceJobs, useRepairs } from "../lib/maintenance";
@@ -26,7 +26,7 @@ import { DayGroup, More, Panel, ProjectLine, ProjectName, Row, Stat } from "../c
 // How many rows the side panels show before "View all".
 const PANEL_ROWS = 6;
 
-type CrewWithJob = CrewMember & { expand?: { job?: ProjectRow } };
+type CrewWithJob = CrewMember & { expand?: { job?: ProjectRow; need?: CrewNeed & { expand?: { role?: CrewRole; period?: JobPeriod } } } };
 type QuoteWithJob = Quote & { expand?: { job?: ProjectRow } };
 type Editing = { dashboard?: Dashboard; start?: { name: string; panels: PanelId[] } };
 
@@ -83,7 +83,7 @@ export default function Dashboard() {
     queryFn: () =>
       pb.collection("job_crew").getFullList<CrewWithJob>({
         filter: orgFilter(pb.filter("user = {:me} && job.status != 'returned' && job.status != 'cancelled'", { me: record!.id })),
-        expand: "job,job.client,job.venue",
+        expand: "job,job.client,job.venue,need,need.role,need.period",
       }),
     enabled: has("mine") && !!record,
   });
@@ -112,7 +112,26 @@ export default function Dashboard() {
   const backToday = out.filter((j) => dayOf(j.returnAt) === todayDay && time(j.returnAt) >= now);
   const toConfirm = jobs.filter((j) => (j.status === "enquiry" || j.status === "provisional") && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= inDays(14));
   const toPrep = jobs.filter((j) => j.status === "confirmed" && dayOf(j.prepAt) !== "" && dayOf(j.prepAt) <= inDays(14));
-  const mine = crew.filter((c) => c.expand?.job).sort((a, b) => time(a.expand!.job!.startAt) - time(b.expand!.job!.startAt));
+  // Each project once, at your next crew slot on it (else its start), with
+  // what you're doing.
+  const mine = (() => {
+    type Next = { start: string; name: string };
+    const byJob = new Map<string, { job: ProjectRow; next?: Next; roles: string[] }>();
+    for (const c of crew) {
+      const job = c.expand?.job;
+      if (!job) continue;
+      const entry = byJob.get(job.id) ?? { job, roles: [] };
+      const need = c.expand?.need;
+      if (need && time(need.end) >= now && (!entry.next || time(need.start) < time(entry.next.start))) {
+        entry.next = { start: need.start, name: need.expand?.period?.name ?? "" };
+      }
+      const role = need?.expand?.role?.name || c.function;
+      if (role && !entry.roles.includes(role)) entry.roles.push(role);
+      byJob.set(job.id, entry);
+    }
+    const at = (m: { job: ProjectRow; next?: Next }) => (m.next ? m.next.start : m.job.startAt);
+    return [...byJob.values()].map((m) => ({ ...m, at: at(m) })).sort((a, b) => time(a.at) - time(b.at));
+  })();
   const maintenanceOverdue = maintenance.filter((m) => m.dueOn < todayDay);
   const repairsOverdue = repairs.filter((r) => time(r.dueAt) < now);
 
@@ -209,17 +228,17 @@ export default function Dashboard() {
             action={{ to: "/projects?view=mine", label: "All mine" }}
             empty={crewLoading ? "Loading…" : "You're not on any upcoming projects."}
           >
-            {mine.slice(0, 12).map((c) => {
-              const j = c.expand!.job!;
+            {mine.slice(0, 12).map(({ job: j, next, roles, at }) => {
+              const when = dayOf(at) === todayDay ? formatTime(at) : formatDateTime(at);
               return (
                 <ProjectLine
-                  key={c.id}
+                  key={j.id}
                   job={j}
-                  when={dayOf(j.startAt) === todayDay ? formatTime(j.startAt) : formatDateTime(j.startAt)}
+                  when={next?.name ? `${next.name}, ${when}` : when}
                   late={false}
                   extra={
                     <span className="flex items-center gap-2 shrink-0">
-                      {c.function && <span className="text-xs text-gray-500 whitespace-nowrap">{c.function}</span>}
+                      {roles.length > 0 && <span className="text-xs text-gray-500 whitespace-nowrap">{roles.join(", ")}</span>}
                       <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
                     </span>
                   }

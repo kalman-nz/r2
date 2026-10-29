@@ -42,6 +42,10 @@ const GROUPS = [
     ],
   },
   {
+    name: "Crew",
+    permissions: [["crew.manage", "Add freelancers to the crew list and set people's crew skills"]],
+  },
+  {
     name: "Prices and quotes",
     permissions: [
       ["prices.view", "See prices and totals"],

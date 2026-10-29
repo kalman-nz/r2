@@ -909,10 +909,57 @@ assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "featu
 log("each organisation's own project statuses on fixed stages, and features it can turn off");
 
 // --- crew, and everyone's own dashboards and views ---
-await planner.create("job_crew", { job: jobA.id, user: techUser.id, function: "Sound op" });
-await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, user: techUser.id }, 400);
-await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, user: bossUser.id }, 400, /not in this organisation/);
-assert.ok((await tech.call("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, user: techUser.id })).status >= 400, "techs don't plan crew");
+// Everyone in the organisation can be rostered: members have their crew
+// record already, freelancers are added.
+const crewPeople = (await planner.ok("GET", `/api/collections/crew_people/records?perPage=200&filter=${encodeURIComponent(`org = "${orgA}"`)}`)).items;
+const techPerson = crewPeople.find((p) => p.user === techUser.id);
+assert.ok(techPerson && techPerson.name, "members are on the crew list");
+const bossPersonB = (await bossB.ok("GET", `/api/collections/crew_people/records?filter=${encodeURIComponent(`user = "${bossUser.id}"`)}`)).items[0];
+await planner.create("job_crew", { job: jobA.id, person: techPerson.id, function: "Sound op" });
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, person: techPerson.id }, 400, /already on the project/);
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, person: bossPersonB.id }, 400, /another organisation/);
+assert.ok((await tech.call("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, person: techPerson.id })).status >= 400, "techs don't plan crew");
+assert.ok((await tech.call("POST", "/api/collections/crew_people/records", { org: orgA, name: "Nope" })).status >= 400, "techs don't add freelancers");
+await planner.fails("POST", "/api/collections/crew_people/records", { org: orgA, name: "Sneaky", user: techUser.id }, 400);
+
+// Crew roles, needs on schedule items, and rostering people onto them.
+const crewRoles = await admin.ok("PUT", "/api/crew-roles", { roles: [{ name: "Audio operator" }, { name: "Technical labour" }] });
+assert.deepEqual(crewRoles.map((r) => r.name), ["Audio operator", "Technical labour"]);
+const [audioRole, labourRole] = crewRoles;
+await planner.fails("PUT", "/api/crew-roles", { roles: [] }, 403);
+const freelancer = await planner.create("crew_people", { name: "  Fran Freelance ", phone: "021 555 0101", skills: [labourRole.id] });
+assert.equal(freelancer.name, "Fran Freelance");
+const packIn = await planner.create("job_periods", { job: jobA.id, kind: "other", name: "Pack in", start: "2030-03-01 08:00:00Z", end: "2030-03-01 12:00:00Z" });
+const labourNeed = await planner.create("crew_needs", { job: jobA.id, period: packIn.id, role: labourRole.id, quantity: 1 });
+assert.deepEqual([labourNeed.start, labourNeed.end, labourNeed.customTimes], [packIn.start, packIn.end, false], "a need starts on its item's times");
+const audioNeed = await planner.create("crew_needs", { job: jobA.id, period: packIn.id, role: audioRole.id, quantity: 1, customTimes: true, start: "2030-03-01 07:00:00Z", end: "2030-03-01 12:00:00Z" });
+await planner.ok("PATCH", `/api/collections/job_periods/records/${packIn.id}`, { start: "2030-03-01 09:00:00Z" });
+assert.equal((await planner.ok("GET", `/api/collections/crew_needs/records/${labourNeed.id}`)).start, "2030-03-01 09:00:00.000Z", "and moves with it");
+assert.equal((await planner.ok("GET", `/api/collections/crew_needs/records/${audioNeed.id}`)).start, "2030-03-01 07:00:00.000Z", "unless it has its own times");
+await planner.fails("POST", "/api/collections/crew_needs/records", { org: orgA, job: jobB.id, period: packIn.id, role: labourRole.id, quantity: 1 }, 400, /isn't on this project/);
+const filled = await planner.create("job_crew", { job: jobA.id, person: freelancer.id, need: labourNeed.id });
+assert.equal(filled.user, "", "freelancers have no login");
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, person: techPerson.id, need: labourNeed.id }, 400, /spots are filled/);
+await planner.fails("PATCH", `/api/collections/crew_needs/records/${labourNeed.id}`, { quantity: 0 }, 400);
+const onAudio = await planner.create("job_crew", { job: jobA.id, person: techPerson.id, need: audioNeed.id });
+assert.equal(onAudio.user, techUser.id, "members' slots are theirs, for My projects");
+// What Rostering and the Crew tab ask for: slots in some dates, across projects.
+const enc = encodeURIComponent;
+const range = `need.start <= "2030-03-02 00:00:00.000Z" && need.end >= "2030-02-28 00:00:00.000Z"`;
+const booked = await tech.ok("GET", `/api/collections/job_crew/records?expand=need,need.role,need.period,job&filter=${enc(`org = "${orgA}" && need != '' && ${range}`)}`);
+assert.deepEqual(booked.items.map((b) => b.expand.need.expand.role.name).sort(), ["Audio operator", "Technical labour"], "everyone can see the roster");
+const rangedNeeds = await tech.ok("GET", `/api/collections/crew_needs/records?expand=job,period,role&filter=${enc(`org = "${orgA}" && start <= "2030-03-02 00:00:00.000Z" && end >= "2030-02-28 00:00:00.000Z" && job.status != 'cancelled'`)}`);
+assert.equal(rangedNeeds.items.length, 2);
+assert.equal(rangedNeeds.items[0].expand.period.name, "Pack in");
+const myCrew = await tech.ok("GET", `/api/collections/job_crew/records?expand=job,need,need.role,need.period&filter=${enc(`user = "${techUser.id}"`)}`);
+assert.ok(myCrew.items.some((c) => c.expand.need?.expand?.role?.name === "Audio operator"), "and their own slots, for My projects");
+await admin.fails("PUT", "/api/crew-roles", { roles: [{ id: audioRole.id, name: "Audio operator" }] }, 400, /Technical labour is needed/);
+await planner.fails("DELETE", `/api/collections/crew_people/records/${freelancer.id}`, null, 400, /archive them instead/);
+await planner.ok("DELETE", `/api/collections/job_periods/records/${packIn.id}`);
+assert.equal((await planner.ok("GET", `/api/collections/job_crew/records?filter=${encodeURIComponent(`need = "${labourNeed.id}" || need = "${audioNeed.id}"`)}`)).items.length, 0, "removing the item takes its crew off it");
+await planner.ok("DELETE", `/api/collections/crew_people/records/${freelancer.id}`);
+for (const page of ["crew", "rostering"]) assert.ok(Array.isArray((await tech.ok("GET", `/api/views?page=${page}`)).views), `${page} has saved views`);
+log("crew roles, crew needs on schedule items, and rostering members and freelancers onto them");
 const minePage = await tech.ok("GET", `/api/collections/jobs/records?filter=${encodeURIComponent(`org = "${orgA}" && job_crew_via_job.user ?= "${techUser.id}"`)}`);
 assert.deepEqual(minePage.items.map((j) => j.id), [jobA.id], "my projects are the ones I'm crew on");
 const packingNow = await tech.ok("GET", `/api/home/packing?jobs=${jobA.id},${jobB.id}`);
