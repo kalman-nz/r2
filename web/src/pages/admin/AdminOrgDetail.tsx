@@ -12,6 +12,7 @@ import Modal from "../../components/Modal";
 import InviteForm, { SignupLinkNotice } from "../../components/InviteForm";
 import { InvitationList, MemberList } from "../../components/TeamLists";
 import { StatusPill } from "./AdminOrgs";
+import { FeatureSwitches } from "../../components/FeaturesSettings";
 
 export default function AdminOrgDetail() {
   const { id = "" } = useParams();
@@ -97,6 +98,14 @@ export default function AdminOrgDetail() {
           Nobody can manage this organisation yet. Invite an admin{org.invitations.some((i) => i.roleId === adminRole?.id) ? ", or wait for the one you invited to accept" : ""}.
         </div>
       )}
+
+      <section className="card p-4 flex flex-col gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Features</h3>
+          <p className="text-xs text-gray-500 mt-0.5">What {org.name} has. Its own people don&apos;t see this: what it hasn&apos;t got is just not there for them.</p>
+        </div>
+        <FeatureSwitches orgId={id} orgName={org.name} features={org.features} onChanged={reload} />
+      </section>
 
       <section className="card p-4 flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-gray-900">Invite someone</h3>

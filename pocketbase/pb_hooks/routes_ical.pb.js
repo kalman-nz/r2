@@ -14,6 +14,9 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
   const { toMs, toPbDate, DAY_MS } = require(`${__hooks}/lib/time.js`);
   const org = orgForIcalToken(e.request.pathValue("token"));
   if (!org) throw new NotFoundError("Unknown calendar");
+  // A feed of projects, so none while the organisation doesn't use them.
+  const { findOrNull } = require(`${__hooks}/lib/records.js`);
+  if (!require(`${__hooks}/lib/features.js`).featuresOf(findOrNull($app, "organisations", org)).projects) throw new NotFoundError("Unknown calendar");
 
   const now = Date.now();
   const jobs = $app.findRecordsByFilter(

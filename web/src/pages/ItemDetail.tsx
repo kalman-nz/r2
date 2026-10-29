@@ -7,7 +7,7 @@ import { useCategories, useCategoryPaths } from "../lib/catalog";
 import { indexFolders, trail } from "../lib/folders";
 import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
-import { priceLabel } from "../lib/format";
+import { nzd, priceLabel } from "../lib/format";
 import { useFeature, useRole } from "../lib/roles";
 import ItemForm from "../components/item/ItemForm";
 import ItemDetails from "../components/item/ItemDetails";
@@ -68,7 +68,7 @@ export default function ItemDetail() {
     queryFn: () => pb.collection("item_components").getFullList<{ kind: string }>({ filter: pb.filter("parent = {:id}", { id }), fields: "kind" }),
     enabled: !isNew,
   });
-  const { data: projects } = useItemHistory(isNew ? "" : id);
+  const { data: projects } = useItemHistory(isNew || !feature("projects") ? "" : id);
   const [requestedTab, openTab] = useTab(ALL_TABS);
   const [archiving, setArchiving] = useState(false);
   const [repairing, setRepairing] = useState(false);
@@ -175,7 +175,8 @@ export default function ItemDetail() {
     (t) =>
       t.key === "general" ||
       t.key === "accessories" ||
-      t.key === "history" ||
+      // Which projects it's been on.
+      (t.key === "history" && feature("projects")) ||
       (t.key === "maintenance"
         ? item.kind === "item" && (feature("repairs") || feature("maintenance"))
         : t.key === "units"
@@ -288,10 +289,12 @@ export default function ItemDetail() {
             {(cards) => (
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 items-start">
                 <div className="flex flex-col gap-4 min-w-0">
-                  <section className="card p-4">
-                    <h2 className="eyebrow text-gray-500 mb-3">Availability, next 60 days</h2>
-                    <AvailabilityStrip itemId={item.id} />
-                  </section>
+                  {feature("projects") && (
+                    <section className="card p-4">
+                      <h2 className="eyebrow text-gray-500 mb-3">Availability, next 60 days</h2>
+                      <AvailabilityStrip itemId={item.id} />
+                    </section>
+                  )}
                   {cards.identification}
                 </div>
                 <div className="flex flex-col gap-4 min-w-0">
@@ -327,6 +330,7 @@ export default function ItemDetail() {
 
 // The four things people open an item to check, before anything else.
 function KeyFacts({ item }: { item: Item }) {
+  const feature = useFeature();
   const { data } = useItemTimeline(item.id);
   const free = freeNow(data);
   const stock = data?.stock ?? null;
@@ -339,9 +343,18 @@ function KeyFacts({ item }: { item: Item }) {
   );
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {tile("Price", item.price > 0 ? priceLabel(item) : "—")}
-      {tile("Free now", free === null ? "…" : stock !== null ? `${free} of ${stock}` : String(free), free !== null && free <= 0 ? "text-fault-ink" : "text-gray-900")}
-      {tile("Booked, next 60 days", booked === null ? "…" : booked === 0 ? "Nothing" : `${booked} project${booked === 1 ? "" : "s"}`)}
+      {feature("pricing")
+        ? tile("Price", item.price > 0 ? priceLabel(item) : "—")
+        : tile("Replacement cost", item.replacementValue > 0 ? nzd(item.replacementValue) : "—")}
+      {/* Without projects nothing's booked: what's free is what's in service. */}
+      {tile(
+        feature("projects") ? "Free now" : "In service",
+        free === null ? "…" : stock !== null ? `${free} of ${stock}` : String(free),
+        free !== null && free <= 0 ? "text-fault-ink" : "text-gray-900",
+      )}
+      {feature("projects")
+        ? tile("Booked, next 60 days", booked === null ? "…" : booked === 0 ? "Nothing" : `${booked} project${booked === 1 ? "" : "s"}`)
+        : tile("Tracked", item.kind === "kit" ? "As a kit" : item.tracking === "serial" ? "Unit by unit" : "As a quantity")}
       {tile("Location", item.kind === "kit" ? "Kit" : item.locationInWarehouse || "—")}
     </div>
   );

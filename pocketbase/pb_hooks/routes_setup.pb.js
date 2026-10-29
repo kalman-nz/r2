@@ -18,6 +18,8 @@ routerAdd("POST", "/api/setup", (e) => {
   const body = e.requestInfo().body || {};
   const data = validateNewAccount(body);
   const orgName = (typeof body.businessName === "string" && body.businessName.trim()) || "My organisation";
+  // What it'll be used for (lib/features.js PRESETS): everything, to start with.
+  const features = body.preset ? require(`${__hooks}/lib/features.js`).presetFeatures(String(body.preset)) : {};
 
   let orgId = "";
   $app.runInTransaction((tx) => {
@@ -34,7 +36,7 @@ routerAdd("POST", "/api/setup", (e) => {
     user.set("password", data.password);
     user.set("passwordConfirm", data.password);
     tx.save(user);
-    const org = new Record(tx.findCollectionByNameOrId("organisations"), { name: orgName, suspended: false, features: {}, createdBy: user.id });
+    const org = new Record(tx.findCollectionByNameOrId("organisations"), { name: orgName, suspended: false, features: features, createdBy: user.id });
     tx.save(org);
     const roles = createDefaultRoles(tx, org.id);
     tx.save(new Record(tx.findCollectionByNameOrId("memberships"), { org: org.id, user: user.id, role: roles.Admin.id }));

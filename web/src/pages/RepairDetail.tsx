@@ -7,7 +7,7 @@ import { errorText } from "../lib/errors";
 import { formatDate, formatDateTime, fromDateInput, toDateInput } from "../lib/format";
 import { invalidateMaintenance, useRepairStatuses } from "../lib/maintenance";
 import { STATUS_COLOURS } from "../lib/statuses";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import { useFollowOrg } from "../lib/org";
 import FilesCard from "../components/FilesCard";
 import NumberInput from "../components/NumberInput";
@@ -34,6 +34,7 @@ export default function RepairDetail() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
   const { can } = useRole();
+  const feature = useFeature();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [saving, setSaving] = useState(false);
@@ -255,23 +256,25 @@ export default function RepairDetail() {
           {repair.dueAt && <p className="text-xs text-gray-500 pt-1">Expected back {formatDate(repair.dueAt)}</p>}
         </section>
 
-        <section className="card p-4 flex flex-col gap-2 text-sm">
-          <h2 className="eyebrow text-gray-500">Came back damaged from</h2>
-          {canEdit ? (
-            <ProjectPicker
-              value={repair.expand?.job ?? null}
-              onChange={(job) => update({ job: job?.id ?? "" }, job ? `Linked to #${job.number}` : "Unlinked")}
-              disabled={saving}
-            />
-          ) : repair.expand?.job ? null : (
-            <p className="text-gray-500">No project.</p>
-          )}
-          {repair.expand?.job && (
-            <Link to={`/projects/${repair.expand.job.id}`} className="text-xs text-signal-ink hover:text-signal-ink-hover w-fit">
-              Open #{repair.expand.job.number} {repair.expand.job.name} →
-            </Link>
-          )}
-        </section>
+        {feature("projects") && (
+          <section className="card p-4 flex flex-col gap-2 text-sm">
+            <h2 className="eyebrow text-gray-500">Came back damaged from</h2>
+            {canEdit ? (
+              <ProjectPicker
+                value={repair.expand?.job ?? null}
+                onChange={(job) => update({ job: job?.id ?? "" }, job ? `Linked to #${job.number}` : "Unlinked")}
+                disabled={saving}
+              />
+            ) : repair.expand?.job ? null : (
+              <p className="text-gray-500">No project.</p>
+            )}
+            {repair.expand?.job && (
+              <Link to={`/projects/${repair.expand.job.id}`} className="text-xs text-signal-ink hover:text-signal-ink-hover w-fit">
+                Open #{repair.expand.job.number} {repair.expand.job.name} →
+              </Link>
+            )}
+          </section>
+        )}
 
         <FilesCard
           record={repair}

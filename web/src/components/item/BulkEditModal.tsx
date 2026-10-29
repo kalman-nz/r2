@@ -6,6 +6,7 @@ import Modal from "../Modal";
 import NumberInput from "../NumberInput";
 import Segmented from "../Segmented";
 import { CustomInput, PER_OPTIONS } from "./ItemDetails";
+import { useFeature } from "../../lib/roles";
 
 // The same change to many items at once, from the inventory list's
 // selection. Only the ticked fields are written; editing a field ticks it.
@@ -38,6 +39,8 @@ export async function updateEach<T extends { id: string }>(collection: "items" |
 }
 
 export default function BulkEditModal({ items, onClose, onDone }: { items: Item[]; onClose: () => void; onDone: (failed: number) => void }) {
+  // Hire prices with prices and quotes; turnaround between bookings with projects.
+  const feature = useFeature();
   const { data: customFields = [] } = useItemCustomFields();
   const [values, setValues] = useState<Values>(START);
   const [custom, setCustom] = useState<Record<string, unknown>>({});
@@ -89,12 +92,13 @@ export default function BulkEditModal({ items, onClose, onDone }: { items: Item[
     <Modal title={`Edit ${items.length} item${items.length === 1 ? "" : "s"}`} onClose={saving ? () => {} : onClose}>
       <p className="text-xs text-gray-500 -mt-2">Tick what to change. Everything else stays as it is on each item.</p>
       <div className="flex flex-col divide-y divide-gray-100">
-        {row("price", "Price", <NumberInput value={values.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-full" />)}
-        {row(
-          "priceUnit",
-          "Priced per",
-          <Segmented label="Priced per" compact value={values.priceUnit} options={PER_OPTIONS} onChange={(v) => set("priceUnit", v)} />,
-        )}
+        {feature("pricing") && row("price", "Price", <NumberInput value={values.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-full" />)}
+        {feature("pricing") &&
+          row(
+            "priceUnit",
+            "Priced per",
+            <Segmented label="Priced per" compact value={values.priceUnit} options={PER_OPTIONS} onChange={(v) => set("priceUnit", v)} />,
+          )}
         {row(
           "replacementValue",
           "Replacement value",
@@ -110,11 +114,12 @@ export default function BulkEditModal({ items, onClose, onDone }: { items: Item[
             className="input py-1.5 w-full"
           />,
         )}
-        {row(
-          "bufferHours",
-          "Extra turnaround (h)",
-          <NumberInput value={values.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} className="input py-1.5 w-full" />,
-        )}
+        {feature("projects") &&
+          row(
+            "bufferHours",
+            "Extra turnaround (h)",
+            <NumberInput value={values.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} className="input py-1.5 w-full" />,
+          )}
         {row(
           "weightKg",
           "Weight (kg)",

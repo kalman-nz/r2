@@ -55,7 +55,8 @@ routerAdd(
     const body = e.requestInfo().body || {};
     const name = String(body.name || "").trim();
     if (!name) throw new BadRequestError("The organisation needs a name");
-    const org = new Record($app.findCollectionByNameOrId("organisations"), { name: name, suspended: false, features: {}, createdBy: e.auth.id });
+    const features = body.preset ? require(`${__hooks}/lib/features.js`).presetFeatures(String(body.preset)) : {};
+    const org = new Record($app.findCollectionByNameOrId("organisations"), { name: name, suspended: false, features: features, createdBy: e.auth.id });
     $app.save(org);
     const roles = createDefaultRoles($app, org.id);
     setSetting(org.id, "businessName", name);
@@ -81,6 +82,7 @@ routerAdd(
       name: org.getString("name"),
       suspended: org.getBool("suspended"),
       created: org.getString("created"),
+      features: require(`${__hooks}/lib/features.js`).featuresOf(org),
       members: listMembers($app, org.id, true),
       invitations: pendingInvitations($app, org.id),
       roles: listRoles($app, org.id),
@@ -322,4 +324,26 @@ routerAdd(
   $apis.requireAuth("users"),
   requirePlatformAdmin,
 );
+// What an organisation has (lib/features.js): { features: { key: bool } }.
+// The platform admin's to set, since it's what the organisation pays for;
+// its own admins see it in Settings → Features. Returns every feature's state.
+routerAdd(
+  "PATCH",
+  "/api/admin/orgs/{id}/features",
+  (e) => {
+    const { findOrNull } = require(`${__hooks}/lib/records.js`);
+    const { setFeatures } = require(`${__hooks}/lib/features.js`);
+    const { whoName } = require(`${__hooks}/lib/auth.js`);
+    const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const org = findOrNull($app, "organisations", e.request.pathValue("id"));
+    if (!org) throw new NotFoundError("Organisation not found");
+    const changes = (e.requestInfo().body || {}).features;
+    const features = setFeatures($app, org, changes);
+    logEvent(org.id, "features_changed", whoName(e.auth), { changes: changes });
+    return e.json(200, features);
+  },
+  $apis.requireAuth("users"),
+  requirePlatformAdmin,
+);
+
 })();

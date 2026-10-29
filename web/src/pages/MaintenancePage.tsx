@@ -61,7 +61,7 @@ export default function MaintenancePage() {
   const refresh = () => invalidateMaintenance(queryClient);
 
   if (tabs.length === 0) {
-    return <p className="max-w-6xl mx-auto text-sm text-gray-500">Repairs and maintenance plans are both turned off (Settings → Features).</p>;
+    return <p className="max-w-6xl mx-auto text-sm text-gray-500">Repairs and maintenance plans aren&apos;t part of your R2.</p>;
   }
 
   return (

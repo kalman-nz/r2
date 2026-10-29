@@ -10,7 +10,6 @@ import RepairStatusesSettings from "../components/RepairStatusesSettings";
 import CrewRolesSettings from "../components/CrewRolesSettings";
 import TrackingStepsSettings from "../components/TrackingStepsSettings";
 import JobStatusesSettings from "../components/JobStatusesSettings";
-import FeaturesSettings from "../components/FeaturesSettings";
 import DocumentsSettings from "../components/DocumentsSettings";
 import ImportSettings from "../components/ImportSettings";
 import IntegrationsSettings from "../components/IntegrationsSettings";
@@ -49,21 +48,10 @@ const GROUPS = ["Organisation", "How you work", "Finance", "Inventory", "Data"];
 
 const NAV_ITEMS: NavItem[] = [
   {
-    to: "features",
-    label: "Features",
-    group: "How you work",
-    permissions: ["settings.edit"],
-    icon: (
-      <Icon>
-        <rect x="3" y="6" width="18" height="12" rx="6" />
-        <circle cx="15" cy="12" r="3" />
-      </Icon>
-    ),
-  },
-  {
     to: "project-statuses",
     label: "Project statuses",
     group: "How you work",
+    feature: "projects",
     permissions: ["settings.edit"],
     icon: (
       <Icon>
@@ -77,6 +65,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "documents",
     label: "Documents",
     group: "How you work",
+    feature: "projects",
     permissions: ["settings.edit"],
     icon: (
       <Icon>
@@ -139,6 +128,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "pricing",
     label: "Pricing & tax",
     group: "Finance",
+    feature: "pricing",
     permissions: ["settings.edit"],
     icon: (
       <Icon>
@@ -349,7 +339,7 @@ export default function SettingsPage() {
             <Route path="crew-roles" element={gate("crew-roles", <CrewRolesSettings />)} />
             <Route path="equipment-tracking" element={gate("equipment-tracking", <TrackingStepsSettings />)} />
             <Route path="project-statuses" element={gate("project-statuses", <JobStatusesSettings />)} />
-            <Route path="features" element={gate("features", <FeaturesSettings />)} />
+            <Route path="features" element={<Navigate to=".." replace />} />
             <Route path="documents" element={gate("documents", <DocumentsSettings />)} />
             <Route path="import" element={gate("import", <ImportSettings />)} />
             <Route path="integrations" element={gate("integrations", <IntegrationsSettings />)} />

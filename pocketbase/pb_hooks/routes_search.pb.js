@@ -40,9 +40,11 @@ routerAdd(
         .join(" · "),
     }));
 
+    // Projects and contacts only while the organisation uses them.
+    const projectsOn = require(`${__hooks}/lib/features.js`).featuresOf(ctx.org).projects;
     const number = Number(term.replace(/^#/, ""));
     const byNumber = Number.isInteger(number) && number > 0;
-    const jobs = $app
+    const jobs = !projectsOn ? [] : $app
       .findRecordsByFilter(
         "jobs",
         byNumber ? "org = {:org} && (number = {:n} || name ~ {:q} || reference ~ {:q})" : "org = {:org} && (name ~ {:q} || reference ~ {:q})",
@@ -57,7 +59,7 @@ routerAdd(
         subtitle: ["#" + j.getInt("number"), j.getString("status"), j.getString("prepAt").slice(0, 10)].join(" · "),
       }));
 
-    const contacts = $app
+    const contacts = !projectsOn ? [] : $app
       .findRecordsByFilter("contacts", "org = {:org} && archived = false && (name ~ {:q} || email ~ {:q} || contactPerson ~ {:q})", "name", LIMIT, 0, p)
       .map((c) => ({
         id: c.id,

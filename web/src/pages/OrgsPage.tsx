@@ -26,7 +26,7 @@ export default function OrgsPage() {
 
   function open(m: Membership) {
     switchOrg(m.org.id);
-    navigate("/projects");
+    navigate("/");
   }
 
   async function accept(invitation: Invitation) {
@@ -36,7 +36,7 @@ export default function OrgsPage() {
       await refresh();
       switchOrg(invitation.orgId);
       showToast("success", `You've joined ${invitation.orgName}`);
-      navigate("/projects");
+      navigate("/");
     } catch (err) {
       showToast("error", errorText(err));
     } finally {

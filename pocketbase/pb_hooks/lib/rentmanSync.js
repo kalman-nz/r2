@@ -39,7 +39,14 @@ const DEFAULTS = {
   projectRequests: false,
   // The secret part of this organisation's webhook address.
   webhookKey: "",
+  // Contacts and locations (only off while the organisation doesn't use
+  // projects: WITHOUT_PROJECTS).
+  contacts: true,
 };
+
+// What changes while the organisation has projects turned off
+// (lib/sync.js getConfig): equipment only.
+const WITHOUT_PROJECTS = { projects: false, projectRequests: false, contacts: false };
 
 const TWO_WAY = ["items", "contacts", "venues"];
 
@@ -174,7 +181,7 @@ function poll(org, cfg, state, run, options) {
   const linesDue = cfg.projects && (options.lines || (!options.steps && now - (state.lastLinesPollAt || 0) >= (Number(cfg.linesPollHours) || 6) * 3600000));
 
   if (steps.equipment) imports.importEquipment(client, org, counts, fail, ctx);
-  if (steps.contacts || steps.projects) imports.importContacts(client, org, counts, fail, ctx);
+  if ((steps.contacts || steps.projects) && cfg.contacts !== false) imports.importContacts(client, org, counts, fail, ctx);
   if (steps.projects && cfg.projects) imports.importProjects(client, org, counts, fail, ctx);
   const changes = { initialDone: true };
   if (linesDue) {
@@ -372,6 +379,7 @@ function sendProjectRequest(org, cfg, run, jobId) {
 function onLocalChange(org, cfg, event, record) {
   const collection = record.collection().name;
   if (TWO_WAY.indexOf(collection) === -1 || directionOf(cfg, collection) !== "both") return;
+  if (collection !== "items" && cfg.contacts === false) return;
   if (event === "delete") {
     const link = sync.findLink(org, "rentman", collection, { record: record.id });
     if (link) sync.enqueue(org, "rentman", "out", "delete", { collection: collection, remoteId: link.getString("remoteId") });
@@ -406,6 +414,7 @@ function onWebhook(org, cfg, body) {
   const ids = items.map((i) => String((i && (i.id !== undefined ? i.id : i.ref && String(i.ref).split("/").pop())) || "")).filter(Boolean);
   if (!kind) return { queued: 0 };
   if ((kind === "projects" || kind === "lines") && !cfg.projects) return { queued: 0 };
+  if (kind === "contacts" && cfg.contacts === false) return { queued: 0 };
   // Deleted equipment, contacts and project lines are handled one by one;
   // anything else deleted (a serial number, a folder…) re-reads its list.
   const type = String(b.itemType || b.item_type || "").toLowerCase().replace(/[^a-z]/g, "").replace(/s$/, "");
@@ -449,6 +458,7 @@ function test(org) {
 
 module.exports = {
   DEFAULTS,
+  WITHOUT_PROJECTS,
   TWO_WAY,
   pollDue,
   poll,

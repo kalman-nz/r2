@@ -4,7 +4,7 @@ import { api, type CsvImportResult, type RentmanImportResult, type RentmanImport
 import { normaliseHeader, parseCsv } from "../lib/csv";
 import { formatDateTime } from "../lib/format";
 import { errorText } from "../lib/errors";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 
@@ -61,6 +61,8 @@ function RentmanImport() {
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState<RentmanImportResult | null>(null);
   const [what, setWhat] = useState({ equipment: true, contacts: false, projects: false });
+  // Contacts and projects come in only while the organisation uses projects.
+  const projectsOn = useFeature()("projects");
 
   async function saveToken(value: string) {
     setSavingToken(true);
@@ -136,8 +138,9 @@ function RentmanImport() {
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Import from Rentman</h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          Pulls your equipment, contacts and projects out of your own Rentman account. Projects come with their equipment lines,
-          priced as Rentman priced them. Crew, transport and other costs stay in Rentman.
+          {projectsOn
+            ? "Pulls your equipment, contacts and projects out of your own Rentman account. Projects come with their equipment lines, priced as Rentman priced them. Crew, transport and other costs stay in Rentman."
+            : "Pulls your equipment out of your own Rentman account: items, serial numbers, folders and stock locations."}
         </p>
       </div>
       <div className="card p-4 flex flex-col gap-4">
@@ -177,28 +180,32 @@ function RentmanImport() {
               <span className="block text-xs text-gray-500">Items, serial numbers, folders, stock locations and custom fields</span>
             </span>
           </label>
-          <label className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              checked={what.contacts || what.projects}
-              onChange={(e) => setWhat((w) => ({ ...w, contacts: e.target.checked }))}
-              disabled={running || what.projects}
-              className="mt-0.5"
-            />
-            <span>
-              Contacts and locations
-              <span className="block text-xs text-gray-500">Clients become contacts; the places projects happen become locations</span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2">
-            <input type="checkbox" checked={what.projects} onChange={(e) => setWhat((w) => ({ ...w, projects: e.target.checked }))} disabled={running} className="mt-0.5" />
-            <span>
-              Projects
-              <span className="block text-xs text-gray-500">
-                With their dates, status and equipment. Brings contacts too. Import equipment first, or its lines come in as plain text lines.
-              </span>
-            </span>
-          </label>
+          {projectsOn && (
+            <>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={what.contacts || what.projects}
+                  onChange={(e) => setWhat((w) => ({ ...w, contacts: e.target.checked }))}
+                  disabled={running || what.projects}
+                  className="mt-0.5"
+                />
+                <span>
+                  Contacts and locations
+                  <span className="block text-xs text-gray-500">Clients become contacts; the places projects happen become locations</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={what.projects} onChange={(e) => setWhat((w) => ({ ...w, projects: e.target.checked }))} disabled={running} className="mt-0.5" />
+                <span>
+                  Projects
+                  <span className="block text-xs text-gray-500">
+                    With their dates, status and equipment. Brings contacts too. Import equipment first, or its lines come in as plain text lines.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button onClick={runImport} disabled={running || !settings?.rentmanApiTokenSet || steps.length === 0} className="btn-primary py-2">
@@ -256,6 +263,7 @@ function RentmanImport() {
 
 function CsvImport() {
   const queryClient = useQueryClient();
+  const projectsOn = useFeature()("projects");
   const { showToast } = useToast();
   const [kind, setKind] = useState<CsvKind>("items");
   const [fileName, setFileName] = useState("");
@@ -337,7 +345,7 @@ function CsvImport() {
             className="input py-2 w-auto"
           >
             <option value="items">Inventory items</option>
-            <option value="contacts">Contacts</option>
+            {projectsOn && <option value="contacts">Contacts</option>}
           </select>
           <input
             type="file"

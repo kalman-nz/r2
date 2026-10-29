@@ -222,7 +222,11 @@ function RoleEditor({
 
         <div className="grid md:grid-cols-2 gap-x-6 gap-y-4">
           {catalogue.groups.map((group) => {
-            const keys = group.permissions.map((p) => p.key);
+            // Permissions for what the organisation hasn't got don't show
+            // (they're kept on the role, and count for nobody, until it has).
+            const shown = group.permissions.filter((p) => !FEATURES.some((f) => !feature(f.key) && f.permissions.includes(p.key)));
+            if (shown.length === 0) return null;
+            const keys = shown.map((p) => p.key);
             const all = keys.every((k) => role?.locked || chosen.has(k));
             return (
               <fieldset key={group.name} className="flex flex-col gap-1.5 min-w-0">
@@ -234,11 +238,9 @@ function RoleEditor({
                     </button>
                   )}
                 </div>
-                {group.permissions.map((p) => {
+                {shown.map((p) => {
                   const checked = !!role?.locked || chosen.has(p.key);
-                  // Kept on the role, but nobody gets it while its feature's off.
-                  const off = FEATURES.find((f) => !feature(f.key) && f.permissions.includes(p.key));
-                  const mayTick = grantable(p.key) || !!off;
+                  const mayTick = grantable(p.key);
                   return (
                     <label
                       key={p.key}
@@ -254,7 +256,6 @@ function RoleEditor({
                       />
                       <span>
                         {p.label}
-                        {off && <span className="text-xs text-gray-400"> · {off.label} is off in Features</span>}
                       </span>
                     </label>
                   );

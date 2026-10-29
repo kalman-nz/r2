@@ -221,7 +221,9 @@ export interface TrackedProject {
 export type TrackedAt = Record<string, number>;
 
 // What an organisation uses (Settings → Features, pb_hooks/lib/features.js).
-export type FeatureKey = "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "crew" | "integrations" | "xero";
+// Starting points for an organisation (lib/workflow.ts PRESETS).
+export type PresetKey = "hire" | "venue" | "inventory";
+export type FeatureKey = "projects" | "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "crew" | "integrations" | "xero";
 export type Features = Record<FeatureKey, boolean>;
 
 // Files on a repair or maintenance job (pb_hooks/lib/files.js): the stored
@@ -823,6 +825,7 @@ export interface AdminOrg {
   name: string;
   suspended: boolean;
   created: string;
+  features: Features;
   members: Member[];
   invitations: Invitation[];
   roles: OrgRole[];
@@ -1079,6 +1082,8 @@ export interface MomentusSyncConfig {
 
 export interface IntegrationSummary<C> {
   config: C;
+  // The organisation has projects off, so the sync leaves projects, contacts and quotes alone.
+  projectsOff: boolean;
   state: {
     lastPollAt: number | null;
     lastLinesPollAt: number | null;
@@ -1137,7 +1142,7 @@ export const api = {
   // First run: the login page offers to create the first admin when there
   // are no users yet — see routes_setup.pb.js.
   setupStatus: () => request<{ needed: boolean }>("/api/setup"),
-  setup: (data: { name: string; email: string; password: string; businessName: string }) =>
+  setup: (data: { name: string; email: string; password: string; businessName: string; preset?: PresetKey }) =>
     request<{ ok: true }>("/api/setup", json("POST", data)),
 
   // Jobs
@@ -1213,7 +1218,6 @@ export const api = {
   saveTrackingSteps: (steps: TrackingStepInput[]) => request<TrackingStep[]>("/api/tracking-steps", json("PUT", { steps })),
   saveJobStatuses: (statuses: JobStatusInput[], moves: Record<string, string> = {}) =>
     request<JobStatusDef[]>("/api/job-statuses", json("PUT", { statuses, moves })),
-  updateFeatures: (orgId: string, features: Partial<Features>) => request<Features>(`/api/orgs/${orgId}/features`, json("PATCH", { features })),
 
   // Maintenance: see pb_hooks/routes_maintenance.pb.js.
   createPlan: (body: PlanInput) => request<MaintenancePlan>("/api/maintenance/plans", json("POST", body)),
@@ -1361,12 +1365,16 @@ export const api = {
 // routes_admin.pb.js.
 export const adminApi = {
   orgs: () => request<AdminOrgRow[]>("/api/admin/orgs"),
-  createOrg: (name: string, adminEmail: string) =>
+  // preset: what it starts with on (lib/workflow.ts PRESETS); omitted, everything.
+  createOrg: (name: string, adminEmail: string, preset?: PresetKey) =>
     request<{ id: string; name: string; invitation: Invitation | null; emailed: boolean }>(
       "/api/admin/orgs",
-      json("POST", { name, adminEmail }),
+      json("POST", { name, adminEmail, preset }),
     ),
   org: (id: string) => request<AdminOrg>(`/api/admin/orgs/${id}`),
+  // What it has (it's what it pays for): platform admins only.
+  updateFeatures: (orgId: string, features: Partial<Features>) =>
+    request<Features>(`/api/admin/orgs/${orgId}/features`, json("PATCH", { features })),
   updateOrg: (id: string, patch: { name?: string; suspended?: boolean }) =>
     request<{ ok: true }>(`/api/admin/orgs/${id}`, json("PATCH", patch)),
   deleteOrg: (id: string, confirmName: string) => request<{ ok: true }>(`/api/admin/orgs/${id}`, json("DELETE", { confirm: confirmName })),

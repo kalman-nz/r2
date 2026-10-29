@@ -23,16 +23,17 @@ export interface PanelInfo {
 }
 
 export const PANELS: PanelInfo[] = [
+  // Without projects, it's the inventory's: maintenance, repairs and units out of service.
   { id: "glance", label: "At a glance", hint: "Going out and due back today, overdue returns, what's out, maintenance and repairs", size: "full" },
-  { id: "mine", label: "My projects", hint: "The projects you're on the crew for, soonest first", size: "wide" },
-  { id: "prep", label: "To prep next", hint: "Confirmed projects in the order they go out, with how much is packed", size: "wide" },
-  { id: "going-out", label: "Going out", hint: "Confirmed projects going out in the next 7 days, by day", size: "wide" },
-  { id: "coming-back", label: "Coming back", hint: "Projects out on hire, due back in the next 7 days", size: "wide" },
-  { id: "out-now", label: "Out now", hint: "Everything out on hire, by when it's due back", size: "side" },
-  { id: "confirm", label: "Needs confirming", hint: "Enquiries and pencilled projects starting within 14 days", size: "side" },
+  { id: "mine", label: "My projects", hint: "The projects you're on the crew for, soonest first", size: "wide", feature: "projects" },
+  { id: "prep", label: "To prep next", hint: "Confirmed projects in the order they go out, with how much is packed", size: "wide", feature: "projects" },
+  { id: "going-out", label: "Going out", hint: "Confirmed projects going out in the next 7 days, by day", size: "wide", feature: "projects" },
+  { id: "coming-back", label: "Coming back", hint: "Projects out on hire, due back in the next 7 days", size: "wide", feature: "projects" },
+  { id: "out-now", label: "Out now", hint: "Everything out on hire, by when it's due back", size: "side", feature: "projects" },
+  { id: "confirm", label: "Needs confirming", hint: "Enquiries and pencilled projects starting within 14 days", size: "side", feature: "projects" },
   { id: "maintenance", label: "Maintenance due", hint: "Maintenance overdue and due in the next 7 days", size: "side", feature: "maintenance" },
   { id: "repairs", label: "Open repairs", hint: "Kit out of service for repair", size: "side", feature: "repairs" },
-  { id: "quotes", label: "Quotes waiting", hint: "Issued quotes waiting on the client, and what they're worth", size: "side", permission: "quotes.view" },
+  { id: "quotes", label: "Quotes waiting", hint: "Issued quotes waiting on the client, and what they're worth", size: "side", permission: "quotes.view", feature: "pricing" },
 ];
 
 export const PANEL_BY_ID = new Map(PANELS.map((p) => [p.id, p]));

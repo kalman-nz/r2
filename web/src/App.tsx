@@ -33,7 +33,7 @@ import { OrgSwitcher, UserMenu } from "./components/HeaderMenus";
 import { R2Lockup } from "./components/Brand";
 import { useRole } from "./lib/roles";
 import { useOrg } from "./lib/org";
-import { api } from "./lib/api";
+import { api, type FeatureKey } from "./lib/api";
 
 // The two label pages carry the label renderer, and the admin panel is for
 // a handful of people; load them on demand.
@@ -178,6 +178,13 @@ function NavSection({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+// A page that's part of a feature: Home instead while the organisation has
+// it turned off (an old link, a bookmark, another organisation's tab).
+function WithFeature({ feature: key, children }: { feature: FeatureKey; children: ReactNode }) {
+  const { feature } = useOrg();
+  return feature(key) ? <>{children}</> : <Navigate to="/" replace />;
+}
+
 // Keeps the rest of the path (a record id, /scan) when a section is renamed.
 function RenamedPath({ from, to }: { from: string; to: string }) {
   const location = useLocation();
@@ -235,21 +242,25 @@ function AppShell() {
           {org ? (
             <>
               <NavItem to="/" icon={icons.home} label="Home" end />
-              <NavSection title="Planning">
-                <NavItem to="/projects" icon={icons.jobs} label="Projects" />
-                {feature("crew") && <NavItem to="/rostering" icon={icons.rostering} label="Rostering" />}
-                {feature("crew") && <NavItem to="/crew" icon={icons.crew} label="Crew" />}
-              </NavSection>
+              {feature("projects") && (
+                <NavSection title="Planning">
+                  <NavItem to="/projects" icon={icons.jobs} label="Projects" />
+                  {feature("crew") && <NavItem to="/rostering" icon={icons.rostering} label="Rostering" />}
+                  {feature("crew") && <NavItem to="/crew" icon={icons.crew} label="Crew" />}
+                </NavSection>
+              )}
               <NavSection title="Warehouse">
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
                 {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Equipment tracking" />}
                 {(feature("repairs") || feature("maintenance")) && <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />}
                 {can("labels.print") && <NavItem to="/custom-label" icon={icons.label} label="Custom label" />}
               </NavSection>
-              <NavSection title="Relations">
-                <NavItem to="/contacts" icon={icons.contacts} label="Contacts" />
-                <NavItem to="/locations" icon={icons.venues} label="Locations" />
-              </NavSection>
+              {feature("projects") && (
+                <NavSection title="Relations">
+                  <NavItem to="/contacts" icon={icons.contacts} label="Contacts" />
+                  <NavItem to="/locations" icon={icons.venues} label="Locations" />
+                </NavSection>
+              )}
               {can("export.xero") && (
                 <NavSection title="Finance">
                   <NavItem to="/finance/xero-export" icon={icons.exports} label="Xero export" />
@@ -302,12 +313,12 @@ function AppShell() {
               {org ? (
                 <>
                   <Route path="/" element={<Dashboard />} />
-                  <Route path="/projects" element={<JobsList />} />
-                  <Route path="/projects/:id" element={<JobDetail />} />
-                  <Route path="/projects/:id/scan" element={<ScanPage />} />
-                  <Route path="/rostering" element={<RosteringPage />} />
-                  <Route path="/crew" element={<CrewPage />} />
-                  <Route path="/scan" element={<ScanPage />} />
+                  <Route path="/projects" element={<WithFeature feature="projects"><JobsList /></WithFeature>} />
+                  <Route path="/projects/:id" element={<WithFeature feature="projects"><JobDetail /></WithFeature>} />
+                  <Route path="/projects/:id/scan" element={<WithFeature feature="scanning"><ScanPage /></WithFeature>} />
+                  <Route path="/rostering" element={<WithFeature feature="crew"><RosteringPage /></WithFeature>} />
+                  <Route path="/crew" element={<WithFeature feature="crew"><CrewPage /></WithFeature>} />
+                  <Route path="/scan" element={<WithFeature feature="scanning"><ScanPage /></WithFeature>} />
                   <Route path="/inventory" element={<ItemsList />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />
                   <Route path="/assets/:id" element={<SerialDetail />} />
@@ -316,10 +327,10 @@ function AppShell() {
                   <Route path="/maintenance/repairs/:id" element={<RepairDetail />} />
                   <Route path="/maintenance/jobs/:id" element={<MaintenanceJobDetail />} />
                   <Route path="/maintenance/plans/:id" element={<MaintenancePlanDetail />} />
-                  <Route path="/contacts" element={<ContactsList />} />
-                  <Route path="/contacts/:id" element={<ContactDetail />} />
-                  <Route path="/locations" element={<VenuesList />} />
-                  <Route path="/locations/:id" element={<VenueDetail />} />
+                  <Route path="/contacts" element={<WithFeature feature="projects"><ContactsList /></WithFeature>} />
+                  <Route path="/contacts/:id" element={<WithFeature feature="projects"><ContactDetail /></WithFeature>} />
+                  <Route path="/locations" element={<WithFeature feature="projects"><VenuesList /></WithFeature>} />
+                  <Route path="/locations/:id" element={<WithFeature feature="projects"><VenueDetail /></WithFeature>} />
                   <Route
                     path="/custom-label"
                     element={

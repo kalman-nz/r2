@@ -9,6 +9,7 @@ import { useRepairStatuses } from "../../lib/maintenance";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
 import ProjectPicker, { type ProjectRef } from "../ProjectPicker";
+import { useFeature } from "../../lib/roles";
 import { useToast } from "../ToastProvider";
 
 const SHOWN = 8;
@@ -47,6 +48,8 @@ export default function NewRepairModal({
   }, [scannedItem, item]);
   const fixedItem = !!givenItem || !!itemId;
   const [job, setJob] = useState<ProjectRef | null>(givenJob);
+  // The project it was damaged on, while the organisation uses projects.
+  const projectsOn = useFeature()("projects");
   const [files, setFiles] = useState<File[]>([]);
   const filesInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
@@ -267,10 +270,12 @@ export default function NewRepairModal({
           </select>
         </label>
       )}
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="text-gray-500">Came back damaged from (optional)</span>
-        <ProjectPicker value={job} onChange={setJob} />
-      </div>
+      {projectsOn && (
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-gray-500">Came back damaged from (optional)</span>
+          <ProjectPicker value={job} onChange={setJob} />
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-gray-500">Repaired by (optional)</span>

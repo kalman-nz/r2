@@ -111,21 +111,5 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// What the organisation uses (lib/features.js): { features: { key: bool } }.
-// Returns every feature's state.
-routerAdd(
-  "PATCH",
-  "/api/orgs/{id}/features",
-  (e) => {
-    const { requireMember } = require(`${__hooks}/lib/orgs.js`);
-    const { setFeatures } = require(`${__hooks}/lib/features.js`);
-    const { whoName } = require(`${__hooks}/lib/auth.js`);
-    const { logEvent } = require(`${__hooks}/lib/log.js`);
-    const ctx = requireMember(e, e.request.pathValue("id"), "settings.edit");
-    const changes = (e.requestInfo().body || {}).features;
-    const features = setFeatures($app, ctx.org, changes);
-    logEvent(ctx.orgId, "features_changed", whoName(e.auth), { changes: changes });
-    return e.json(200, features);
-  },
-  $apis.requireAuth("users"),
-);
+// An organisation's features are the platform admin's to set (what it's
+// paying for): PATCH /api/admin/orgs/{id}/features in routes_admin.pb.js.

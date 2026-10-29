@@ -22,7 +22,7 @@ function sectionRoot(pathname: string): string {
   if (first === "labels") return "/settings/labels";
   if (first === "settings") return pathname;
   if (first === "finance") return "/finance/xero-export";
-  return SECTIONS.includes(first) ? `/${first}` : "/projects";
+  return SECTIONS.includes(first) ? `/${first}` : "/";
 }
 
 export function OrgSwitcher() {

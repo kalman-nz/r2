@@ -7,6 +7,7 @@ import { nzd, priceLabel } from "../../lib/format";
 import NumberInput from "../NumberInput";
 import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
+import { useFeature } from "../../lib/roles";
 
 // An existing item's details, one card per section. Each card is read and
 // edited in the same place: Edit turns its values into inputs where they
@@ -163,6 +164,11 @@ export default function ItemDetails({
   const { data: customFields = [] } = useItemCustomFields();
   const [editing, setEditing] = useState<Section | null>(null);
   const [draft, setDraft] = useState<Draft>(() => draftOf(item));
+  // Hire prices only while the organisation uses prices and quotes; what
+  // it's worth is still worth keeping.
+  const pricing = useFeature()("pricing");
+  // Turnaround between bookings, with projects.
+  const projectsOn = useFeature()("projects");
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
@@ -240,13 +246,15 @@ export default function ItemDetails({
       </Card>
     ),
     pricing: (
-      <Card title="Pricing" {...card("pricing")}>
-        <Row label="Price" value={item.price > 0 ? `${priceLabel(item)} ex GST` : null} empty="No price set">
-          <div className="flex items-center gap-2 flex-wrap">
-            <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-24" />
-            <Segmented compact label="Price per" value={draft.priceUnit} onChange={(v) => set("priceUnit", v)} options={PER_OPTIONS} />
-          </div>
-        </Row>
+      <Card title={pricing ? "Pricing" : "Value"} {...card("pricing")}>
+        {pricing && (
+          <Row label="Price" value={item.price > 0 ? `${priceLabel(item)} ex GST` : null} empty="No price set">
+            <div className="flex items-center gap-2 flex-wrap">
+              <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-24" />
+              <Segmented compact label="Price per" value={draft.priceUnit} onChange={(v) => set("priceUnit", v)} options={PER_OPTIONS} />
+            </div>
+          </Row>
+        )}
         <Row label="Replacement cost" value={item.replacementValue > 0 ? nzd(item.replacementValue) : null}>
           <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} className="input py-1.5 w-full" />
         </Row>
@@ -267,13 +275,15 @@ export default function ItemDetails({
               className="input py-1.5 w-full"
             />
           </Row>
-          <Row
-            label="Extra turnaround (h)"
-            value={amount(item.bufferHours, item.bufferHours === 1 ? "hour" : "hours")}
-            empty="None"
-          >
-            <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} className="input py-1.5 w-full" />
-          </Row>
+          {projectsOn && (
+            <Row
+              label="Extra turnaround (h)"
+              value={amount(item.bufferHours, item.bufferHours === 1 ? "hour" : "hours")}
+              empty="None"
+            >
+              <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} className="input py-1.5 w-full" />
+            </Row>
+          )}
           <Row label="Weight (kg)" value={amount(item.weightKg, "kg")}>
             <NumberInput value={draft.weightKg} min={0} onChange={(n) => set("weightKg", n)} className="input py-1.5 w-full" />
           </Row>

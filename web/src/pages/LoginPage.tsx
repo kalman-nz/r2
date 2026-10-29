@@ -2,10 +2,11 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import { api } from "../lib/api";
+import { api, type PresetKey } from "../lib/api";
 import { errorText } from "../lib/errors";
 import AuthLayout from "../components/AuthLayout";
 import Field from "../components/Field";
+import PresetPicker from "../components/PresetPicker";
 
 function returnPath(state: unknown): string {
   return (state as { from?: Location } | null)?.from?.pathname ?? "/";
@@ -140,6 +141,7 @@ function FirstRun() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [businessName, setBusinessName] = useState("");
+  const [preset, setPreset] = useState<PresetKey>("hire");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -148,7 +150,7 @@ function FirstRun() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.setup({ name: name.trim(), email: email.trim(), password, businessName: businessName.trim() });
+      await api.setup({ name: name.trim(), email: email.trim(), password, businessName: businessName.trim(), preset });
       await pb.collection("users").authWithPassword(email.trim(), password);
       navigate("/settings/general", { replace: true });
     } catch (err) {
@@ -167,6 +169,7 @@ function FirstRun() {
         <Field label="Business name">
           <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input py-2" placeholder="e.g. Harbour AV Hire" />
         </Field>
+        <PresetPicker value={preset} onChange={setPreset} />
         <Field label="Your name">
           <input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" className="input py-2" />
         </Field>

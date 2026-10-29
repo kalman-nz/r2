@@ -1,11 +1,12 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { adminApi } from "../../lib/api";
+import { adminApi, type PresetKey } from "../../lib/api";
 import { formatDate } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { useToast } from "../../components/ToastProvider";
 import Field from "../../components/Field";
+import PresetPicker from "../../components/PresetPicker";
 import Modal from "../../components/Modal";
 
 export function StatusPill({ suspended }: { suspended: boolean }) {
@@ -97,13 +98,14 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
   const { showToast } = useToast();
   const [name, setName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [preset, setPreset] = useState<PresetKey>("hire");
   const [saving, setSaving] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      const created = await adminApi.createOrg(name.trim(), adminEmail.trim());
+      const created = await adminApi.createOrg(name.trim(), adminEmail.trim(), preset);
       // Its first admin might be you: pick up that invitation.
       await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin"] }), queryClient.invalidateQueries({ queryKey: ["me"] })]);
       showToast("success", created.emailed && created.invitation ? `Created — invitation emailed to ${created.invitation.email}` : `Created ${created.name}`);
@@ -125,6 +127,7 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
         <Field label="First admin's email" hint="They're invited to sign up and run it. You can invite more people afterwards.">
           <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} className="input py-2" />
         </Field>
+        <PresetPicker value={preset} onChange={setPreset} />
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} className="btn-secondary">
             Cancel

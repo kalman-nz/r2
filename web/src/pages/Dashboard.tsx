@@ -61,7 +61,8 @@ export default function Dashboard() {
     [current, boards, can, feature],
   );
   const has = (id: PanelId) => panels.includes(id);
-  const needsJobs = panels.some((id) => ["glance", "prep", "going-out", "coming-back", "out-now", "confirm"].includes(id));
+  const projectsOn = feature("projects");
+  const needsJobs = projectsOn && panels.some((id) => ["glance", "prep", "going-out", "coming-back", "out-now", "confirm"].includes(id));
   const maintenanceOn = feature("maintenance") && (has("maintenance") || has("glance"));
   const repairsOn = feature("repairs") && (has("repairs") || has("glance"));
 
@@ -75,7 +76,17 @@ export default function Dashboard() {
       }),
     enabled: needsJobs,
   });
-  const { data: outstanding = {} } = useQuery({ queryKey: ["jobs", "outstanding"], queryFn: api.outstanding, enabled: has("glance") });
+  const { data: outstanding = {} } = useQuery({ queryKey: ["jobs", "outstanding"], queryFn: api.outstanding, enabled: projectsOn && has("glance") });
+  // Without projects, the glance is the inventory's: units out of service.
+  const { data: unitsOut } = useQuery({
+    queryKey: ["serials", "out-of-service"],
+    queryFn: async () => {
+      const count = async (status: string) => (await pb.collection("serials").getList(1, 1, { filter: orgFilter(`status = '${status}'`), fields: "id" })).totalItems;
+      const [repair, lost] = await Promise.all([count("repair"), count("lost")]);
+      return { repair, lost };
+    },
+    enabled: !projectsOn && has("glance"),
+  });
   const { data: maintenance = [], isLoading: maintenanceLoading } = useMaintenanceJobs(`status = 'scheduled' && dueOn <= "${inDays(7)}"`, "dueOn", maintenanceOn);
   const { data: repairs = [], isLoading: repairsLoading } = useRepairs(OPEN_REPAIRS_FILTER, repairsOn);
   const { data: crew = [], isLoading: crewLoading } = useQuery({
@@ -181,6 +192,35 @@ export default function Dashboard() {
   function render(id: PanelId): ReactNode {
     switch (id) {
       case "glance":
+        if (!projectsOn) {
+          return (
+            <div key={id} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
+              {feature("maintenance") && (
+                <>
+                  <Stat
+                    label="Maintenance overdue"
+                    value={maintenanceLoading ? "—" : maintenanceOverdue.length}
+                    hint={maintenanceOverdue.length > 0 ? "Past due" : "All up to date"}
+                    alert={maintenanceOverdue.length > 0}
+                    to="/maintenance"
+                  />
+                  <Stat label="Due this week" value={maintenanceLoading ? "—" : maintenance.length - maintenanceOverdue.length} hint="Maintenance coming up" to="/maintenance" />
+                </>
+              )}
+              {feature("repairs") && (
+                <Stat
+                  label="Open repairs"
+                  value={repairsLoading ? "—" : repairs.length}
+                  hint={repairsOverdue.length > 0 ? `${repairsOverdue.length} past expected back` : "Out of service"}
+                  alert={repairsOverdue.length > 0}
+                  to="/maintenance?tab=repairs"
+                />
+              )}
+              <Stat label="Units in repair" value={unitsOut ? unitsOut.repair : "—"} hint="Out of service" to="/inventory" />
+              <Stat label="Units lost" value={unitsOut ? unitsOut.lost : "—"} hint={unitsOut && unitsOut.lost > 0 ? "Missing" : "None missing"} alert={!!unitsOut && unitsOut.lost > 0} to="/inventory" />
+            </div>
+          );
+        }
         return (
           <div key={id} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
             <Stat

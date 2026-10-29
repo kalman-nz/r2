@@ -3,8 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Settings } from "../lib/api";
 import { errorText } from "../lib/errors";
 import Field from "./Field";
+import AddressInput from "./AddressInput";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
+import { useFeature } from "../lib/roles";
 
 type BusinessKeys =
   | "businessName"
@@ -34,6 +36,8 @@ export default function GeneralSettings() {
   const { showToast } = useToast();
   const { data: settings, isLoading } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
   const [draft, setDraft] = useState<Pick<Settings, BusinessKeys> | null>(null);
+  // Only what the organisation prints on: quotes need prices, packing lists projects.
+  const feature = useFeature();
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -71,7 +75,9 @@ export default function GeneralSettings() {
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Business details</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Shown in the app header, and at the top of every quote and packing list.</p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {feature("pricing") ? "Shown in the app header, and at the top of every quote and packing list." : feature("projects") ? "Shown in the app header, and at the top of every packing list." : "Shown in the app header."}
+        </p>
       </div>
 
       <div className="card p-4 flex flex-col gap-4">
@@ -83,7 +89,7 @@ export default function GeneralSettings() {
             <input value={draft.businessShortName} onChange={(e) => set("businessShortName", e.target.value)} placeholder="e.g. Harbour AV" className="input py-2" />
           </Field>
           <Field label="Address" className="sm:col-span-2">
-            <textarea value={draft.businessAddress} onChange={(e) => set("businessAddress", e.target.value)} rows={2} className="input py-2" />
+            <AddressInput value={draft.businessAddress} onChange={(v) => set("businessAddress", v)} />
           </Field>
           <Field label="Phone">
             <input value={draft.businessPhone} onChange={(e) => set("businessPhone", e.target.value)} className="input py-2" />
@@ -91,10 +97,13 @@ export default function GeneralSettings() {
           <Field label="Email">
             <input type="email" value={draft.businessEmail} onChange={(e) => set("businessEmail", e.target.value)} className="input py-2" />
           </Field>
-          <Field label="GST number" hint="Printed on quotes">
-            <input value={draft.gstNumber} onChange={(e) => set("gstNumber", e.target.value)} placeholder="123-456-789" className="input py-2" />
-          </Field>
-          <Field label="Time zone" hint="For dates printed on PDFs (screens use your device's own)">
+          {feature("pricing") && (
+            <Field label="GST number" hint="Printed on quotes">
+              <input value={draft.gstNumber} onChange={(e) => set("gstNumber", e.target.value)} placeholder="123-456-789" className="input py-2" />
+            </Field>
+          )}
+          {/* For dates the server writes: PDFs, and Momentus sync's event times. Screens use the device's own. */}
+          <Field label="Time zone">
             <select value={draft.timezone} onChange={(e) => set("timezone", e.target.value)} className="input py-2">
               {TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>

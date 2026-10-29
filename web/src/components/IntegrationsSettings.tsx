@@ -397,6 +397,16 @@ function CopyField({ label, value, hint }: { label: string; value: string; hint:
 
 // ------------------------------------------------------------ Rentman
 
+// Projects off (Settings → Features): the sync does inventory only
+// (pb_hooks/lib/sync.js getConfig), whatever's set below.
+function ProjectsOffNote({ what }: { what: string }) {
+  return (
+    <p className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-md px-3 py-2">
+      Projects aren&apos;t part of your R2, so {what.charAt(0).toLowerCase() + what.slice(1)}. The settings below are kept for if they&apos;re added.
+    </p>
+  );
+}
+
 function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfig> }) {
   const { save, saving } = useSave("rentman");
   const confirm = useConfirm();
@@ -438,6 +448,7 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
       status={<StatusPill summary={summary} />}
     >
       <Controls provider="rentman" summary={summary} canStart={summary.secretSet} onEnable={turnOn} />
+      {summary.projectsOff && <ProjectsOffNote what="Equipment syncs; contacts, locations and projects are left alone" />}
       <FailedList provider="rentman" summary={summary} />
 
       <Section title="Connection">
@@ -622,6 +633,7 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
       status={<StatusPill summary={summary} />}
     >
       <Controls provider="momentus" summary={summary} canStart={connected} />
+      {summary.projectsOff && <ProjectsOffNote what="Inventory can still go to Momentus as resources; events, orders and quotes are left alone" />}
       <FailedList provider="momentus" summary={summary} />
 
       <Section

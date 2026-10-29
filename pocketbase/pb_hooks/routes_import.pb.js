@@ -20,6 +20,8 @@ routerAdd(
     const startedAt = Date.now();
     // Without a step it's the whole equipment import in one go, as before.
     const body = e.requestInfo().body || {};
+    // Contacts and projects only while the organisation uses projects.
+    if (["contacts", "projects", "lines"].indexOf(body.step) !== -1) require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "projects");
     const result = runRentmanStep(ctx.orgId, token, whoName(e.auth), body.step ? body : { step: "equipment", final: true });
     if (!result.next && (body.final || !body.step)) {
       logEvent(ctx.orgId, "import_rentman", whoName(e.auth), { counts: result.counts, errors: result.errors.length });
@@ -40,6 +42,7 @@ routerAdd(
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const ctx = requireOrg(e, "import.csv");
     const body = e.requestInfo().body || {};
+    if (body.kind === "contacts") require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "projects");
     const result = importCsv(ctx.orgId, body.kind, body.rows, body.dryRun === true, whoName(e.auth));
     if (result.committed) logEvent(ctx.orgId, "import_csv", whoName(e.auth), { kind: body.kind, counts: result.counts });
     return e.json(200, result);

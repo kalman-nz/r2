@@ -890,8 +890,10 @@ await admin.fails("PUT", "/api/job-statuses", { statuses: flowStatuses.filter((x
 assert.equal((await jobStatusesOf(bossB)).length, 7, "B's are its own");
 
 // --- and which features it uses ---
-await planner.fails("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: false } }, 403);
-let feats = await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: false, repairs: false } });
+// What an organisation has is the platform admin's to set, not its own admins'.
+await admin.fails("PATCH", `/api/admin/orgs/${orgA}/features`, { features: { scanning: false } }, 403);
+await planner.fails("PATCH", `/api/admin/orgs/${orgA}/features`, { features: { scanning: false } }, 403);
+let feats = await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { scanning: false, repairs: false } });
 assert.deepEqual([feats.scanning, feats.repairs, feats.pricing], [false, false, true]);
 const techInA = (await ok(techUser.token, "GET", "/api/me")).memberships.find((m) => m.org.id === orgA);
 assert.ok(!techInA.permissions.includes("scan.out") && techInA.org.features.scanning === false, "a turned-off feature's permissions count for nobody");
@@ -899,14 +901,39 @@ await tech.fails("POST", `/api/jobs/${jobA.id}/scan`, { code: "x", direction: "o
 await tech.fails("POST", "/api/repairs", { item: stand.id, quantity: 1, fault: "x" }, 403, /Repairs is turned off/);
 await tech.ok("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "repair" });
 await tech.ok("POST", `/api/serials/${k12Serials[0].id}/status`, { status: "active" });
-await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { pricing: false } });
+await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { pricing: false } });
 assert.equal((await admin.ok("GET", `/api/jobs/${jobA.id}/summary`)).includesPrices, false, "no prices anywhere, admins included");
 await admin.fails("POST", `/api/jobs/${jobA.id}/quotes`, null, 403, /Prices and quotes is turned off/);
 await admin.fails("GET", "/api/exports/xero/jobs?from=2030-03-01&to=2030-03-31", null, 403);
-feats = await admin.ok("PATCH", `/api/orgs/${orgA}/features`, { features: { scanning: true, repairs: true, pricing: true } });
+feats = await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { scanning: true, repairs: true, pricing: true } });
 assert.ok(Object.values(feats).every(Boolean), "and back on");
 assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "features_changed" && a.summary === "Turned off Equipment tracking, Repairs"));
-log("each organisation's own project statuses on fixed stages, and features it can turn off");
+
+// Projects off (a venue that plans in Momentus): inventory and maintenance
+// only, and what's only for projects goes with it.
+feats = await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { projects: false } });
+assert.deepEqual(
+  ["projects", "scanning", "pricing", "crew", "xero", "maintenance", "repairs", "labels"].map((k) => feats[k]),
+  [false, false, false, false, false, true, true, true],
+  "equipment tracking, prices, crew and Xero need projects",
+);
+await planner.fails("POST", "/api/collections/jobs/records", { org: orgA, name: "Not now", status: "enquiry", prepAt: "2030-05-01 08:00:00Z", returnAt: "2030-05-02 08:00:00Z" }, 403, /Projects is turned off/);
+await planner.fails("PATCH", `/api/collections/jobs/records/${jobA.id}`, { name: "Renamed" }, 403, /Projects is turned off/);
+await planner.fails("POST", "/api/collections/contacts/records", { org: orgA, name: "Nobody" }, 403, /Projects is turned off/);
+await planner.fails("POST", "/api/collections/job_periods/records", { org: orgA, job: jobA.id, kind: "other", name: "Nope", start: "2030-03-01 08:00:00Z", end: "2030-03-01 09:00:00Z" }, 403, /Projects is turned off/);
+assert.equal((await planner.ok("GET", `/api/collections/jobs/records/${jobA.id}`)).id, jobA.id, "reads still work, so it's all there when it's back");
+assert.deepEqual((await planner.ok("GET", `/api/search?q=${encodeURIComponent(jobA.name)}`)).jobs, [], "search leaves projects out");
+const plannerMe = await ok(plannerUser.token, "GET", "/api/me");
+const plannerPerms = plannerMe.memberships.find((m) => m.org.id === orgA).permissions;
+assert.ok(!plannerPerms.includes("jobs.edit") && !plannerPerms.includes("contacts.create") && plannerPerms.includes("units.flag"), JSON.stringify(plannerPerms));
+feats = await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { projects: true } });
+assert.ok(Object.values(feats).every(Boolean), "and everything back with it");
+// New organisations can start from a preset.
+const venueOrg = await ok(platform, "POST", "/api/admin/orgs", { name: `Smoke venue ${run}`, preset: "inventory" });
+const venueRecord = await ok(su, "GET", `/api/collections/organisations/records/${venueOrg.id}`);
+assert.deepEqual(venueRecord.features, { projects: false, scanning: false, pricing: false, crew: false, integrations: false, xero: false }, "the inventory preset leaves projects off");
+await fails(platform, "POST", "/api/admin/orgs", { name: `Smoke bad ${run}`, preset: "nonsense" }, 400, /Unknown starting point/);
+log("each organisation's own project statuses on fixed stages, and features it can turn off, projects included");
 
 // --- crew, and everyone's own dashboards and views ---
 // Everyone in the organisation can be rostered: members have their crew

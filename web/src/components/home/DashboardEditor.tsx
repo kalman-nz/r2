@@ -26,7 +26,13 @@ export default function DashboardEditor({
     (dashboard?.panels.map((p) => p.id) ?? start?.panels ?? []).filter((id): id is PanelId => PANEL_BY_ID.has(id as PanelId)),
   );
   const [saving, setSaving] = useState(false);
-  const left = PANELS.filter((p) => !panels.includes(p.id));
+  // Panels for what the organisation hasn't got don't show at all (they're
+  // kept on the dashboard for when it has).
+  const included = (id: PanelId) => {
+    const f = PANEL_BY_ID.get(id)?.feature;
+    return !f || feature(f);
+  };
+  const left = PANELS.filter((p) => !panels.includes(p.id) && included(p.id));
 
   const move = (i: number, by: number) =>
     setPanels((prev) => {
@@ -51,7 +57,7 @@ export default function DashboardEditor({
   // Panels someone can't use don't show for them; say so for the ones you can't.
   const note = (id: PanelId) => {
     const p = PANEL_BY_ID.get(id)!;
-    return panelAllowed(p, can, feature) ? "" : p.feature && !feature(p.feature) ? "Turned off in Features" : "Your role can't see it";
+    return panelAllowed(p, can, feature) ? "" : "Your role can't see it";
   };
 
   return (
@@ -65,6 +71,7 @@ export default function DashboardEditor({
         <span className="text-gray-500">Shows, in this order</span>
         {panels.length === 0 && <p className="text-xs text-gray-400">Nothing yet: add panels from the list below.</p>}
         {panels.map((id, i) => {
+          if (!included(id)) return null;
           const p = PANEL_BY_ID.get(id)!;
           return (
             <div key={id} className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2">

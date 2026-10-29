@@ -18,14 +18,18 @@ function providerOf(e) {
 // only whether one is set.
 function summary(org, provider, appUrl) {
   const { getSecret } = require("./settings.js");
-  const cfg = sync.getConfig(org, provider);
+  const cfg = sync.getConfig(org, provider, true);
   const state = sync.getState(org, provider);
   const count = (status) =>
     $app.findRecordsByFilter("sync_queue", "org = {:org} && provider = {:provider} && status = {:status}", "", 0, 0, { org: org, provider: provider, status: status })
       .length;
   const failed = $app.findRecordsByFilter("sync_queue", "org = {:org} && provider = {:provider} && status = 'failed'", "-updated", 20, 0, { org: org, provider: provider });
+  const { featuresOf } = require("./features.js");
+  const { findOrNull } = require("./records.js");
   const out = {
     config: cfg,
+    // Projects off: the sync leaves projects, contacts and quotes alone (lib/sync.js getConfig).
+    projectsOff: !featuresOf(findOrNull($app, "organisations", org)).projects,
     state: {
       lastPollAt: state.lastPollAt || null,
       lastLinesPollAt: state.lastLinesPollAt || null,
@@ -220,7 +224,7 @@ function update(org, provider, body) {
   const b = Object.assign({}, body || {});
   const secret = b.secret;
   delete b.secret;
-  const cfg = cleanConfig(provider, sync.getConfig(org, provider), b);
+  const cfg = cleanConfig(provider, sync.getConfig(org, provider, true), b);
   if (provider === "rentman" && !cfg.webhookKey) cfg.webhookKey = $security.randomStringWithAlphabet(32, "abcdefghijklmnopqrstuvwxyz0123456789");
   if (secret !== undefined) {
     if (typeof secret !== "string") throw new BadRequestError("The secret must be text");

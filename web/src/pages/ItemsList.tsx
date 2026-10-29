@@ -12,7 +12,7 @@ import { asBool, asString, asStrings } from "../lib/views";
 import { renderItemLabelImage, sendRenderedLabel } from "../lib/print";
 import { money, num, PRICE_SUFFIX } from "../lib/format";
 import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
-import { useRole } from "../lib/roles";
+import { useFeature, useRole } from "../lib/roles";
 import BatchPrintBar from "../components/BatchPrintBar";
 import { orgFilter } from "../lib/currentOrg";
 import { errorText } from "../lib/errors";
@@ -249,6 +249,9 @@ const DEFAULT_VIEW: ViewConfig = {
 export default function ItemsList() {
   const navigate = useNavigate();
   const { can } = useRole();
+  // The hire price column only with prices and quotes.
+  const feature = useFeature();
+  const offered = feature("pricing") ? COLUMNS : COLUMNS.filter((c) => c.key !== "dayRate");
   const [search, setSearch] = useState("");
   // The folder being looked at ("" is the top, Inventory), in the URL so
   // Back and links work like a file browser.
@@ -446,7 +449,7 @@ export default function ItemsList() {
       );
   }
 
-  const columns = COLUMNS.filter((c) => !c.toggleable || visibleColumns.has(c.key));
+  const columns = offered.filter((c) => !c.toggleable || visibleColumns.has(c.key));
 
   // The filters behind the Filters button (Type has its own place).
   const activeFilterCount = (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0) + (shelf ? 1 : 0);
@@ -549,11 +552,11 @@ export default function ItemsList() {
               <FilterCheck checked={showArchived} onChange={setShowArchived}>
                 Show archived items
               </FilterCheck>
-              <SortList columns={COLUMNS} sorts={sorts} onChange={setSorts} />
+              <SortList columns={offered} sorts={sorts} onChange={setSorts} />
               <GroupFields options={GROUPS} groupBy={groupBy} onChange={setGroupBy} />
             </FiltersMenu>
             <ColumnsMenu
-              columns={COLUMNS.filter((c) => c.toggleable)}
+              columns={offered.filter((c) => c.toggleable)}
               visible={settings.columns as string[]}
               onChange={(keys) => setVisibleColumns(new Set(keys))}
             />

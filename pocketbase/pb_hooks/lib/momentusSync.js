@@ -579,8 +579,13 @@ function test(org) {
   return { ok: true, message: "Connected to Momentus: " + events.length + " event" + (events.length === 1 ? "" : "s") + " in the next 30 days" };
 }
 
+// What changes while the organisation has projects turned off
+// (lib/sync.js getConfig): no events, orders or quotes, just inventory out.
+const WITHOUT_PROJECTS = { pullEvents: false, pullOrders: false, pushQuotes: false };
+
 module.exports = {
   DEFAULTS,
+  WITHOUT_PROJECTS,
   pollDue,
   poll,
   handle,

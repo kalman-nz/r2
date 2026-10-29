@@ -52,8 +52,14 @@ function writeJsonSetting(org, key, value) {
   setSetting(org, key, JSON.stringify(value));
 }
 
-// The connector's settings with its defaults filled in.
-function getConfig(org, provider) {
+// The connector's settings with its defaults filled in, as the sync uses
+// them: while the organisation has projects off, the connector's
+// WITHOUT_PROJECTS on top (equipment only). raw: as saved, for Settings →
+// Integrations to show and change, so turning projects back on picks up
+// the admin's own choices.
+function getConfig(org, provider, raw) {
+  const { featuresOf } = require("./features.js");
+  const { findOrNull } = require("./records.js");
   const defaults = connector(provider).DEFAULTS;
   const stored = readJsonSetting(org, "sync." + provider);
   const out = Object.assign({}, defaults, stored);
@@ -62,6 +68,7 @@ function getConfig(org, provider) {
     const d = defaults[key];
     if (d && typeof d === "object" && !Array.isArray(d)) out[key] = Object.assign({}, d, stored[key] || {});
   }
+  if (!raw && !featuresOf(findOrNull($app, "organisations", org)).projects) Object.assign(out, connector(provider).WITHOUT_PROJECTS || {});
   return out;
 }
 
