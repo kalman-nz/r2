@@ -57,16 +57,23 @@ h1 {
     @apply bg-white border border-gray-300 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-signal/20 focus:border-signal;
   }
   .btn-primary {
-    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-carbon text-white hover:bg-graphite;
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:pointer-events-none border border-transparent bg-carbon text-white hover:bg-graphite;
   }
   .btn-secondary {
-    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:pointer-events-none border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
   }
   .btn-danger {
-    @apply text-sm px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none bg-fault-ink text-white hover:bg-[#a51e1a];
+    @apply text-sm px-3.5 py-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:pointer-events-none border border-transparent bg-fault-ink text-white hover:bg-[#a51e1a];
   }
   .card {
     @apply bg-white border border-gray-200 rounded-md;
+  }
+  /* Scrolls sideways on narrow screens without showing a scrollbar. */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
   .tab-underline-active {
     @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-gray-900 border-signal;

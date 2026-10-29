@@ -85,6 +85,7 @@ function validateSerial(app, record) {
   if (!org) return;
   const barcode = record.getString("barcode").trim();
   record.set("barcode", barcode);
+  record.set("bin", record.getString("bin").trim());
   if (!record.getString("item")) throw new BadRequestError("Serial numbers need an item");
   const item = sameOrg(app, record, "item", "items", "item");
   sameOrg(app, record, "location", "locations", "location");

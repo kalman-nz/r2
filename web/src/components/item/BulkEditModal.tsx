@@ -7,6 +7,7 @@ import NumberInput from "../NumberInput";
 import Segmented from "../Segmented";
 import { CustomInput, PER_OPTIONS } from "./ItemDetails";
 import { useFeature } from "../../lib/roles";
+import type { FolderIndex } from "../../lib/folders";
 
 // The same change to many items at once, from the inventory list's
 // selection. Only the ticked fields are written; editing a field ticks it.
@@ -17,13 +18,12 @@ type Values = {
   price: number;
   priceUnit: PriceUnit;
   replacementValue: number;
-  locationInWarehouse: string;
   bufferHours: number;
   weightKg: number;
   powerW: number;
 };
 
-const START: Values = { price: 0, priceUnit: "day", replacementValue: 0, locationInWarehouse: "", bufferHours: 0, weightKg: 0, powerW: 0 };
+const START: Values = { price: 0, priceUnit: "day", replacementValue: 0, bufferHours: 0, weightKg: 0, powerW: 0 };
 
 // Saved a few at a time: quicker than one by one, without flooding the server.
 const CONCURRENCY = 8;
@@ -38,11 +38,37 @@ export async function updateEach<T extends { id: string }>(collection: "items" |
   return failed;
 }
 
-export default function BulkEditModal({ items, onClose, onDone }: { items: Item[]; onClose: () => void; onDone: (failed: number) => void }) {
+// Every folder, top down, indented by depth, for a plain dropdown.
+function folderOptions(index: FolderIndex) {
+  const out: { id: string; label: string }[] = [{ id: "", label: "Inventory (top level)" }];
+  const walk = (parent: string, depth: number) => {
+    for (const f of index.children.get(parent) ?? []) {
+      out.push({ id: f.id, label: `${"\u00a0\u00a0".repeat(depth + 1)}${f.name}` });
+      walk(f.id, depth + 1);
+    }
+  };
+  walk("", 0);
+  return out;
+}
+
+export default function BulkEditModal({
+  items,
+  folders,
+  initialFolder = "",
+  onClose,
+  onDone,
+}: {
+  items: Item[];
+  folders: FolderIndex;
+  initialFolder?: string;
+  onClose: () => void;
+  onDone: (failed: number) => void;
+}) {
   // Hire prices with prices and quotes; turnaround between bookings with projects.
   const feature = useFeature();
   const { data: customFields = [] } = useItemCustomFields();
   const [values, setValues] = useState<Values>(START);
+  const [folder, setFolder] = useState(initialFolder);
   const [custom, setCustom] = useState<Record<string, unknown>>({});
   // Ticked fields: Values keys, or "custom:<key>".
   const [on, setOn] = useState<Set<string>>(new Set());
@@ -68,7 +94,8 @@ export default function BulkEditModal({ items, onClose, onDone }: { items: Item[
     setProgress(`Saving ${items.length} item${items.length === 1 ? "" : "s"}…`);
     const failed = await updateEach("items", items, (item) => {
       const body: Record<string, unknown> = {};
-      for (const k of standard) body[k] = k === "locationInWarehouse" ? values[k].trim() : values[k];
+      for (const k of standard) body[k] = values[k];
+      if (on.has("category")) body.category = folder;
       if (customKeys.length > 0) {
         const next = { ...(item.custom ?? {}) };
         for (const k of customKeys) next[k] = custom[k] ?? null;
@@ -92,6 +119,24 @@ export default function BulkEditModal({ items, onClose, onDone }: { items: Item[
     <Modal title={`Edit ${items.length} item${items.length === 1 ? "" : "s"}`} onClose={saving ? () => {} : onClose}>
       <p className="text-xs text-gray-500 -mt-2">Tick what to change. Everything else stays as it is on each item.</p>
       <div className="flex flex-col divide-y divide-gray-100">
+        {row(
+          "category",
+          "Folder",
+          <select
+            value={folder}
+            onChange={(e) => {
+              setFolder(e.target.value);
+              tick("category");
+            }}
+            className="input py-1.5 w-full"
+          >
+            {folderOptions(folders).map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label}
+              </option>
+            ))}
+          </select>,
+        )}
         {feature("pricing") && row("price", "Price", <NumberInput value={values.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-full" />)}
         {feature("pricing") &&
           row(
@@ -99,21 +144,12 @@ export default function BulkEditModal({ items, onClose, onDone }: { items: Item[
             "Priced per",
             <Segmented label="Priced per" compact value={values.priceUnit} options={PER_OPTIONS} onChange={(v) => set("priceUnit", v)} />,
           )}
-        {row(
-          "replacementValue",
-          "Replacement value",
-          <NumberInput value={values.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} className="input py-1.5 w-full" />,
-        )}
-        {row(
-          "locationInWarehouse",
-          "Location",
-          <input
-            value={values.locationInWarehouse}
-            onChange={(e) => set("locationInWarehouse", e.target.value)}
-            placeholder="e.g. Bay 3, top shelf"
-            className="input py-1.5 w-full"
-          />,
-        )}
+        {feature("pricing") &&
+          row(
+            "replacementValue",
+            "Replacement value",
+            <NumberInput value={values.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} className="input py-1.5 w-full" />,
+          )}
         {feature("projects") &&
           row(
             "bufferHours",

@@ -149,7 +149,7 @@ export default function FilesCard<T extends WithFiles>({
           {progress.name}…
         </p>
       ) : canEdit ? (
-        <p className="text-xs text-gray-400">{record.files.length === 0 ? `Drop files here, or Add files. ${hint}` : "Drop more files here to add them."}</p>
+        <p className="text-xs text-gray-400">{record.files.length === 0 ? `Drop files here, or Add files. ${hint}`.trim() : "Drop more files here to add them."}</p>
       ) : (
         record.files.length === 0 && <p className="text-xs text-gray-400">No files.</p>
       )}

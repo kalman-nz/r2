@@ -91,10 +91,6 @@ export default function JobStatusesSettings() {
     <div className="flex flex-col gap-4 max-w-4xl">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Project statuses</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          The steps a project goes through, in your words and order: add Prepping, Prepped or Loaded if that's how you work. What each one means for
-          the kit is set by its stage. New projects start in the default.
-        </p>
       </div>
 
       <div className="card p-4 flex flex-col gap-2 text-sm">

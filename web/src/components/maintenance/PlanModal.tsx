@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
-import { api, type IntervalUnit, type Item, type MaintenanceKind, type MaintenancePlan } from "../../lib/api";
+import { api, type IntervalUnit, type Item, type MaintenancePlan, type PlanRepeat } from "../../lib/api";
 import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog";
 import { orgFilter } from "../../lib/currentOrg";
 import { errorText } from "../../lib/errors";
-import { today } from "../../lib/maintenance";
-import { INTERVAL_UNITS, MAINTENANCE_KINDS } from "../../lib/statuses";
+import { describePlan, today } from "../../lib/maintenance";
+import { INTERVAL_UNITS } from "../../lib/statuses";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
 import Segmented from "../Segmented";
@@ -20,7 +20,7 @@ const SHOWN = 60;
 export default function PlanModal({ plan, onClose, onSaved }: { plan?: MaintenancePlan; onClose: () => void; onSaved: (plan: MaintenancePlan) => void }) {
   const { showToast } = useToast();
   const [name, setName] = useState(plan?.name ?? "");
-  const [kind, setKind] = useState<MaintenanceKind>(plan?.kind ?? "inspection");
+  const [repeat, setRepeat] = useState<PlanRepeat>(plan?.repeat ?? "");
   const [every, setEvery] = useState(plan?.every ?? 12);
   const [unit, setUnit] = useState<IntervalUnit>(plan?.unit ?? "month");
   const [firstDue, setFirstDue] = useState(plan ? plan.firstDue : today());
@@ -59,7 +59,8 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
   async function save() {
     setSaving(true);
     try {
-      const body = { name: name.trim(), kind, every, unit, items: picked, firstDue, instructions };
+      // Older plans keep their kind; new ones are plain inspections.
+      const body = { name: name.trim(), kind: plan?.kind ?? ("inspection" as const), every, unit, repeat, items: picked, firstDue, instructions };
       const saved = plan ? await api.updatePlan(plan.id, body) : await api.createPlan(body);
       onSaved(saved);
     } catch (err) {
@@ -69,7 +70,6 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
     }
   }
 
-  const k = MAINTENANCE_KINDS.find((x) => x.value === kind)!;
   const folders = [...categories].sort((a, b) => (paths.get(a.id) ?? "").localeCompare(paths.get(b.id) ?? ""));
 
   return (
@@ -78,12 +78,6 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
         <span className="text-gray-500">Name</span>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} className="input py-1.5" placeholder="e.g. Annual PPE inspection" />
       </label>
-
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="text-gray-500">Kind of work</span>
-        <Segmented label="Kind of work" value={kind} onChange={setKind} options={MAINTENANCE_KINDS.map((x) => ({ value: x.value, label: x.label }))} />
-        <span className="text-xs text-gray-500">{k.hint}</span>
-      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <div className="flex flex-col gap-1">
@@ -99,20 +93,31 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
               ))}
             </select>
           </div>
-          <span className="text-xs text-gray-500">Counted from the day each one's done.</span>
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-gray-500">First due</span>
+          <span className="text-gray-500">{repeat === "fixed" ? "Starting" : "First due"}</span>
           <input type="date" value={firstDue} onChange={(e) => setFirstDue(e.target.value)} className="input py-1.5" />
-          <span className="text-xs text-gray-500">
-            For kit that's never been done{kind === "test_tag" ? ", unless a unit already has a Next test & tag date" : ""}.
-          </span>
         </label>
       </div>
 
       <div className="flex flex-col gap-1.5 text-sm">
+        <span className="text-gray-500">Next one due</span>
+        <Segmented
+          label="Next one due"
+          value={repeat === "fixed" ? "fixed" : "done"}
+          onChange={(v) => setRepeat(v === "fixed" ? "fixed" : "")}
+          options={[
+            { value: "fixed", label: "On a set day" },
+            { value: "done", label: "After completion" },
+          ]}
+        />
+        <span className="text-gray-900">{describePlan({ every, unit, repeat, firstDue })}</span>
+      </div>
+
+
+      <div className="flex flex-col gap-1.5 text-sm">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="text-gray-500">Covers {picked.length > 0 && `(${picked.length} item${picked.length === 1 ? "" : "s"})`}</span>
+          <span className="text-gray-500">Items {picked.length > 0 && `(${picked.length})`}</span>
           {folders.length > 0 && (
             <select value="" onChange={(e) => addFolder(e.target.value)} className="input py-1 w-auto text-xs">
               <option value="">Add a whole folder…</option>
@@ -138,19 +143,19 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
           </div>
         )}
         {picked.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+          <div className="flex flex-col max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
             {picked.map((id) => (
-              <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-gray-100 text-xs text-gray-700">
-                {byId.get(id)?.name ?? "(archived or deleted item)"}
-                {byId.get(id)?.tracking === "serial" && <span className="text-gray-400">· units</span>}
-                <button onClick={() => setPicked((p) => p.filter((x) => x !== id))} className="w-4 h-4 rounded-full hover:bg-gray-300 leading-none" aria-label="Remove">
-                  ×
+              <div key={id} className="flex items-center gap-2 px-3 py-1.5">
+                <span className="truncate text-gray-800">{byId.get(id)?.name ?? "(archived or deleted item)"}</span>
+                {byId.get(id)?.tracking === "serial" && <span className="text-xs text-gray-400 shrink-0">each unit</span>}
+                <button onClick={() => setPicked((p) => p.filter((x) => x !== id))} className="ml-auto text-xs text-gray-500 hover:text-fault-ink shrink-0">
+                  Remove
                 </button>
-              </span>
+              </div>
             ))}
           </div>
         ) : (
-          <span className="text-xs text-gray-400">No items yet. Each unit of a serialised item gets its own job; a bulk item gets one for all of it.</span>
+          <span className="text-xs text-gray-400">No items yet.</span>
         )}
       </div>
 
@@ -166,7 +171,7 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
       </label>
 
       <div className="flex items-center gap-2">
-        <button onClick={save} disabled={saving || !name.trim() || (!plan && !firstDue)} className="btn-primary">
+        <button onClick={save} disabled={saving || !name.trim() || ((!plan || repeat === "fixed") && !firstDue)} className="btn-primary">
           {saving ? "Saving…" : plan ? "Save plan" : "Create plan"}
         </button>
         <button onClick={onClose} disabled={saving} className="btn-secondary">

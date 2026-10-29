@@ -71,7 +71,7 @@ Plain records (items, units, contacts, venues, jobs) go straight through the Poc
 One database holds every organisation. Every business record has an `org`, and collection rules plus `requireOrg()` in the routes keep each organisation's data to its members (`pb_migrations/0022_organisations.js`, `pb_hooks/lib/orgs.js`). Barcodes, job numbers and settings are per organisation.
 
 - **Accounts** belong to people, not organisations. Anyone can sign up; a new account sees nothing until an organisation invites its address.
-- **Invitations:** an organisation's admins invite an email with a role (Settings → Team). The person signs up (or signs in) with that address, verifies it, and accepts on their Organisations page. Someone can be in several organisations with a different role in each, and switches between them from the header.
+- **Invitations:** an organisation's admins invite an email with a role (Settings → Users & access). The person signs up (or signs in) with that address, verifies it, and accepts on their Organisations page. Someone can be in several organisations with a different role in each, and switches between them from the header.
 - **Platform admins** (`isPlatformAdmin` on the account) run the admin panel at `/admin`: every organisation (create, invite its first admin, rename, suspend, delete) and every account (verify by hand, grant platform admin, delete). They don't see organisations' business data unless they're also members. Organisations are created by platform admins for now; self-serve sign-up comes with billing.
 - Every organisation keeps at least one admin. Its `features` field says which features it uses (see below).
 
@@ -102,16 +102,16 @@ People see what they need rather than one page for everyone: a workshop tech see
 
 Crew are booked by what they do and when, not just "on the project" (`pb_migrations/0041_crew_rostering.js`, `lib/crew.js`). A feature: off, planners just add people to a project with what they're doing.
 
-- **Crew roles.** Each organisation's own list of what crew are booked to do (Audio operator, Technical labour, Rigger…), in Settings → Crew roles. Not the permission roles in Settings → Roles.
+- **Crew roles.** Each organisation's own list of what crew are booked to do (Audio operator, Technical labour, Rigger…), in Settings → Crew roles. Not the permission roles in Settings → Users & access.
 - **The crew list** (Crew, in the sidebar): everyone who can be rostered. Every member is on it under their account's name; freelancers who don't log in are added there (name, phone, email). Skills are the crew roles someone does. "Add freelancers to the crew list and set people's crew skills" is its own permission, Admin's and Planner's to start with. Someone who's been rostered is archived rather than deleted, and members who leave are archived for them.
 - **Crew needs.** A schedule item says what crew it needs: 1× Audio operator and 3× Technical labour for the pack in. A need runs over its item's times and moves with it, unless it has its own (audio in an hour early). Removing the item takes its needs, and whoever was on them, with it.
 - **Rostering.** A project's Crew tab lists each schedule item's needs with a slot for each person; picking someone offers the people with that skill first, and says where else anyone's booked at the time. Double bookings are allowed but marked. The Rostering page does the same across every project over a week or more, by day or by person (who's free). Each person fills a slot once, and a need takes no more people than it asks for. People can also be on a whole project (a project manager). `job_crew.user` is filled in from the person, so My projects still reads it.
 
 ### Roles and permissions
 
-Each organisation defines its own roles (Settings → Roles). A role is a name plus a set of per-action permissions, such as "Add items", "Delete units", "Issue quotes", "Track kit going out" or "Invite and remove people". The catalogue is in `pocketbase/pb_hooks/lib/permissions.js`. Every member can look up inventory, jobs, contacts and venues; everything else needs a permission.
+Each organisation defines its own roles (Settings → Users & access, alongside its members). A role is a name plus a set of per-action permissions, such as "Add items", "Delete units", "Issue quotes", "Track kit going out" or "Invite and remove people". The catalogue is in `pocketbase/pb_hooks/lib/permissions.js`. Every member can look up inventory, jobs, contacts and venues; everything else needs a permission.
 
-- Every organisation starts with **Admin** (locked: always every permission, including ones added later), **Planner**, **Tech** and **Crew** (no permissions: they look things up and see their own projects). All but Admin can be edited or deleted like any other role.
+- Every organisation starts with **Admin** alone (locked: always every permission, including ones added later, and can't be edited or deleted). It makes the other roles it needs; a role someone has, or an invitation is waiting with, can't be deleted until they're given another.
 - Some permissions need others: seeing quotes needs seeing prices, and issuing quotes needs seeing them. The editor ticks these for you, and the server enforces them.
 - **Nobody can hand out more than they have.** Creating, changing, deleting or assigning a role needs every permission in it, and only admins can make or remove admins. Every organisation keeps at least one admin.
 - The server checks permissions in both places: in collection rules, through a join on the member's own membership row, so a permission held in one organisation never counts in another (`pb_migrations/0024_custom_roles.js`); and in the routes, via `requireOrg(e, "permission")` (`pb_hooks/lib/orgs.js`). The web app only hides what you can't use.
@@ -182,9 +182,9 @@ The service worker caches the app shell so the app opens on bad Wi-Fi and shows 
 
 Exports → Xero builds a file for Xero's sales invoice import. Each job becomes a draft invoice from its latest accepted (or issued) quote, numbered from the job (`R2-1042`). Xero refuses a number it already has, so a job can't be invoiced twice. Free kit contents are listed in their parent line, and a job discount becomes its own line. The account code, tax rate name, payment terms and number prefix are in Settings → Accounting. They have to match the Xero organisation's own. Xero recalculates GST per line, so its total can differ from R2's by a cent.
 
-### Rentman import
+### Bringing data in
 
-Settings → Import pulls equipment, units, folders (as categories), stock locations, custom field names, contacts, locations and projects with their equipment from the customer's own Rentman account with their own token, a step at a time. Re-running it updates what it brought in before (matched on Rentman ids) and never deletes. It does overwrite imported fields edited in R2 since, so it's for a one-off switch-over; live sync (below) is for running both. Contacts can also come in by CSV.
+Settings → Import data takes spreadsheets of items (and, with projects, contacts). Rentman comes in through live sync (below): its first sync links up anything already in R2 rather than copying it again.
 
 ### Live sync: Rentman and Momentus
 
@@ -215,7 +215,7 @@ The brief's MVP is built:
 - **Quotes:** GST, day factors and discounts, as frozen snapshots and server-side PDFs.
 - **Kits and accessories:** a kit's contents and an item's accessories are added to a job automatically.
 - **Warehouse:** a packing list PDF, and equipment tracking (prepped, loaded, returned) from an installable web app (scanner or camera, iPhone included).
-- **Getting data in:** CSV import for items and contacts, and Rentman import of equipment, contacts and projects.
+- **Getting data in:** CSV import for items and contacts; Rentman through live sync.
 - **Live sync:** two-way with Rentman; Momentus events, orders, quotes and inventory for venues (Momentus not yet checked against a real instance).
 - **Getting data out:** the iCal feed and the Xero CSV export.
 - **Accounts:** organisations, invitations with email verification, custom roles with per-action permissions in each organisation, a platform admin panel, and first-run setup.

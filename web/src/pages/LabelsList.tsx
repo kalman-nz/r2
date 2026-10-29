@@ -22,6 +22,19 @@ export default function LabelsList() {
   const can = useCan();
   const queryClient = useQueryClient();
   const { data: templates, isLoading } = useQuery({ queryKey: ["labels"], queryFn: api.listLabels });
+  // The template listed first (and marked default) wherever one's picked for printing.
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const defaultId = settings?.defaultTemplateId ?? "";
+  const canSetDefault = can("templates.edit") || can("settings.edit");
+  async function setDefault(id: string, name: string) {
+    try {
+      await api.updateSettings({ defaultTemplateId: id });
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      showToast("success", id ? `${name} is the default` : "No default template");
+    } catch (err) {
+      showToast("error", `Couldn't change it: ${(err as Error).message}`);
+    }
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const confirm = useConfirm();
@@ -108,7 +121,6 @@ export default function LabelsList() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Label templates</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Designs used when printing — shared by everyone on the team.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportAll} disabled={!templates || templates.length === 0} className="btn-secondary">
@@ -144,12 +156,25 @@ export default function LabelsList() {
         {templates?.map((t) => (
           <div key={t.id} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-gray-50">
             <Link to={`/labels/${t.id}`} className="flex flex-col">
-              <span className="font-medium text-gray-900">{t.name}</span>
+              <span className="font-medium text-gray-900">
+                {t.name}
+                {t.id === defaultId && <span className="ml-2 text-xs font-medium text-signal-ink">Default</span>}
+              </span>
               <span className="text-gray-500 text-xs">
                 {t.widthMm}×{t.heightMm}mm · {t.elements.length} element{t.elements.length === 1 ? "" : "s"}
               </span>
             </Link>
             <div className="flex items-center gap-3">
+              {canSetDefault &&
+                (t.id === defaultId ? (
+                  <button onClick={() => setDefault("", t.name)} className="text-gray-400 hover:text-gray-900 text-xs">
+                    Remove default
+                  </button>
+                ) : (
+                  <button onClick={() => setDefault(t.id, t.name)} className="text-gray-400 hover:text-gray-900 text-xs">
+                    Make default
+                  </button>
+                ))}
               <button onClick={() => exportOne(t)} className="text-gray-400 hover:text-gray-900 text-xs">
                 Export
               </button>

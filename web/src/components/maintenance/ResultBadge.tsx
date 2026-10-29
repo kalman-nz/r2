@@ -1,20 +1,24 @@
 import type { MaintenanceJob } from "../../lib/api";
 import { daysUntil, dueLabel, resultLabel } from "../../lib/maintenance";
-
-const base = "inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap";
+import { Dotted } from "../StatusBadge";
 
 // Passed / Failed (or Done / Needs repair for a service) once it's done;
-// how it stands against its due date before then.
+// how it stands against its due date before then. A dot and plain text,
+// like the other statuses.
 export function ResultBadge({ job }: { job: Pick<MaintenanceJob, "status" | "result" | "kind" | "dueOn" | "failedQty"> }) {
   if (job.status === "done") {
     const pass = job.result === "pass";
     return (
-      <span className={`${base} ${pass ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+      <Dotted dot={pass ? "bg-emerald-500" : "bg-red-500"} text={pass ? "text-gray-700" : "text-fault-ink"}>
         {resultLabel(job)}
         {!pass && job.failedQty > 0 && ` (${job.failedQty})`}
-      </span>
+      </Dotted>
     );
   }
-  const overdue = daysUntil(job.dueOn) < 0;
-  return <span className={`${base} ${overdue ? "bg-red-50 text-red-700" : "bg-data-soft text-data-ink"}`}>{dueLabel(job.dueOn)}</span>;
+  const days = daysUntil(job.dueOn);
+  return (
+    <Dotted dot={days < 0 ? "bg-red-500" : days <= 7 ? "bg-amber-500" : "bg-white ring-1 ring-inset ring-gray-300"} text={days < 0 ? "text-fault-ink" : "text-gray-700"}>
+      {dueLabel(job.dueOn)}
+    </Dotted>
+  );
 }

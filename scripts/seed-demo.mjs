@@ -70,10 +70,11 @@ const tech = await account("demo-tech", "Demo Tech", false);
 const created = await call(admin, "POST", "/api/admin/orgs", { name: "Demo AV Hire Ltd", adminEmail: "demo-admin@example.com" });
 const org = created.id;
 await call(admin, "POST", `/api/invitations/${created.invitation.id}/accept`);
-const roles = await call(admin, "GET", `/api/orgs/${org}/roles`);
+// New organisations start with Admin alone: the demo makes a Tech role.
+const techRole = await call(admin, "POST", `/api/orgs/${org}/roles`, { name: "Tech", permissions: ["units.flag", "scan.out", "scan.in", "labels.print"] }, org);
 const techInvite = await call(admin, "POST", `/api/orgs/${org}/invitations`, {
   email: "demo-tech@example.com",
-  roleId: roles.find((r) => r.name === "Tech").id,
+  roleId: techRole.id,
 });
 await call(tech, "POST", `/api/invitations/${techInvite.invitation.id}/accept`);
 await call(admin, "POST", "/api/admin/orgs", { name: "Harbourside Staging Co", adminEmail: "demo-admin@example.com" });

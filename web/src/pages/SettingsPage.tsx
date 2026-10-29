@@ -1,5 +1,5 @@
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import type { ReactNode, SVGProps } from "react";
+import { Fragment, type ReactNode, type SVGProps } from "react";
 import LabelsList from "./LabelsList";
 import PrinterSettings from "../components/PrinterSettings";
 import GeneralSettings, { CalendarFeed } from "../components/GeneralSettings";
@@ -14,8 +14,7 @@ import DocumentsSettings from "../components/DocumentsSettings";
 import ImportSettings from "../components/ImportSettings";
 import IntegrationsSettings from "../components/IntegrationsSettings";
 import AccountingSettings from "../components/AccountingSettings";
-import MembersSettings from "../components/MembersSettings";
-import RolesSettings from "../components/RolesSettings";
+import AccessSettings from "../components/AccessSettings";
 import LogsPage from "./LogsPage";
 import RequireRole from "../components/RequireRole";
 import { useRole } from "../lib/roles";
@@ -40,17 +39,22 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement> & { children: Reac
 }
 
 // feature: only while the organisation uses it (Settings → Features).
-type NavItem = { to: string; label: string; group: string; permissions: string[]; icon: ReactNode; wide?: boolean; feature?: FeatureKey };
+// folder: a part of the app within the group (Inventory, Maintenance), the
+// way the sidebar has it.
+type NavItem = { to: string; label: string; group: string; folder?: string; permissions: string[]; icon: ReactNode; wide?: boolean; feature?: FeatureKey };
 
-// Grouped in the nav under these headings, in this order. Each section
-// shows to anyone whose role has any of its permissions.
-const GROUPS = ["Organisation", "How you work", "Finance", "Inventory", "Data"];
+// Grouped in the nav under these headings, in this order, like the
+// sidebar; within a group, in this order. Each section shows to anyone
+// whose role has any of its permissions.
+const GROUPS = ["Organisation", "Planning", "Warehouse", "Finance", "Data"];
+const ORDER = ["general", "access", "activity", "project-statuses", "documents", "calendar", "crew-roles", "inventory", "custom-fields", "equipment-tracking", "repair-statuses", "labels", "printer", "pricing", "accounting", "import", "integrations"];
 
 const NAV_ITEMS: NavItem[] = [
   {
     to: "project-statuses",
-    label: "Project statuses",
-    group: "How you work",
+    label: "Statuses",
+    group: "Planning",
+    folder: "Projects",
     feature: "projects",
     permissions: ["settings.edit"],
     icon: (
@@ -64,7 +68,8 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "documents",
     label: "Documents",
-    group: "How you work",
+    group: "Planning",
+    folder: "Projects",
     feature: "projects",
     permissions: ["settings.edit"],
     icon: (
@@ -76,8 +81,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "equipment-tracking",
-    label: "Equipment tracking",
-    group: "How you work",
+    label: "Tracking steps",
+    group: "Warehouse",
+    folder: "Equipment tracking",
     feature: "scanning",
     permissions: ["settings.edit"],
     icon: (
@@ -89,7 +95,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "crew-roles",
     label: "Crew roles",
-    group: "How you work",
+    group: "Planning",
     feature: "crew",
     permissions: ["settings.edit"],
     icon: (
@@ -103,7 +109,8 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "repair-statuses",
     label: "Repair statuses",
-    group: "How you work",
+    group: "Warehouse",
+    folder: "Maintenance",
     feature: "repairs",
     permissions: ["settings.edit"],
     icon: (
@@ -153,7 +160,8 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "inventory",
     label: "Storage locations",
-    group: "Inventory",
+    group: "Warehouse",
+    folder: "Inventory",
     permissions: ["locations.create", "locations.edit", "locations.delete"],
     icon: (
       <Icon>
@@ -164,8 +172,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "custom-fields",
-    label: "Custom fields",
-    group: "Inventory",
+    label: "Custom item fields",
+    group: "Warehouse",
+    folder: "Inventory",
     permissions: ["settings.edit"],
     icon: (
       <Icon>
@@ -178,7 +187,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "import",
     label: "Import data",
     group: "Data",
-    permissions: ["import.csv", "import.rentman"],
+    permissions: ["import.csv"],
     icon: (
       <Icon>
         <path d="M12 3v12" />
@@ -204,8 +213,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "printer",
-    label: "Printers",
-    group: "Inventory",
+    label: "Printer setup",
+    group: "Warehouse",
+    folder: "Labels",
     feature: "labels",
     permissions: ["settings.edit"],
     icon: (
@@ -219,7 +229,8 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "labels",
     label: "Label templates",
-    group: "Inventory",
+    group: "Warehouse",
+    folder: "Labels",
     permissions: ["templates.create", "templates.edit", "templates.delete"],
     icon: (
       <Icon>
@@ -229,35 +240,24 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    to: "team",
-    label: "Team members",
+    to: "access",
+    label: "Users & access",
     group: "Organisation",
-    permissions: ["team.manage"],
+    // Members (team.manage) and roles (roles.manage), as tabs.
+    permissions: ["team.manage", "roles.manage"],
     icon: (
       <Icon>
         <circle cx="9" cy="8" r="3" />
         <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
-        <path d="M16 4.5a3 3 0 0 1 0 6.9" />
-        <path d="M18.5 14a6.5 6.5 0 0 1 3.5 5.8" />
-      </Icon>
-    ),
-  },
-  {
-    to: "roles",
-    label: "Roles & permissions",
-    group: "Organisation",
-    permissions: ["roles.manage", "team.manage"],
-    icon: (
-      <Icon>
-        <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z" />
-        <path d="M9 12h6M12 9v6" />
+        <path d="M17 11l4 1.5v2.5c0 2-1.5 3.6-4 4-2.5-.4-4-2-4-4v-2.5z" />
       </Icon>
     ),
   },
   {
     to: "calendar",
     label: "Calendar feed",
-    group: "Data",
+    group: "Planning",
+    folder: "Projects",
     permissions: ["calendar.manage"],
     icon: (
       <Icon>
@@ -269,7 +269,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: "activity",
     label: "Activity log",
-    group: "Data",
+    group: "Organisation",
     permissions: ["logs.view"],
     wide: true,
     icon: (
@@ -286,7 +286,7 @@ export function useSettingsAccess() {
   const { can } = useRole();
   const { feature } = useOrg();
   const open = NAV_ITEMS.filter((item) => item.permissions.some(can) && (!item.feature || feature(item.feature)));
-  return GROUPS.flatMap((group) => open.filter((item) => item.group === group));
+  return GROUPS.flatMap((group) => open.filter((item) => item.group === group).sort((a, b) => ORDER.indexOf(a.to) - ORDER.indexOf(b.to)));
 }
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
@@ -307,7 +307,6 @@ export default function SettingsPage() {
     <div className="w-full flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
-        <p className="text-xs text-gray-500">{current ? `${current.group} · ${current.label}` : "Your organisation's setup"}</p>
       </div>
       <div className="flex flex-col md:flex-row items-start gap-6">
         <nav className="w-full md:w-52 shrink-0 flex md:flex-col gap-0.5 md:gap-4 overflow-x-auto">
@@ -317,11 +316,16 @@ export default function SettingsPage() {
             return (
               <div key={group} className="flex md:flex-col gap-0.5 shrink-0">
                 <div className="hidden md:block px-3 pb-1.5 eyebrow text-gray-500">{group}</div>
-                {inGroup.map((item) => (
-                  <NavLink key={item.to} to={`/settings/${item.to}`} className={navLinkClass}>
-                    {item.icon}
-                    {item.label}
-                  </NavLink>
+                {inGroup.map((item, i) => (
+                  <Fragment key={item.to}>
+                    {item.folder && item.folder !== inGroup[i - 1]?.folder && (
+                      <div className="hidden md:block px-3 pt-1.5 pb-0.5 text-xs font-medium text-gray-400">{item.folder}</div>
+                    )}
+                    <NavLink to={`/settings/${item.to}`} className={(state) => `${navLinkClass(state)} ${item.folder ? "md:ml-3" : ""}`}>
+                      {item.icon}
+                      {item.label}
+                    </NavLink>
+                  </Fragment>
                 ))}
               </div>
             );
@@ -345,11 +349,13 @@ export default function SettingsPage() {
             <Route path="integrations" element={gate("integrations", <IntegrationsSettings />)} />
             <Route path="labels" element={gate("labels", <LabelsList />)} />
             <Route path="printer" element={gate("printer", <PrinterSettings />)} />
-            <Route path="team" element={gate("team", <MembersSettings />)} />
-            <Route path="roles" element={gate("roles", <RolesSettings />)} />
             <Route path="calendar" element={gate("calendar", <CalendarFeed />)} />
             <Route path="activity" element={gate("activity", <LogsPage />)} />
-            <Route path="users" element={<Navigate to="/settings/team" replace />} />
+            <Route path="access" element={gate("access", <AccessSettings />)} />
+            {/* Where they were before they were combined */}
+            <Route path="team" element={<Navigate to="/settings/access" replace />} />
+            <Route path="roles" element={<Navigate to="/settings/access?tab=roles" replace />} />
+            <Route path="users" element={<Navigate to="/settings/access" replace />} />
           </Routes>
         </div>
       </div>

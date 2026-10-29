@@ -143,8 +143,9 @@ const icons = {
   ),
   admin: (
     <Icon>
-      <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z" />
-      <path d="M9 12l2 2 4-4" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z" />
     </Icon>
   ),
 };
@@ -253,7 +254,7 @@ function AppShell() {
                 <NavItem to="/inventory" icon={icons.inventory} label="Inventory" />
                 {(can("scan.out") || can("scan.in")) && <NavItem to="/scan" icon={icons.scan} label="Equipment tracking" />}
                 {(feature("repairs") || feature("maintenance")) && <NavItem to="/maintenance" icon={icons.maintenance} label="Maintenance" />}
-                {can("labels.print") && <NavItem to="/custom-label" icon={icons.label} label="Custom label" />}
+                {can("labels.print") && <NavItem to="/custom-label" icon={icons.label} label="Print label" />}
               </NavSection>
               {feature("projects") && (
                 <NavSection title="Relations">

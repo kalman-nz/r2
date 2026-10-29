@@ -21,6 +21,7 @@ import { errorText } from "../lib/errors";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
 import { updateEach } from "../components/item/BulkEditModal";
+import SelectionBar from "../components/SelectionBar";
 
 type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
 type CrewWithPerson = CrewMember & { expand?: { person?: CrewPerson } };
@@ -670,8 +671,7 @@ export default function JobsList() {
       {error && <p className="text-red-600 text-sm shrink-0">Couldn't load projects: {(error as Error).message}</p>}
 
       {selectedRows.length > 0 && (
-        <div className="shrink-0 card px-4 py-2 flex items-center gap-2 flex-wrap text-sm">
-          <span className="font-medium text-gray-900 mr-1">{selectedRows.length} selected</span>
+        <SelectionBar count={selectedRows.length} onClear={() => setSelected(new Set())}>
           {can("jobs.edit") && (
             <select value="" onChange={(e) => setStatus(e.target.value)} disabled={busy} className="input w-auto py-1.5" aria-label="Set status">
               <option value="" disabled>
@@ -689,10 +689,7 @@ export default function JobsList() {
               Delete
             </button>
           )}
-          <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-900 ml-auto">
-            Clear selection
-          </button>
-        </div>
+          </SelectionBar>
       )}
 
       <DataTable

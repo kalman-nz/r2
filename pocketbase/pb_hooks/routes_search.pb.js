@@ -17,12 +17,13 @@ routerAdd(
     const LIMIT = 8;
     const p = { q: term, org: ctx.orgId };
 
-    const items = $app
-      .findRecordsByFilter("items", "org = {:org} && archived = false && (name ~ {:q} || code ~ {:q} || barcode ~ {:q})", "name", LIMIT, 0, p)
+    const found = $app.findRecordsByFilter("items", "org = {:org} && archived = false && (name ~ {:q} || code ~ {:q} || barcode ~ {:q})", "name", LIMIT, 0, p);
+    const places = require(`${__hooks}/lib/stock.js`).placesOf($app, found);
+    const items = found
       .map((it) => ({
         id: it.id,
         name: it.getString("name"),
-        subtitle: [it.getString("code"), it.getString("kind") === "kit" ? "Kit" : it.getString("locationInWarehouse")]
+        subtitle: [it.getString("code"), it.getString("kind") === "kit" ? "Kit" : places[it.id]]
           .filter(Boolean)
           .join(" · "),
       }));

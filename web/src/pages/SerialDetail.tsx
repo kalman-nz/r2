@@ -18,6 +18,8 @@ import { useConfirm } from "../components/ConfirmProvider";
 import { useFollowOrg } from "../lib/org";
 import { invalidateMaintenance, useMaintenanceJobs, useRepairStatuses, useRepairs } from "../lib/maintenance";
 import UnitMaintenanceCard from "../components/item/UnitMaintenanceCard";
+import Breadcrumbs, { useFolderCrumbs } from "../components/Breadcrumbs";
+import FilesCard from "../components/FilesCard";
 
 type SerialWithExpand = Serial & { expand?: { item?: Item; location?: Location } };
 type ScanWithExpand = Scan & { expand?: { job?: Job; who?: { name: string; email: string } } };
@@ -37,6 +39,7 @@ export default function SerialDetail() {
     queryFn: () => pb.collection("serials").getOne<SerialWithExpand>(id, { expand: "item,location" }),
   });
   useFollowOrg(serial?.org);
+  const folderCrumbs = useFolderCrumbs(serial?.expand?.item?.category ?? "");
   const { data: scans = [] } = useQuery({
     queryKey: ["scans", "serial", id],
     queryFn: () =>
@@ -65,7 +68,7 @@ export default function SerialDetail() {
     serial,
     item,
     categoryPath: item ? (paths.get(item.category) ?? "") : "",
-    locationName: serial.expand?.location?.name ?? "",
+    locationName: [serial.expand?.location?.name, serial.bin].filter(Boolean).join(", "),
     currentJob: outOn ? `#${outOn.number} ${outOn.name}` : "",
   };
 
@@ -85,7 +88,7 @@ export default function SerialDetail() {
     try {
       await pb.collection("serials").delete(id);
       await queryClient.invalidateQueries({ queryKey: ["serials"] });
-      navigate(item ? `/inventory/${item.id}` : "/inventory", { replace: true });
+      navigate(item ? `/inventory/${item.id}?tab=units` : "/inventory", { replace: true });
     } catch (err) {
       showToast("error", `Couldn't delete: ${errorText(err)}`);
     }
@@ -93,9 +96,7 @@ export default function SerialDetail() {
 
   return (
     <div className="max-w-4xl mx-auto flex flex-col gap-4">
-      <Link to={item ? `/inventory/${item.id}` : "/inventory"} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← {item?.name ?? "Inventory"}
-      </Link>
+      <Breadcrumbs crumbs={[...folderCrumbs, ...(item ? [{ label: item.name, to: `/inventory/${item.id}?tab=units` }] : []), { label: unitDisplayName(serial, item) }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -141,7 +142,16 @@ export default function SerialDetail() {
             )}
           </section>
 
-          <section className="card overflow-hidden">
+          <FilesCard
+            record={{ ...serial, files: serial.files ?? [], fileInfo: serial.fileInfo ?? null }}
+            canEdit={can("units.edit")}
+            upload={(file) => api.uploadSerialFile(serial.id, file)}
+            remove={(stored) => api.deleteSerialFile(serial.id, stored)}
+            onChanged={refresh}
+            hint=""
+          />
+
+          {feature("scanning") && <section className="card overflow-hidden">
             <h2 className="text-sm font-semibold text-gray-500 px-4 pt-3 pb-2">Scan history</h2>
             <div className="divide-y divide-gray-100">
               {scans.map((s) => (
@@ -164,7 +174,7 @@ export default function SerialDetail() {
               ))}
               {scans.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">Never scanned out.</p>}
             </div>
-          </section>
+          </section>}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -206,9 +216,6 @@ function StatusCard({ serial, onRepair, onSaved }: { serial: Serial; onRepair: n
     <section className="card p-4 flex flex-col gap-3 text-sm">
       <div>
         <h2 className="text-sm font-semibold text-gray-500">Status</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          {onRepair ? `It's on repair R${onRepair}: marking the repair fixed makes it active again.` : "Only active units count as stock or can be scanned out."}
-        </p>
       </div>
       <select value={status} onChange={(e) => setStatus(e.target.value as SerialStatus)} className="input py-1.5">
         {/* In repair comes from opening a repair, so it's tracked; it only shows while the unit is in one. */}
@@ -240,6 +247,7 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
     serialNumber: serial.serialNumber,
     label: serial.label,
     location: serial.location,
+    bin: serial.bin ?? "",
     purchaseDate: toDateInput(serial.purchaseDate),
     purchaseCost: serial.purchaseCost,
     nextInspection: toDateInput(serial.nextInspection),
@@ -281,10 +289,10 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
         <Field label="Manufacturer serial">
           <input value={draft.serialNumber} onChange={(e) => set("serialNumber", e.target.value)} disabled={readOnly} className="input py-2" />
         </Field>
-        <Field label="Name" hint="Optional, e.g. Desk 2">
+        <Field label="Name">
           <input value={draft.label} onChange={(e) => set("label", e.target.value)} disabled={readOnly} className="input py-2" />
         </Field>
-        <Field label="Stock location">
+        <Field label="Storage location">
           <select value={draft.location} onChange={(e) => set("location", e.target.value)} disabled={readOnly} className="input py-2">
             <option value="">—</option>
             {locations.map((l) => (
@@ -294,20 +302,14 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
             ))}
           </select>
         </Field>
+        <Field label="Shelf / bin">
+          <input value={draft.bin} onChange={(e) => set("bin", e.target.value)} disabled={readOnly} placeholder="e.g. Bay 3" className="input py-2" />
+        </Field>
         <Field label="Purchase date">
           <input type="date" value={draft.purchaseDate} onChange={(e) => set("purchaseDate", e.target.value)} disabled={readOnly} className="input py-2" />
         </Field>
         <Field label="Purchase cost">
           <NumberInput value={draft.purchaseCost} min={0} onChange={(n) => set("purchaseCost", n)} disabled={readOnly} className="input py-2" />
-        </Field>
-        <Field label="Next test & tag">
-          <input
-            type="date"
-            value={draft.nextInspection}
-            onChange={(e) => set("nextInspection", e.target.value)}
-            disabled={readOnly}
-            className="input py-2"
-          />
         </Field>
         <Field label="Notes" className="sm:col-span-2">
           <textarea value={draft.notes} onChange={(e) => set("notes", e.target.value)} disabled={readOnly} rows={3} className="input py-2" />

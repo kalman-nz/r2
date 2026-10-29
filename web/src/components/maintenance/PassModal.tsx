@@ -36,10 +36,6 @@ export default function PassModal({ jobs, onClose, onDone }: { jobs: JobWithExpa
 
   return (
     <Modal title={`Mark ${jobs.length} passed`} onClose={saving ? () => {} : onClose}>
-      <p className="text-sm text-gray-600">
-        Records {jobs.length === 1 ? "it" : `all ${jobs.length}`} as passed (or done, for a service), and schedules the next for anything on a plan. Record a
-        fail from the job itself, with what's wrong.
-      </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <label className="flex flex-col gap-1">
           <span className="text-gray-500">Done on</span>

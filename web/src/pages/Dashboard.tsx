@@ -510,7 +510,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-1.5 flex-wrap">
           {can("units.flag") && feature("repairs") && (
             <button onClick={() => setReporting(true)} className="btn-secondary">
-              Report repair
+              Create repair
             </button>
           )}
           {(canScanOut || canScanIn) && (

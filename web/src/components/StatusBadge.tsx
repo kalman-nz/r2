@@ -30,7 +30,7 @@ const QUOTE_DOTS: Record<QuoteStatus, string> = {
   void: "bg-gray-300",
 };
 
-function Dotted({ dot, text = "text-gray-700", title, children }: { dot: string; text?: string; title?: string; children: ReactNode }) {
+export function Dotted({ dot, text = "text-gray-700", title, children }: { dot: string; text?: string; title?: string; children: ReactNode }) {
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap ${text}`} title={title}>
       <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} aria-hidden />

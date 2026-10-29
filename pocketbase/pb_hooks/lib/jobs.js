@@ -41,7 +41,8 @@ function priceModeFor(item) {
   return { hour: "per_hour", day: "per_day", week: "per_week", each: "fixed" }[priceUnitOf(item)];
 }
 
-function itemInfo(item) {
+// where: where it's kept (lib/stock.js placesOf), for packing lists.
+function itemInfo(item, where) {
   if (!item) return null;
   return {
     id: item.id,
@@ -53,7 +54,7 @@ function itemInfo(item) {
     priceUnit: priceUnitOf(item),
     barcode: item.getString("barcode"),
     description: item.getString("description"),
-    locationInWarehouse: item.getString("locationInWarehouse"),
+    where: where || "",
     weightKg: item.getFloat("weightKg"),
     powerW: item.getFloat("powerW"),
     archived: item.getBool("archived"),
@@ -240,6 +241,7 @@ function buildSummary(app, jobId, show) {
   const settings = pricingSettings(org);
   const lines = orderByHeadings(loadLines(app, job.id), headingsOf(job), loadSubprojects(app, job.id));
   const itemsById = loadItems(app, lines);
+  const places = require("./stock.js").placesOf(app, Object.keys(itemsById).map((id) => itemsById[id]));
 
   // The main project ("") and each subproject: its own booking window and
   // charge. A line on a subproject that's gone counts as the main project's.
@@ -311,7 +313,7 @@ function buildSummary(app, jobId, show) {
       parentLine: line.getString("parentLine"),
       lineType: line.getString("lineType"),
       subproject: sectionOf(line),
-      item: itemInfo(item),
+      item: itemInfo(item, item ? places[item.id] : ""),
       name: displayName(line, item),
       description: line.getString("description"),
       quantity: line.getFloat("quantity"),

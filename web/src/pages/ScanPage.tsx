@@ -14,6 +14,7 @@ import TrackingSuggestion from "../components/job/TrackingSuggestion";
 import { useToast } from "../components/ToastProvider";
 import TrackingBoard, { LayoutSwitch, NextStep } from "../components/tracking/TrackingBoard";
 import { useCan, useFeature } from "../lib/roles";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // Equipment tracking: scanning kit to a step on a project (prepped,
 // loaded, returned: each organisation's own steps). Works with a
@@ -280,9 +281,7 @@ function ScanJob({ jobId }: { jobId: string }) {
   return (
     <div className={`${layout === "board" ? "max-w-6xl" : "max-w-3xl"} w-full mx-auto flex flex-col gap-4`}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900 min-w-0 truncate">
-          ← #{job.number} {job.name}
-        </Link>
+        <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: `#${job.number} ${job.name}`, to: `/projects/${job.id}` }, { label: "Scan" }]} />
         <TrackingStatus progress={linesProgress(allSteps, tracked)} />
       </div>
 

@@ -1,4 +1,5 @@
 import type { JobDraft } from "../../lib/jobDraft";
+import { oneLineAddress } from "../../lib/format";
 import { useContacts, useVenues } from "../../lib/catalog";
 import Field from "../Field";
 import QuickCreateSelect from "../QuickCreateSelect";
@@ -66,7 +67,7 @@ export default function JobFields({
             collection="venues"
             value={draft.venue}
             onChange={(id) => set("venue", id)}
-            options={venues.map((v) => ({ id: v.id, name: v.name, archived: v.archived, detail: v.address.replace(/\n/g, ", ") }))}
+            options={venues.map((v) => ({ id: v.id, name: v.name, archived: v.archived, detail: oneLineAddress(v.address) }))}
             canCreate={can("venues.create")}
             placeholder="No location"
           />
@@ -91,7 +92,7 @@ export default function JobFields({
           </select>
         )}
       </Field>
-      <Field label="Client reference" hint="Their PO number, if they have one">
+      <Field label="Client reference">
         {readOnly ? (
           plain(draft.reference, "None")
         ) : (
@@ -100,26 +101,26 @@ export default function JobFields({
       </Field>
       {withDates && (
         <>
-          <Field label="Equipment booked from" hint="The usage period: the kit is unavailable to other projects from here">
+          <Field label="Equipment booked from">
             <input type="datetime-local" value={draft.prepAt} onChange={(e) => set("prepAt", e.target.value)} className="input py-2" />
           </Field>
-          <Field label="Equipment booked until" hint="Plus the turnaround buffer">
+          <Field label="Equipment booked until">
             <input type="datetime-local" value={draft.returnAt} onChange={(e) => set("returnAt", e.target.value)} className="input py-2" />
           </Field>
-          <Field label="Billed from" hint="The billing period. Leave empty to charge for the whole booking">
+          <Field label="Billed from">
             <input type="datetime-local" value={draft.billingStart} onChange={(e) => set("billingStart", e.target.value)} className="input py-2" />
           </Field>
-          <Field label="Billed until" hint="Add more billing periods, crew calls and the rest on the Schedule tab">
+          <Field label="Billed until">
             <input type="datetime-local" value={draft.billingEnd} onChange={(e) => set("billingEnd", e.target.value)} className="input py-2" />
           </Field>
         </>
       )}
       {!readOnly && (
         <>
-          <Field label="Project discount (%)" hint="Applied after any line discounts">
+          <Field label="Project discount (%)">
             <NumberInput value={draft.discountPct} min={0} max={100} onChange={(n) => set("discountPct", n)} className="input py-2" />
           </Field>
-          <Field label="Charge for days" hint="0 = count them from the billing periods">
+          <Field label="Charge for days">
             <NumberInput value={draft.chargeDays} min={0} onChange={(n) => set("chargeDays", Math.round(n))} className="input py-2" />
           </Field>
           <Field label="Notes on the quote" className="sm:col-span-2">

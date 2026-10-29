@@ -27,10 +27,13 @@ routerAdd(
     const { setSetting, validateSetting, publicSettings, DEFAULTS, SECRET_KEYS } = require(`${__hooks}/lib/settings.js`);
     const data = e.requestInfo().body || {};
     const keys = Object.keys(DEFAULTS).concat(SECRET_KEYS).filter((key) => data[key] !== undefined);
-    // The Rentman token is saved from Settings → Import, by whoever may run
-    // that import; everything else is settings.edit.
-    const onlyToken = keys.length > 0 && keys.every((key) => key === "rentmanApiToken");
-    const ctx = requireOrg(e, onlyToken ? ["settings.edit", "import.rentman"] : "settings.edit");
+    // The default label template is set from Label templates, by whoever
+    // edits templates; everything else is settings.edit.
+    const only = (key) => keys.length > 0 && keys.every((k) => k === key);
+    const ctx = requireOrg(
+      e,
+      only("defaultTemplateId") ? ["settings.edit", "templates.edit"] : "settings.edit",
+    );
 
     // Validate everything before writing anything, so one bad value doesn't
     // leave the others half-saved.

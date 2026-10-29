@@ -75,10 +75,6 @@ export default function TrackingStepsSettings() {
     <div className="flex flex-col gap-4 max-w-3xl">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Equipment tracking</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          The steps kit goes through on its way to a project and back. Scanning takes each bit of equipment to a step, so a project can have its audio loaded while the lighting's only
-          prepped. Kit can skip steps, so a workshop that loads straight from the shelves doesn't need a prep step.
-        </p>
       </div>
 
       <div className="card p-4 flex flex-col gap-2 text-sm">
@@ -197,7 +193,7 @@ export default function TrackingStepsSettings() {
         <p>
           Steps stay in that order: getting ready, then gone, then back. A project's status is always yours to set: once everything's reached a step (or gone past it), whoever's
           scanning is offered that step's status, if the project isn't already further along. Any project can go without tracking (switch it off on the project). Prepping, loading
-          and returning can each be given to different roles (Settings → Roles).
+          and returning can each be given to different roles (Settings → Users & access → Roles).
         </p>
       </div>
     </div>

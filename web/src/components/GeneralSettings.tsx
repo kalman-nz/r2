@@ -75,9 +75,6 @@ export default function GeneralSettings() {
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Business details</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          {feature("pricing") ? "Shown in the app header, and at the top of every quote and packing list." : feature("projects") ? "Shown in the app header, and at the top of every packing list." : "Shown in the app header."}
-        </p>
       </div>
 
       <div className="card p-4 flex flex-col gap-4">
@@ -85,7 +82,7 @@ export default function GeneralSettings() {
           <Field label="Business name">
             <input value={draft.businessName} onChange={(e) => set("businessName", e.target.value)} placeholder="e.g. Harbour AV Hire Ltd" className="input py-2" />
           </Field>
-          <Field label="Short name" hint="For the browser tab, where there's little room">
+          <Field label="Short name">
             <input value={draft.businessShortName} onChange={(e) => set("businessShortName", e.target.value)} placeholder="e.g. Harbour AV" className="input py-2" />
           </Field>
           <Field label="Address" className="sm:col-span-2">
@@ -98,7 +95,7 @@ export default function GeneralSettings() {
             <input type="email" value={draft.businessEmail} onChange={(e) => set("businessEmail", e.target.value)} className="input py-2" />
           </Field>
           {feature("pricing") && (
-            <Field label="GST number" hint="Printed on quotes">
+            <Field label="GST number">
               <input value={draft.gstNumber} onChange={(e) => set("gstNumber", e.target.value)} placeholder="123-456-789" className="input py-2" />
             </Field>
           )}
@@ -156,10 +153,6 @@ export function CalendarFeed() {
     <div className="flex flex-col gap-4 mt-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Calendar feed</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Subscribe to projects from Google, Apple or Outlook calendar (read-only, prep to return). Anyone with the address can see job
-          names, clients and locations, so share it like a password.
-        </p>
       </div>
       <div className="card p-4 flex flex-col gap-3">
         {url ? (

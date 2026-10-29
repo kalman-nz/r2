@@ -95,6 +95,20 @@ def number(n):
     return str(int(n)) if n == int(n) else f"{n:g}"
 
 
+def address_lines(address):
+    """An address's lines, tidied: no blank lines, stray spaces or trailing commas."""
+    lines = (" ".join(l.split()).rstrip(",").strip() for l in str(address or "").splitlines())
+    return [l for l in lines if l]
+
+
+def stacked_address(address):
+    return "\n".join(address_lines(address))
+
+
+def one_line_address(address):
+    return ", ".join(address_lines(address))
+
+
 # --- document base ---
 
 
@@ -300,7 +314,7 @@ def render_quote(data, tz):
 
     # Header: business on the left, quote details on the right.
     left = doc.text_block(MARGIN, MARGIN, 110, business.get("name") or "Your business name", size=15, style="B")
-    left = doc.text_block(MARGIN, left + 0.5, 110, business.get("address") or "", size=9, color=MUTED, line=4.2)
+    left = doc.text_block(MARGIN, left + 0.5, 110, stacked_address(business.get("address")), size=9, color=MUTED, line=4.2)
     contact = " · ".join(v for v in [business.get("phone"), business.get("email")] if v)
     left = doc.text_block(MARGIN, left, 110, contact, size=9, color=MUTED, line=4.2)
 
@@ -323,7 +337,7 @@ def render_quote(data, tz):
         yl = doc.text_block(MARGIN, yl, col - 5, client.get("name", ""), semibold=True)
         if client.get("contactPerson"):
             yl = doc.text_block(MARGIN, yl, col - 5, f"Attn: {client['contactPerson']}")
-        yl = doc.text_block(MARGIN, yl, col - 5, client.get("billingAddress", ""))
+        yl = doc.text_block(MARGIN, yl, col - 5, stacked_address(client.get("billingAddress")))
         yl = doc.text_block(MARGIN, yl, col - 5, " · ".join(v for v in [client.get("email"), client.get("phone")] if v), color=MUTED)
     else:
         yl = doc.text_block(MARGIN, yl, col - 5, "—", color=FAINT)
@@ -335,7 +349,8 @@ def render_quote(data, tz):
         yr = doc.text_block(jx, yr, col, f"Your ref: {job['reference']}")
     venue = s.get("venue")
     if venue:
-        yr = doc.text_block(jx, yr, col, venue.get("name", "") + (f", {venue['address']}" if venue.get("address") else ""))
+        yr = doc.text_block(jx, yr, col, venue.get("name", ""))
+        yr = doc.text_block(jx, yr, col, one_line_address(venue.get("address")), color=MUTED)
     # Quotes from before schedules (migration 0025) have show dates instead.
     if job.get("billingStart"):
         when = fmt_range(job.get("billingStart"), job.get("billingEnd"), tz)
@@ -459,7 +474,7 @@ def render_packing(data, tz):
     top = doc.text_block(MARGIN, top + 0.5, 96, title, size=15, style="B")
     who = " · ".join(v for v in [(job.get("clientInfo") or {}).get("name"), (job.get("venueInfo") or {}).get("name")] if v)
     top = doc.text_block(MARGIN, top + 0.5, 96, who)
-    top = doc.text_block(MARGIN, top, 96, (job.get("venueInfo") or {}).get("address") or "", color=MUTED)
+    top = doc.text_block(MARGIN, top, 96, one_line_address((job.get("venueInfo") or {}).get("address")), color=MUTED)
 
     rx, rw = PAGE_W - MARGIN - 82, 82
     details = [job.get("status", "").capitalize(), f"Out {fmt_datetime(job.get('prepAt'), tz)}", f"Back {fmt_datetime(job.get('returnAt'), tz)}"]
@@ -502,7 +517,7 @@ def render_packing(data, tz):
                     "box": {"box": not kit},
                     "qty": {"text": number(line.get("quantity")), "semibold": True},
                     "item": {"text": name, "indent": 4 if child else 0, "sub": f"Out: {out}" if out else ""},
-                    "where": {"text": item.get("locationInWarehouse") or "", "color": MUTED},
+                    "where": {"text": item.get("where") or "", "color": MUTED},
                     "scanned": {"text": f"{p['scannedOut']}/{p['needed']}" if p and not kit else "", "color": MUTED},
                 }
             )

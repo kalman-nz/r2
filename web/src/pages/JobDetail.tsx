@@ -24,6 +24,7 @@ import JobCrew from "../components/job/JobCrew";
 import TrackingCard from "../components/job/TrackingCard";
 import DocumentsMenu from "../components/job/DocumentsMenu";
 import SyncCard from "../components/job/SyncCard";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -52,9 +53,7 @@ function NewJob() {
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <Link to="/projects" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Projects
-      </Link>
+      <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: "New project" }]} />
       <h1 className="text-xl font-semibold text-gray-900">New project</h1>
       <section className="card p-4 flex flex-col gap-4">
         <JobFields draft={draft} onChange={setDraft} readOnly={false} withDates />
@@ -239,9 +238,7 @@ function ExistingJob({ id }: { id: string }) {
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-4">
-      <Link to="/projects" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Projects
-      </Link>
+      <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: `#${job.number} ${job.name}` }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">

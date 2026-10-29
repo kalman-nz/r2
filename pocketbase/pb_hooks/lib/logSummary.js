@@ -118,6 +118,11 @@ function summarizeLogs(rows, opts) {
       summary = "Added " + (added.length === 1 ? added[0] : added.length + " files") + " to repair R" + details.number;
     } else if (entry.type === "repair_file_removed") {
       summary = "Removed " + details.name + " from repair R" + details.number;
+    } else if (entry.type === "serial_files") {
+      const added = details.added || [];
+      summary = "Added " + (added.length === 1 ? added[0] : added.length + " files") + " to unit " + (details.barcode || details.serial);
+    } else if (entry.type === "serial_file_removed") {
+      summary = "Removed " + details.name + " from unit " + (details.barcode || details.serial);
     } else if (entry.type === "maintenance_plan") {
       summary = (details.action === "created" ? "Set up" : details.action === "deleted" ? "Deleted" : "Changed") + " the " + details.name + " plan";
     } else if (entry.type === "maintenance_done") {
@@ -126,6 +131,8 @@ function summarizeLogs(rows, opts) {
       summary = "Passed " + details.count + " maintenance job" + (details.count === 1 ? "" : "s");
     } else if (entry.type === "item_out_of_service") {
       summary = "Set " + details.name + " out of service: " + details.to + (details.note ? ' ("' + details.note + '")' : "");
+    } else if (entry.type === "item_stock") {
+      summary = "Changed " + details.name + "'s stock from " + details.from + " to " + details.to;
     } else if (entry.type === "import_rentman") {
       summary = "Imported from Rentman" + (details.errors ? " (" + details.errors + " problems)" : "");
     } else if (entry.type === "import_csv") {

@@ -111,3 +111,23 @@ export function toDateInput(value: string | null | undefined): string {
 export function fromDateInput(value: string): string {
   return value ? fromLocalInput(`${value}T00:00`) : "";
 }
+
+// Addresses are stored one line each, as typed or picked from the lookup
+// (components/AddressInput.tsx). These tidy them for showing: no blank
+// lines, stray spaces or trailing commas.
+export function addressLines(address: string | null | undefined): string[] {
+  return String(address ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim().replace(/\s+/g, " ").replace(/,+$/, "").trim())
+    .filter(Boolean);
+}
+
+// On one line, for lists and headers: "12 Main Street, Mount Maunganui 3116".
+export function oneLineAddress(address: string | null | undefined): string {
+  return addressLines(address).join(", ");
+}
+
+// Stacked, as on an envelope (whitespace-pre-line keeps the breaks).
+export function stackedAddress(address: string | null | undefined): string {
+  return addressLines(address).join("\n");
+}

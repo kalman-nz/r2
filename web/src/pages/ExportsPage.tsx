@@ -69,11 +69,6 @@ export default function ExportsPage() {
     <div className="max-w-5xl mx-auto flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-semibold text-gray-900">Export invoices to Xero</h1>
-        <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
-          Makes a file for Xero's invoice import (Business → Invoices → Import). Each project is invoiced from the quote the client
-          saw. Xero brings them in as drafts to check and approve, and refuses an invoice number it already has, so a project can't
-          be invoiced twice by accident.
-        </p>
       </div>
 
       <div className="card p-4 flex flex-wrap items-end gap-4 text-sm">

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { renderLabelToCanvas } from "../lib/renderLabel";
 import { buildCustomTextTemplate } from "../lib/customLabel";
-import { downloadLabelsPdf, printDesign, printWithManualData, renderDesignImage, renderTemplateImage } from "../lib/print";
+import { designText, downloadLabelsPdf, renderForPdf, renderForPrinter, sendToPrinters, type PrintJob } from "../lib/print";
+import { sizeForTemplate, usePrinting, type LabelSize, type Printer } from "../lib/printing";
+import { usePrinterChoice } from "../components/print/usePrinterChoice";
 import { generateId } from "../lib/id";
 import {
   DATA_FIELDS,
-  isBrotherWidth,
+  SAMPLE_CONTEXT,
   type LabelDataContext,
   type LabelElement,
   type LabelTemplateData,
@@ -26,13 +28,14 @@ type Mode = "build" | "template";
 interface Design {
   widthMm: number;
   heightMm: number;
+  sizeId?: string;
   elements: LabelElement[];
 }
 
 // A fresh label starts as one big centred line of text filling it, ready to type over.
 function starterDesign(): Design {
   const [text] = buildCustomTextTemplate("Label text", 62, 29).elements;
-  return { widthMm: 62, heightMm: 29, elements: [{ ...text, id: generateId() }] };
+  return { widthMm: 62, heightMm: 29, sizeId: "tape-62", elements: [{ ...text, id: generateId() }] };
 }
 
 function tabClass(active: boolean) {
@@ -70,7 +73,7 @@ export default function CustomLabelPage() {
 
   return (
     <div className="lg:h-full flex flex-col gap-4 lg:min-h-0">
-      <h1 className="text-lg font-semibold text-gray-900">Custom label</h1>
+      <h1 className="text-lg font-semibold text-gray-900">Print label</h1>
 
       <div className="flex items-center gap-5 border-b border-gray-200">
         <button className={tabClass(mode === "build")} onClick={() => setMode("build")}>
@@ -146,7 +149,37 @@ function LabelPreview({ image, caption, placeholder }: { image: HTMLCanvasElemen
   );
 }
 
+// Renders a design for the stock it's on and sends it `copies` times, to
+// the chosen printer or (when that can't be reached) the next with the
+// same stock.
+async function printToChain(
+  design: Pick<LabelTemplateData, "widthMm" | "heightMm" | "elements">,
+  context: LabelDataContext,
+  size: LabelSize | null,
+  job: PrintJob,
+  copies: number,
+  chain: Printer[],
+  showToast: (type: "success" | "error", message: string) => void,
+) {
+  const { image, label } = await renderForPrinter(design, context, size);
+  let current = chain;
+  let used = "";
+  await printCopies(
+    copies,
+    async () => {
+      const result = await sendToPrinters(job, image, label, current);
+      current = current.filter((p) => !result.skipped.includes(p));
+      if (result.ok) used = result.printer;
+      return result;
+    },
+    (type, message) => showToast(type, type === "success" && used ? `${message} on ${used}` : message),
+  );
+}
+
+// Copies, the printer, PDF and Print. Only printers with the label's stock
+// loaded are offered.
 function PrintActions({
+  size,
   copies,
   onCopies,
   onDownload,
@@ -154,20 +187,36 @@ function PrintActions({
   onPrint,
   printing,
   disabled,
-  widthMm,
 }: {
+  size: LabelSize | null;
   copies: number;
   onCopies: (n: number) => void;
   onDownload: () => void;
   downloading: boolean;
-  onPrint: () => void;
+  onPrint: (chain: Printer[]) => void;
   printing: boolean;
   disabled: boolean;
-  widthMm: number | undefined;
 }) {
-  const brother = widthMm !== undefined && isBrotherWidth(widthMm);
+  const { fitting, chosen, chain, choose, status } = usePrinterChoice(size);
   return (
-    <div className="flex items-center justify-end gap-3">
+    <div className="flex items-center justify-end gap-3 flex-wrap">
+      {fitting.length > 0 ? (
+        <label className="flex items-center gap-2 text-sm text-gray-500">
+          Printer
+          <select value={chosen?.id ?? ""} onChange={(e) => choose(e.target.value)} className="input py-1 w-auto">
+            {fitting.map(({ printer }) => (
+              <option key={printer.id} value={printer.id}>
+                {printer.name}
+                {status[printer.id] && !status[printer.id]!.ok ? " (offline)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <span className="text-xs text-gray-500">
+          {size?.brother ? `No printer has ${size.name} loaded — download a PDF.` : "This size prints from a PDF."}
+        </span>
+      )}
       <label className="flex items-center gap-2 text-sm text-gray-500">
         Copies
         <NumberInput min={1} value={copies} onChange={onCopies} className="w-14 input py-1" />
@@ -175,13 +224,8 @@ function PrintActions({
       <button onClick={onDownload} disabled={downloading || disabled} className="btn-secondary py-2">
         {downloading ? "Making PDF…" : "Download PDF"}
       </button>
-      <button
-        onClick={onPrint}
-        disabled={printing || disabled || !brother}
-        title={disabled || brother ? undefined : "Not a Brother tape width — download a PDF instead"}
-        className="btn-primary py-2 px-4"
-      >
-        {printing ? "Printing…" : "Print"}
+      <button onClick={() => onPrint(chain)} disabled={printing || disabled || chain.length === 0} className="btn-primary py-2 px-4">
+        {printing ? "Printing…" : copies > 1 ? `Print ${copies}` : "Print"}
       </button>
     </div>
   );
@@ -193,12 +237,14 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
   const [downloading, setDownloading] = useState(false);
   const [firstElementId] = useState(() => design.elements[0]?.id ?? null);
   const { showToast } = useToast();
+  const { data: printingConfig } = usePrinting();
+  const size = sizeForTemplate(design, printingConfig?.sizes ?? []);
   const empty = design.elements.length === 0;
 
-  async function print() {
+  async function print(chain: Printer[]) {
     setPrinting(true);
     try {
-      await printCopies(copies, () => printDesign(design), showToast);
+      await printToChain(design, SAMPLE_CONTEXT, size, { customText: designText(design) }, copies, chain, showToast);
     } catch (err) {
       showToast("error", `Print failed: ${(err as Error).message}`);
     } finally {
@@ -209,7 +255,7 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
   async function downloadPdf() {
     setDownloading(true);
     try {
-      const imageDataUrl = await renderDesignImage(design);
+      const imageDataUrl = await renderForPdf(design, SAMPLE_CONTEXT);
       await downloadLabelsPdf([{ imageDataUrl, widthMm: design.widthMm, heightMm: design.heightMm, copies }]);
     } catch (err) {
       showToast("error", errorText(err));
@@ -223,8 +269,9 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
       <LabelDesigner
         widthMm={design.widthMm}
         heightMm={design.heightMm}
+        sizeId={design.sizeId}
         elements={design.elements}
-        onSizeChange={(widthMm, heightMm) => onChange((prev) => ({ ...prev, widthMm, heightMm }))}
+        onSizeChange={(widthMm, heightMm, sizeId) => onChange((prev) => ({ ...prev, widthMm, heightMm, sizeId }))}
         onElementsChange={(update) =>
           onChange((prev) => ({ ...prev, elements: typeof update === "function" ? update(prev.elements) : update }))
         }
@@ -232,6 +279,7 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
         initialSelectedId={firstElementId}
       />
       <PrintActions
+        size={size}
         copies={copies}
         onCopies={setCopies}
         onDownload={downloadPdf}
@@ -239,7 +287,6 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
         onPrint={print}
         printing={printing}
         disabled={empty}
-        widthMm={design.widthMm}
       />
     </div>
   );
@@ -277,6 +324,8 @@ function FromTemplateMode() {
   }, [customFields]);
 
   const template = templates?.find((t) => t.id === templateId);
+  const { data: printingConfig } = usePrinting();
+  const size = template ? sizeForTemplate(template, printingConfig?.sizes ?? []) : null;
   const fields = useMemo(() => (template ? usedDataFields(template) : []), [template]);
   const context: LabelDataContext = { ...EMPTY_CONTEXT, ...fieldValues };
 
@@ -295,11 +344,11 @@ function FromTemplateMode() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- context is derived fresh every render from fieldValues
   }, [template, fieldValues]);
 
-  async function print() {
+  async function print(chain: Printer[]) {
     if (!template) return;
     setPrinting(true);
     try {
-      await printCopies(copies, () => printWithManualData(template, context), showToast);
+      await printToChain(template, context, size, { templateId: template.id }, copies, chain, showToast);
     } catch (err) {
       showToast("error", `Print failed: ${(err as Error).message}`);
     } finally {
@@ -311,7 +360,7 @@ function FromTemplateMode() {
     if (!template) return;
     setDownloading(true);
     try {
-      const imageDataUrl = await renderTemplateImage(template, context);
+      const imageDataUrl = await renderForPdf(template, context);
       await downloadLabelsPdf([{ imageDataUrl, widthMm: template.widthMm, heightMm: template.heightMm, copies }]);
     } catch (err) {
       showToast("error", errorText(err));
@@ -372,12 +421,13 @@ function FromTemplateMode() {
       preview={
         <LabelPreview
           image={template ? preview : null}
-          caption={template ? `${template.widthMm} × ${template.heightMm} mm` : undefined}
+          caption={template ? `${template.widthMm} × ${template.heightMm} mm${size ? ` · ${size.name}` : ""}` : undefined}
           placeholder="Choose a template to preview it here."
         />
       }
       actions={
         <PrintActions
+          size={size}
           copies={copies}
           onCopies={setCopies}
           onDownload={downloadPdf}
@@ -385,7 +435,6 @@ function FromTemplateMode() {
           onPrint={print}
           printing={printing}
           disabled={!template}
-          widthMm={template?.widthMm}
         />
       }
     />

@@ -1,6 +1,6 @@
 // What a role can be allowed to do. Each organisation defines its own roles
 // (Settings → Roles) as a name plus a set of these; every organisation
-// starts with Admin (locked: always everything), Planner and Tech.
+// starts with Admin alone (locked: always everything).
 //
 // Seeing the organisation's inventory, jobs, contacts and venues comes with
 // being a member at all; everything else is one of these. The server checks
@@ -85,7 +85,6 @@ const GROUPS = [
     name: "Imports and exports",
     permissions: [
       ["import.csv", "Import spreadsheets"],
-      ["import.rentman", "Import from Rentman"],
       ["integrations.manage", "Set up live sync with Rentman and Momentus"],
       ["export.xero", "Export invoices for Xero"],
     ],
@@ -133,22 +132,11 @@ function normalise(list) {
   return ALL.filter((key) => wanted[key]);
 }
 
-const PLANNER = ALL.filter(
-  (key) =>
-    ["settings.edit", "calendar.manage", "team.manage", "roles.manage", "logs.view", "import.rentman", "integrations.manage", "views.publish"].indexOf(key) === -1 &&
-    key.indexOf("templates.") !== 0,
-);
-const TECH = ["units.flag", "scan.out", "scan.in", "labels.print"];
+// A new organisation starts with Admin alone: it makes the roles it needs
+// (Settings → Users & access).
+const DEFAULT_ROLES = [{ name: "Admin", description: "", locked: true, permissions: ALL }];
 
-const DEFAULT_ROLES = [
-  { name: "Admin", description: "Everything, always. Every organisation keeps at least one.", locked: true, permissions: ALL },
-  { name: "Planner", description: "Runs projects and quotes, and looks after inventory and contacts", locked: false, permissions: PLANNER },
-  { name: "Tech", description: "Looks things up, scans kit out and in, reports broken gear and does maintenance, prints labels", locked: false, permissions: TECH },
-  // Event crew: their projects (dashboards' "My projects"), view only.
-  { name: "Crew", description: "Sees the projects they're working on, and can look things up", locked: false, permissions: [] },
-];
-
-// A new organisation's starting roles. Returns { Admin, Planner, Tech, Crew }.
+// A new organisation's starting roles. Returns { Admin }.
 function createDefaultRoles(app, orgId) {
   const collection = app.findCollectionByNameOrId("roles");
   const made = {};

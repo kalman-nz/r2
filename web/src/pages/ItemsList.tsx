@@ -1,24 +1,25 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type Item, type ViewConfig } from "../lib/api";
 import ColumnsMenu from "../components/ColumnsMenu";
-import FiltersMenu, { FilterCheck, FilterField, GroupFields, SortList } from "../components/FiltersMenu";
+import FiltersMenu, { FilterCheck, FilterField, SortList } from "../components/FiltersMenu";
 import DataTable, { type TableColumn } from "../components/DataTable";
-import { readGroups, readSorts, sortRows, sortSettings, type GroupOption, type Sort } from "../lib/table";
+import { readSorts, sortRows, sortSettings, type Sort } from "../lib/table";
 import PageViews from "../components/PageViews";
 import { asBool, asString, asStrings } from "../lib/views";
-import { renderItemLabelImage, sendRenderedLabel } from "../lib/print";
 import { money, num, PRICE_SUFFIX } from "../lib/format";
-import { displayPath, useCategories, useCategoryPaths } from "../lib/catalog";
+import { displayPath, useCategories, useCategoryPaths, useLocations } from "../lib/catalog";
+import { placesText, useStockPlaces } from "../lib/stock";
 import { useFeature, useRole } from "../lib/roles";
 import BatchPrintBar from "../components/BatchPrintBar";
+import SelectionBar from "../components/SelectionBar";
+import { buildItemLabelContext } from "../lib/labelSpec";
 import { orgFilter } from "../lib/currentOrg";
 import { errorText } from "../lib/errors";
 import { folderOf, indexFolders, subtree, trail } from "../lib/folders";
 import FolderTree, { FolderIcon } from "../components/item/FolderTree";
-import FolderPicker from "../components/item/FolderPicker";
 import FolderActions, { useFolderActions } from "../components/item/FolderActions";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
@@ -29,12 +30,18 @@ interface Row extends Item {
   categoryPath: string;
   stock: number | null;
   freeNow: number | null;
+  // Where it's kept (lib/stock.ts), and the storage locations that holds.
+  where: string;
+  locationIds: string[];
 }
 
 interface Column extends TableColumn<Row> {
   toggleable: boolean;
   defaultVisible: boolean;
 }
+
+// How far each level of opened folders steps in, in px.
+const FOLDER_STEP = 24;
 
 const TYPE_LABEL = (i: Item) => (i.kind === "kit" ? "Kit" : i.tracking === "serial" ? "Serialised" : "Bulk");
 
@@ -79,7 +86,7 @@ const COLUMNS: Column[] = [
   },
   {
     key: "type",
-    label: "Type",
+    label: "Item type",
     toggleable: true,
     defaultVisible: true,
     width: 100,
@@ -153,8 +160,9 @@ const COLUMNS: Column[] = [
     defaultVisible: true,
     width: 130,
     minWidth: 72,
-    sortValue: (i) => i.locationInWarehouse.toLowerCase(),
-    render: (i) => <span className="text-gray-600">{i.locationInWarehouse || "—"}</span>,
+    sortValue: (i) => i.where.toLowerCase(),
+    title: (i) => i.where,
+    render: (i) => <span className="text-gray-600 truncate">{i.where || "—"}</span>,
   },
   {
     key: "barcode",
@@ -203,34 +211,6 @@ const COLUMNS: Column[] = [
 
 const TYPES = ["all", "Bulk", "Serialised", "Kit"];
 
-// Ways to group items (a view can group, then subgroup).
-const GROUPS: GroupOption<Row>[] = [
-  {
-    key: "folder",
-    label: "Folder",
-    value: (i) => ({ id: i.category || "", label: displayPath(i.categoryPath) || "Inventory", order: i.categoryPath.toLowerCase() }),
-  },
-  { key: "type", label: "Type", value: (i) => ({ id: TYPE_LABEL(i), label: TYPE_LABEL(i), order: TYPES.indexOf(TYPE_LABEL(i)) }) },
-  {
-    key: "location",
-    label: "Warehouse location",
-    value: (i) => {
-      const l = i.locationInWarehouse.trim();
-      return l ? { id: l, label: l, order: l.toLowerCase() } : { id: "", label: "No location", order: "\uffff" };
-    },
-  },
-  {
-    key: "free",
-    label: "Availability",
-    value: (i) =>
-      i.freeNow === null
-        ? { id: "?", label: "Checking…", order: 2 }
-        : i.freeNow <= 0
-          ? { id: "none", label: "None free now", order: 0 }
-          : { id: "some", label: "Some free now", order: 1 },
-  },
-];
-const GROUP_KEYS = GROUPS.map((g) => g.key);
 const SORT_KEYS = COLUMNS.map((c) => c.key);
 
 // The page as it comes, and what a saved view keeps (components/PageViews.tsx):
@@ -243,15 +223,14 @@ const DEFAULT_VIEW: ViewConfig = {
   columns: COLUMNS.filter((c) => c.toggleable && c.defaultVisible).map((c) => c.key),
   widths: {},
   ...sortSettings([{ key: "name", dir: "asc" }]),
-  groupBy: [],
 };
 
 export default function ItemsList() {
   const navigate = useNavigate();
   const { can } = useRole();
-  // The hire price column only with prices and quotes.
+  // Price columns only with prices and quotes.
   const feature = useFeature();
-  const offered = feature("pricing") ? COLUMNS : COLUMNS.filter((c) => c.key !== "dayRate");
+  const offered = feature("pricing") ? COLUMNS : COLUMNS.filter((c) => c.key !== "dayRate" && c.key !== "replacementValue");
   const [search, setSearch] = useState("");
   // The folder being looked at ("" is the top, Inventory), in the URL so
   // Back and links work like a file browser.
@@ -261,7 +240,6 @@ export default function ItemsList() {
     setParams(id ? { folder: id } : {});
     setSelected(new Set());
   };
-  const [movingItems, setMovingItems] = useState(false);
   const [bulkEditing, setBulkEditing] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const { showToast } = useToast();
@@ -269,12 +247,13 @@ export default function ItemsList() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
   const [unavailableOnly, setUnavailableOnly] = useState(false);
-  // A warehouse location ("" for anywhere).
-  const [shelf, setShelf] = useState("");
+  // A storage location's id ("" for anywhere).
+  const [locationFilter, setLocationFilter] = useState("");
+  const { data: locations = [] } = useLocations();
+  const places = useStockPlaces();
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(DEFAULT_VIEW.columns as string[]));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [sorts, setSorts] = useState<Sort[]>([{ key: "name", dir: "asc" }]);
-  const [groupBy, setGroupBy] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { data: categories = [] } = useCategories();
@@ -288,11 +267,11 @@ export default function ItemsList() {
     type: typeFilter,
     archived: showArchived,
     unavailable: unavailableOnly,
-    where: shelf,
+    // Older saved views kept a shelf name as `where`, which is ignored now.
+    location: locationFilter,
     columns: COLUMNS.filter((c) => c.toggleable && visibleColumns.has(c.key)).map((c) => c.key),
     widths: columnWidths,
     ...sortSettings(sorts),
-    groupBy,
   };
 
   function applySettings(s: ViewConfig) {
@@ -300,7 +279,7 @@ export default function ItemsList() {
     setTypeFilter(TYPES.includes(type) ? type : "all");
     setShowArchived(asBool(s.archived));
     setUnavailableOnly(asBool(s.unavailable));
-    setShelf(asString(s.where));
+    setLocationFilter(asString(s.location));
     setVisibleColumns(new Set(asStrings(s.columns, COLUMNS.map((c) => c.key))));
     const widths: Record<string, number> = {};
     if (s.widths && typeof s.widths === "object") {
@@ -308,7 +287,6 @@ export default function ItemsList() {
     }
     setColumnWidths(widths);
     setSorts(readSorts(s, SORT_KEYS, { key: "name", dir: "asc" }));
-    setGroupBy(readGroups(s, GROUP_KEYS));
   }
 
   const { data: items = [], isLoading, error } = useQuery({
@@ -327,23 +305,51 @@ export default function ItemsList() {
     refetchInterval: 60_000,
   });
 
-  const rows = useMemo<Row[]>(
-    () =>
-      items.map((i) => ({
+  const rows = useMemo<Row[]>(() => {
+    const name = new Map(locations.map((l) => [l.id, l.name]));
+    return items.map((i) => {
+      const here = (places.get(i.id) ?? []).filter((p) => p.qty > 0);
+      return {
         ...i,
         categoryPath: paths.get(i.category) ?? "",
         stock: availability?.[i.id]?.stock ?? null,
         freeNow: availability?.[i.id]?.free ?? null,
-      })),
-    [items, paths, availability],
-  );
+        where: placesText(here, (id) => name.get(id) ?? ""),
+        locationIds: [...new Set(here.map((p) => p.location).filter(Boolean))],
+      };
+    });
+  }, [items, paths, availability, places, locations]);
 
   // Searching or filtering looks through this folder and everything in it;
   // otherwise it's like opening a folder: its subfolders, then the items
   // sitting directly in it.
-  const searching = search.trim() !== "" || typeFilter !== "all" || unavailableOnly || shelf !== "";
+  const searching = search.trim() !== "" || typeFilter !== "all" || unavailableOnly || locationFilter !== "";
   const scope = useMemo(() => subtree(folders, folder), [folders, folder]);
   const subfolders = searching ? [] : (folders.children.get(folder) ?? []);
+  // Folders opened in place in the list (the arrow on a folder row), so
+  // their contents show indented under them without leaving this folder.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // Folders whose items show: this one, and any opened in place under it.
+  const shown = useMemo(() => {
+    const out = new Set([folder]);
+    const stack = [folder];
+    while (stack.length > 0) {
+      for (const child of folders.children.get(stack.pop()!) ?? []) {
+        if (expanded.has(child.id)) {
+          out.add(child.id);
+          stack.push(child.id);
+        }
+      }
+    }
+    return out;
+  }, [folders, folder, expanded]);
 
   // Items inside each folder at any depth (for the tree and folder rows).
   const counts = useMemo(() => {
@@ -361,13 +367,13 @@ export default function ItemsList() {
     let result = rows.filter((i) => {
       if (!showArchived && i.archived) return false;
       const where = folderOf(folders, i.category);
-      if (searching ? !scope.has(where) : where !== folder) return false;
+      if (searching ? !scope.has(where) : !shown.has(where)) return false;
       if (typeFilter !== "all" && TYPE_LABEL(i) !== typeFilter) return false;
       if (unavailableOnly && !(i.freeNow !== null && i.freeNow <= 0)) return false;
-      if (shelf && i.locationInWarehouse.trim() !== shelf) return false;
+      if (locationFilter && !i.locationIds.includes(locationFilter)) return false;
       if (
         term &&
-        ![i.name, i.code, i.barcode, i.categoryPath, i.locationInWarehouse].some((v) => v.toLowerCase().includes(term))
+        ![i.name, i.code, i.barcode, i.categoryPath, i.where].some((v) => v.toLowerCase().includes(term))
       ) {
         return false;
       }
@@ -376,21 +382,7 @@ export default function ItemsList() {
 
     result = sortRows(result, COLUMNS, sorts);
     return result;
-  }, [rows, search, folders, folder, scope, searching, typeFilter, showArchived, unavailableOnly, shelf, sorts]);
-
-  async function moveSelected(target: string) {
-    const ids = [...selected];
-    try {
-      for (const id of ids) await pb.collection("items").update(id, { category: target });
-      showToast("success", `Moved ${ids.length} item${ids.length === 1 ? "" : "s"} to ${folders.byId.get(target)?.name ?? "Inventory"}`);
-      setSelected(new Set());
-      setMovingItems(false);
-    } catch (err) {
-      showToast("error", errorText(err));
-    } finally {
-      await queryClient.invalidateQueries({ queryKey: ["items"] });
-    }
-  }
+  }, [rows, search, folders, scope, shown, searching, typeFilter, showArchived, unavailableOnly, locationFilter, sorts]);
 
   // Archiving or restoring the selection. Items already that way are left alone.
   async function archiveSelected(archived: boolean) {
@@ -452,11 +444,7 @@ export default function ItemsList() {
   const columns = offered.filter((c) => !c.toggleable || visibleColumns.has(c.key));
 
   // The filters behind the Filters button (Type has its own place).
-  const activeFilterCount = (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0) + (shelf ? 1 : 0);
-  const warehouseLocations = useMemo(
-    () => [...new Set(items.map((i) => i.locationInWarehouse.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-    [items],
-  );
+  const activeFilterCount = (showArchived ? 1 : 0) + (unavailableOnly ? 1 : 0) + (locationFilter ? 1 : 0) + (typeFilter !== "all" ? 1 : 0);
 
   const selectedItems = filtered.filter((i) => selected.has(String(i.id)));
 
@@ -519,28 +507,31 @@ export default function ItemsList() {
             placeholder={current ? `Search in ${current.name}…` : "Search name, code, barcode…"}
             className="input flex-1 min-w-40 max-w-60"
           />
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input w-auto">
-            <option value="all">All types</option>
-            <option value="Bulk">Bulk</option>
-            <option value="Serialised">Serialised</option>
-            <option value="Kit">Kits</option>
-          </select>
           <div className="ml-auto flex items-center gap-1.5">
             <FiltersMenu
               active={activeFilterCount}
               onReset={() => {
                 setShowArchived(false);
                 setUnavailableOnly(false);
-                setShelf("");
+                setLocationFilter("");
+                setTypeFilter("all");
               }}
             >
-              {warehouseLocations.length > 0 && (
-                <FilterField label="Warehouse location">
-                  <select value={shelf} onChange={(e) => setShelf(e.target.value)} className="input">
+              <FilterField label="Type">
+                <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input">
+                  <option value="all">All item types</option>
+                  <option value="Bulk">Bulk</option>
+                  <option value="Serialised">Serialised</option>
+                  <option value="Kit">Kits</option>
+                </select>
+              </FilterField>
+              {locations.length > 1 && (
+                <FilterField label="Storage location">
+                  <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="input">
                     <option value="">Anywhere</option>
-                    {warehouseLocations.map((l) => (
-                      <option key={l} value={l}>
-                        {l}
+                    {locations.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
                       </option>
                     ))}
                   </select>
@@ -553,7 +544,6 @@ export default function ItemsList() {
                 Show archived items
               </FilterCheck>
               <SortList columns={offered} sorts={sorts} onChange={setSorts} />
-              <GroupFields options={GROUPS} groupBy={groupBy} onChange={setGroupBy} />
             </FiltersMenu>
             <ColumnsMenu
               columns={offered.filter((c) => c.toggleable)}
@@ -567,24 +557,16 @@ export default function ItemsList() {
         {error && <p className="text-red-600 text-sm shrink-0">Couldn't load inventory: {(error as Error).message}</p>}
 
         {selectedItems.length > 0 && (
-          <div className="shrink-0 card px-4 py-2 flex items-center gap-2 flex-wrap text-sm">
-            <span className="font-medium text-gray-900 mr-1">{selectedItems.length} selected</span>
+          <SelectionBar count={selectedItems.length} onClear={() => setSelected(new Set())}>
             {can("items.edit") && (
-              <>
-                <button onClick={() => setBulkEditing(true)} disabled={bulkBusy} className="btn-primary">
-                  Edit
-                </button>
-                <button onClick={() => setMovingItems(true)} disabled={bulkBusy} className="btn-secondary">
-                  Move
-                </button>
-              </>
+              <button onClick={() => setBulkEditing(true)} disabled={bulkBusy} className="btn-primary">
+                Edit
+              </button>
             )}
             <BatchPrintBar<Row>
-              bare
               items={selectedItems}
               getDisplayName={(i) => i.name}
-              renderImage={(i, t) => renderItemLabelImage(i, i.categoryPath, t)}
-              sendPrint={(image, t) => sendRenderedLabel(image, t)}
+              getContext={(i) => buildItemLabelContext(i, i.categoryPath)}
               onDone={() => setSelected(new Set())}
             />
             {can("items.edit") &&
@@ -602,14 +584,13 @@ export default function ItemsList() {
                 Delete
               </button>
             )}
-            <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-900 ml-auto">
-              Clear selection
-            </button>
-          </div>
+            </SelectionBar>
         )}
         {bulkEditing && (
           <BulkEditModal
             items={selectedItems}
+            folders={folders}
+            initialFolder={folder}
             onClose={() => setBulkEditing(false)}
             onDone={async (failed) => {
               setBulkEditing(false);
@@ -617,16 +598,6 @@ export default function ItemsList() {
               if (failed === 0) showToast("success", `Updated ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}`);
               else showToast("error", `${failed} of ${selectedItems.length} items couldn't be updated`);
             }}
-          />
-        )}
-        {movingItems && (
-          <FolderPicker
-            title={`Move ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"} to…`}
-            index={folders}
-            initial={folder}
-            confirmLabel="Move here"
-            onPick={moveSelected}
-            onClose={() => setMovingItems(false)}
           />
         )}
 
@@ -637,25 +608,62 @@ export default function ItemsList() {
           onRowClick={(i) => navigate(`/inventory/${i.id}`)}
           sorts={sorts}
           onSortsChange={setSorts}
-          groups={groupBy.map((k) => GROUPS.find((g) => g.key === k)!).filter(Boolean)}
           widths={columnWidths}
           onWidthsChange={setColumnWidths}
           selected={selected}
           onSelectedChange={setSelected}
-          before={(span) =>
-            subfolders.map((f) => (
-              <tr key={f.id} onClick={() => openFolder(f.id)} className="hover:bg-gray-50 cursor-pointer">
-                <td className="px-3 py-1.5" />
-                <td colSpan={span - 1} className="px-3 py-1.5">
-                  <span className="flex items-center gap-2">
-                    <FolderIcon className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium text-gray-900">{f.name}</span>
-                    <span className="font-mono text-[11px] text-gray-400">{counts.get(f.id) ?? 0}</span>
-                  </span>
-                </td>
-              </tr>
-            ))
-          }
+          body={(renderRow, span) => {
+            if (searching) return filtered.map((r) => renderRow(r));
+            const byFolder = new Map<string, Row[]>();
+            for (const r of filtered) {
+              const where = folderOf(folders, r.category);
+              byFolder.set(where, [...(byFolder.get(where) ?? []), r]);
+            }
+            // A folder's subfolders (each opened in place if expanded), then its items.
+            const level = (parent: string, depth: number): ReactNode[] => [
+              ...(folders.children.get(parent) ?? []).flatMap((f) => {
+                const open = expanded.has(f.id);
+                return [
+                  <tr key={`folder-${f.id}`} onClick={() => openFolder(f.id)} className="hover:bg-gray-50 cursor-pointer">
+                    <td className="px-3 py-1.5" />
+                    <td colSpan={span - 1} className="py-1.5 pr-3" style={{ paddingLeft: 6 + depth * FOLDER_STEP }}>
+                      <span className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpanded(f.id);
+                          }}
+                          aria-expanded={open}
+                          aria-label={`${open ? "Collapse" : "Expand"} ${f.name}`}
+                          className="p-1.5 -my-1 rounded hover:bg-gray-200/70"
+                        >
+                          <svg
+                            viewBox="0 0 20 20"
+                            className={`w-3 h-3 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.25"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M8 5l5 5-5 5" />
+                          </svg>
+                        </button>
+                        <FolderIcon className="w-4 h-4 text-gray-400" />
+                        <span className="ml-1 font-medium text-gray-900">{f.name}</span>
+                        <span className="ml-1 font-mono text-[11px] text-gray-400">{counts.get(f.id) ?? 0}</span>
+                      </span>
+                    </td>
+                  </tr>,
+                  ...(open ? level(f.id, depth + 1) : []),
+                ];
+              }),
+              // Items in an opened folder (tick box and all) line up under its icon.
+              ...(byFolder.get(parent) ?? []).map((r) => renderRow(r, depth === 0 ? undefined : 10 + depth * FOLDER_STEP)),
+            ];
+            return level(folder, 0);
+          }}
           empty={
             !isLoading &&
             filtered.length === 0 &&

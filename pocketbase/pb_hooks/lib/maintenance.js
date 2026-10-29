@@ -6,19 +6,23 @@
 // unit of a serialised item, and each bulk item as a whole — always has
 // exactly one scheduled job from it: syncPlan() and syncAsset() keep that
 // true as plans, items and units change. Doing a plan's job schedules the
-// next, `every` days/weeks/months/years after the day it was done. Kit
-// that's never been done is due on the plan's first due date (or today,
-// once that's passed); a test & tag plan uses a unit's own "Next test &
-// tag" date first, so dates brought in from Rentman carry on.
+// next: `every` days/weeks/months/years after the day it was done, or, on
+// a fixed plan (repeat "fixed"), the next day on its calendar from the
+// first due date (every month on the 15th), however early or late it was
+// done. Kit that's never been done is due on the plan's first due date
+// (or today once that's passed, or a fixed plan's next day); a test & tag
+// plan uses a unit's own "Next test & tag" date first, so dates brought in
+// from Rentman carry on.
 //
 // Test & tag plans also keep each unit's "Next test & tag"
 // (serials.nextInspection) on its next scheduled test, so the units list
 // and labels show it, and changing that date on a unit moves the test.
 
-const { isDate, addInterval, UNITS } = require("./dates.js");
+const { isDate, addInterval, nextOnSchedule, UNITS } = require("./dates.js");
 const { findOrNull } = require("./records.js");
 
 const KINDS = ["inspection", "test_tag", "service"];
+const REPEATS = ["", "fixed"];
 
 function text(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -90,29 +94,40 @@ function plansCovering(app, itemId) {
   return app.findRecordsByFilter("maintenance_plans", "items.id ?= {:item}", "", 0, 0, { item: itemId });
 }
 
-// When an asset is next due on a plan: `every` after it was last done,
-// else its own "Next test & tag" (test & tag plans), else the plan's first
-// due date, or today once that's passed.
-function nextDue(plan, asset, lastDone, today) {
-  if (lastDone) return addInterval(lastDone, plan.getInt("every"), plan.getString("unit"));
+// When an asset is next due on a plan, given its last done job ({ doneOn,
+// dueOn }, or null): `every` after it was done, or a fixed plan's next day
+// after both it was due and done; never done, its own "Next test & tag"
+// (test & tag plans), else the plan's first due date, or today once that's
+// passed (a fixed plan's next day from today).
+function nextDue(plan, asset, last, today) {
+  const every = plan.getInt("every");
+  const unit = plan.getString("unit");
+  const first = plan.getString("firstDue");
+  const fixed = plan.getString("repeat") === "fixed" && isDate(first);
+  if (last && isDate(last.doneOn)) {
+    if (!fixed) return addInterval(last.doneOn, every, unit);
+    const after = isDate(last.dueOn) && last.dueOn > last.doneOn ? last.dueOn : last.doneOn;
+    return nextOnSchedule(first, every, unit, after, false);
+  }
   if (plan.getString("kind") === "test_tag" && asset.serial) {
     const own = dayOf(asset.serial.getString("nextInspection"), plan.getString("org"));
     if (isDate(own)) return own;
   }
-  const first = plan.getString("firstDue");
+  if (fixed) return nextOnSchedule(first, every, unit, today, true);
   return isDate(first) && first > today ? first : today;
 }
 
-// The last day each asset was done on a plan, by "item/serial".
+// Each asset's last done job on a plan ({ doneOn, dueOn }), by "item/serial".
 function lastDoneByKey(app, plan) {
-  const rows = arrayOf(new DynamicModel({ item: "", serial: "", last: "" }));
+  const rows = arrayOf(new DynamicModel({ item: "", serial: "", last: "", due: "" }));
+  // SQLite takes dueOn from the row MAX(doneOn) picks.
   app
     .db()
-    .newQuery("SELECT item, serial, MAX(doneOn) AS last FROM maintenance_jobs WHERE plan = {:plan} AND status = 'done' GROUP BY item, serial")
+    .newQuery("SELECT item, serial, MAX(doneOn) AS last, dueOn AS due FROM maintenance_jobs WHERE plan = {:plan} AND status = 'done' GROUP BY item, serial")
     .bind({ plan: plan.id })
     .all(rows);
   const out = {};
-  for (const r of rows) out[r.item + "/" + r.serial] = r.last;
+  for (const r of rows) out[r.item + "/" + r.serial] = { doneOn: r.last, dueOn: r.due };
   return out;
 }
 
@@ -133,8 +148,10 @@ function newJob(app, plan, asset, dueOn) {
 
 // Makes a plan's scheduled jobs match what it covers: one each, named
 // after the plan. Out-of-scope jobs (an item taken off, a unit retired) go.
-function syncPlan(app, plan) {
+// redate: the schedule changed, so the jobs it already has move to it too.
+function syncPlan(app, plan, redate) {
   const today = todayFor(plan.getString("org"));
+  const last = lastDoneByKey(app, plan);
   const wanted = {};
   for (const id of plan.getStringSlice("items")) {
     for (const asset of assetsOfItem(app, findOrNull(app, "items", id))) wanted[asset.key] = asset;
@@ -147,15 +164,16 @@ function syncPlan(app, plan) {
       continue;
     }
     have[key] = true;
-    if (job.getString("name") !== plan.getString("name") || job.getString("kind") !== plan.getString("kind")) {
+    const dueOn = redate ? nextDue(plan, wanted[key], last[key] || null, today) : job.getString("dueOn");
+    if (job.getString("name") !== plan.getString("name") || job.getString("kind") !== plan.getString("kind") || job.getString("dueOn") !== dueOn) {
       job.set("name", plan.getString("name"));
       job.set("kind", plan.getString("kind"));
+      job.set("dueOn", dueOn);
       app.save(job);
     }
   }
-  const last = lastDoneByKey(app, plan);
   for (const key in wanted) {
-    if (!have[key]) newJob(app, plan, wanted[key], nextDue(plan, wanted[key], last[key], today));
+    if (!have[key]) newJob(app, plan, wanted[key], nextDue(plan, wanted[key], last[key] || null, today));
   }
   if (plan.getString("kind") === "test_tag") {
     for (const key in wanted) if (wanted[key].serial) syncNextInspection(app, wanted[key].serial);
@@ -189,7 +207,7 @@ function syncAsset(app, itemId, serialId) {
       if (scheduled.length > 0) continue;
       const last = app.findRecordsByFilter("maintenance_jobs", "plan = {:plan} && status = 'done' && " + which, "-doneOn", 1, 0, params)[0];
       const asset = { item: item, serial: serial };
-      newJob(app, plan, asset, nextDue(plan, asset, last ? last.getString("doneOn") : "", todayFor(plan.getString("org"))));
+      newJob(app, plan, asset, nextDue(plan, asset, last ? { doneOn: last.getString("doneOn"), dueOn: last.getString("dueOn") } : null, todayFor(plan.getString("org"))));
     }
   }
   if (serial) syncNextInspection(app, serial);
@@ -236,7 +254,8 @@ function planItems(app, org, ids) {
   return out;
 }
 
-// body: { name, kind, every, unit, items: [ids], firstDue, instructions }.
+// body: { name, kind, every, unit, repeat, items: [ids], firstDue,
+// instructions }. kind is "inspection" or "test_tag" when left out.
 // Creates (plan null) or changes a plan, then brings its jobs into line.
 function savePlan(app, org, plan, body, who) {
   let saved;
@@ -248,9 +267,15 @@ function savePlan(app, org, plan, body, who) {
       if (!name) throw new BadRequestError("Give the plan a name, like Annual PPE inspection");
       set("name", name);
     }
+    const before = plan ? [record.getInt("every"), record.getString("unit"), record.getString("repeat"), record.getString("firstDue")].join("|") : "";
     if (!plan || body.kind !== undefined) {
-      if (KINDS.indexOf(body.kind) === -1) throw new BadRequestError("Pick what kind of work it is");
-      set("kind", body.kind);
+      const kind = body.kind === undefined ? "inspection" : body.kind;
+      if (KINDS.indexOf(kind) === -1) throw new BadRequestError("Pick what kind of work it is");
+      set("kind", kind);
+    }
+    if (body.repeat !== undefined) {
+      if (REPEATS.indexOf(body.repeat) === -1) throw new BadRequestError("Pick how it repeats");
+      set("repeat", body.repeat);
     }
     if (!plan || body.every !== undefined || body.unit !== undefined) {
       const every = Number(body.every === undefined ? record.getInt("every") : body.every);
@@ -267,8 +292,10 @@ function savePlan(app, org, plan, body, who) {
       set("firstDue", first);
     }
     if (body.instructions !== undefined) set("instructions", text(body.instructions, 5000));
+    if (record.getString("repeat") === "fixed" && !isDate(record.getString("firstDue"))) throw new BadRequestError("Pick the day it starts from");
     tx.save(record);
-    syncPlan(tx, record);
+    const after = [record.getInt("every"), record.getString("unit"), record.getString("repeat"), record.getString("firstDue")].join("|");
+    syncPlan(tx, record, !!plan && after !== before);
     saved = record;
   });
   return app.findRecordById("maintenance_plans", saved.id);

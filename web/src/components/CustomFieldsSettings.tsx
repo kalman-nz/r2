@@ -88,8 +88,7 @@ export default function CustomFieldsSettings() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="text-sm font-semibold text-gray-900">Custom fields</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Your own details on every item, filled in on the item's Custom fields card.</p>
+        <h2 className="text-sm font-semibold text-gray-900">Custom item fields</h2>
       </div>
       <div className="card p-4 flex flex-col gap-2">
         {fields.map((f, i) => (

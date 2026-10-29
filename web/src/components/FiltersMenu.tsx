@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useDropdown } from "../lib/dropdown";
 import Segmented from "./Segmented";
-import { MAX_SORTS, type Sort } from "../lib/table";
+import { MAX_GROUPS, MAX_SORTS, type Sort } from "../lib/table";
 
 // A list's detailed filters, sorting and grouping, behind one button next to Columns,
 // so the toolbar keeps just the view, search and the filter people change
@@ -117,38 +117,44 @@ export function SortList({ columns, sorts, onChange }: { columns: { key: string;
   );
 }
 
-// Grouping the list: a group, and subgroups within each.
+// Grouping the list: a group, then subgroups within each (up to MAX_GROUPS deep).
 export function GroupFields({ options, groupBy, onChange }: { options: { key: string; label: string }[]; groupBy: string[]; onChange: (groupBy: string[]) => void }) {
-  const [first = "", second = ""] = groupBy;
+  // Picking a level keeps the ones below it unless they now repeat; clearing it clears them too.
+  function pick(level: number, key: string) {
+    if (!key) return onChange(groupBy.slice(0, level));
+    const before = groupBy.slice(0, level);
+    const after = groupBy.slice(level + 1).filter((k) => k !== key);
+    onChange([...before, key, ...after]);
+  }
   return (
     <div className="flex flex-col gap-1.5 pt-3 border-t border-gray-100">
       <span className="text-xs font-medium text-gray-500">Group</span>
-      <div className="flex items-center gap-1.5">
-        <span className="w-12 shrink-0 text-xs text-gray-500">By</span>
-        <select value={first} onChange={(e) => onChange(e.target.value ? [e.target.value, ...(second && second !== e.target.value ? [second] : [])] : [])} className="input flex-1 min-w-0 py-1.5" aria-label="Group by">
-          <option value="">No grouping</option>
-          {options.map((o) => (
-            <option key={o.key} value={o.key}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {first && (
-        <div className="flex items-center gap-1.5">
-          <span className="w-12 shrink-0 text-xs text-gray-500">Then by</span>
-          <select value={second} onChange={(e) => onChange(e.target.value ? [first, e.target.value] : [first])} className="input flex-1 min-w-0 py-1.5" aria-label="Subgroup by">
-            <option value="">No subgroups</option>
-            {options
-              .filter((o) => o.key !== first)
-              .map((o) => (
-                <option key={o.key} value={o.key}>
-                  {o.label}
-                </option>
-              ))}
-          </select>
-        </div>
-      )}
+      {Array.from({ length: MAX_GROUPS }, (_, level) => {
+        const value = groupBy[level] ?? "";
+        const parentSet = level === 0 || !!groupBy[level - 1];
+        const taken = groupBy.slice(0, level);
+        return (
+          <div key={level} className="flex items-center gap-1.5">
+            <span className="w-12 shrink-0 text-xs text-gray-500">{level === 0 ? "By" : "Then by"}</span>
+            <select
+              value={value}
+              disabled={!parentSet}
+              onChange={(e) => pick(level, e.target.value)}
+              className="input flex-1 min-w-0 py-1.5 disabled:opacity-50"
+              aria-label={level === 0 ? "Group by" : `Subgroup ${level} by`}
+            >
+              <option value="">{level === 0 ? "No grouping" : parentSet ? "No subgroups" : "Pick the one above first"}</option>
+              {options
+                .filter((o) => !taken.includes(o.key))
+                .map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+            </select>
+          </div>
+        );
+      })}
     </div>
   );
 }

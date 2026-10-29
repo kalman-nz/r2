@@ -7,14 +7,49 @@ import { errorText } from "../lib/errors";
 // match and it's filled in a line at a time, still editable (for a level or
 // a PO box). It only looks up while the address is on one line, so editing
 // one that's been filled in doesn't keep offering more.
+//
+// Speed: answers are kept for the session, so backspacing is instant; while
+// a new search is out, the last answers that still fit are shown; and the
+// server opens its connection to the lookup when the box is focused, which
+// is most of a first lookup's wait.
+
+const answers = new Map<string, AddressMatch[]>();
+let warmedAt = 0;
+
+const keyFor = (q: string) => q.toLowerCase().replace(/\s+/g, " ");
+
+// The answers to the longest earlier search this one extends, narrowed to
+// those that still match every word typed.
+function narrowed(key: string): AddressMatch[] | null {
+  for (let i = key.length - 1; i >= 3; i--) {
+    const earlier = answers.get(key.slice(0, i));
+    if (!earlier) continue;
+    const words = key.split(" ").filter(Boolean);
+    return earlier.filter((m) => {
+      const label = m.label.toLowerCase();
+      return words.every((w) => label.includes(w));
+    });
+  }
+  return null;
+}
+
+function warm() {
+  // The server keeps a connection open for a minute or so.
+  if (Date.now() - warmedAt < 60_000) return;
+  warmedAt = Date.now();
+  api.warmAddressLookup().catch(() => {});
+}
+
 export default function AddressInput({
   value,
   onChange,
   disabled = false,
+  rows = 3,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  rows?: number;
 }) {
   const { open, setOpen, ref } = useDropdown();
   const [matches, setMatches] = useState<AddressMatch[]>([]);
@@ -27,16 +62,34 @@ export default function AddressInput({
 
   useEffect(() => {
     if (!typed.current || query.length < 3) return;
+    const key = keyFor(query);
+    const show = (found: AddressMatch[]) => {
+      setMatches(found);
+      setActive(0);
+      setOpen(found.length > 0);
+    };
+    const known = answers.get(key);
+    if (known) {
+      show(known);
+      setSearching(false);
+      setProblem(known.length === 0 ? "No matches: keep typing, or type the address in full" : "");
+      return;
+    }
+    // Something to look at straight away while the lookup runs.
+    const meanwhile = narrowed(key);
+    if (meanwhile && meanwhile.length > 0) {
+      show(meanwhile);
+      setProblem("");
+    }
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setSearching(true);
       try {
         const found = await api.searchAddresses(query);
+        answers.set(key, found);
         if (cancelled) return;
-        setMatches(found);
-        setActive(0);
+        show(found);
         setProblem(found.length === 0 ? "No matches: keep typing, or type the address in full" : "");
-        setOpen(found.length > 0);
       } catch (err) {
         if (!cancelled) {
           setMatches([]);
@@ -45,7 +98,7 @@ export default function AddressInput({
       } finally {
         if (!cancelled) setSearching(false);
       }
-    }, 300);
+    }, 150);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -74,7 +127,10 @@ export default function AddressInput({
           }
           onChange(e.target.value);
         }}
-        onFocus={() => matches.length > 0 && setOpen(true)}
+        onFocus={() => {
+          if (!disabled) warm();
+          if (matches.length > 0) setOpen(true);
+        }}
         onKeyDown={(e) => {
           if (!showing) return;
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -86,7 +142,7 @@ export default function AddressInput({
           }
         }}
         disabled={disabled}
-        rows={3}
+        rows={rows}
         placeholder="Start typing an address to look it up"
         className="input py-2 w-full"
         role="combobox"
@@ -107,15 +163,23 @@ export default function AddressInput({
                 pick(m);
               }}
               onMouseEnter={() => setActive(i)}
-              className={`w-full text-left px-3 py-2 text-sm ${i === active ? "bg-gray-50 text-gray-900" : "text-gray-700"}`}
+              className={`w-full text-left px-3 py-2 text-sm ${i === active ? "bg-gray-50" : ""}`}
             >
-              {m.label}
+              {(() => {
+                const [first, ...rest] = m.address.split("\n");
+                return (
+                  <>
+                    <span className="block text-gray-900">{first}</span>
+                    {rest.length > 0 && <span className="block text-xs text-gray-500">{rest.join(", ")}</span>}
+                  </>
+                );
+              })()}
             </button>
           ))}
           <p className="px-3 pt-1 pb-0.5 text-[11px] text-gray-400">Addresses © OpenStreetMap contributors</p>
         </div>
       )}
-      {(searching || problem) && <p className={`mt-1 text-xs ${problem && !searching ? "text-gray-500" : "text-gray-400"}`}>{searching ? "Looking up…" : problem}</p>}
+      {problem && !searching && <p className="mt-1 text-xs text-gray-500">{problem}</p>}
     </div>
   );
 }

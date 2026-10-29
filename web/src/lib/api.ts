@@ -1,5 +1,14 @@
 import type { RecordModel } from "pocketbase";
 import type { LabelTemplateData } from "./labelSpec";
+import type { PrintingConfig } from "./printing";
+
+export interface PrintResult {
+  ok: boolean;
+  message: string;
+  printerId?: string;
+  printer?: string;
+  unreachable?: boolean; // the request itself failed: printer offline or server unreachable
+}
 import { pb } from "./pocketbase";
 import { currentOrgId } from "./currentOrg";
 
@@ -122,6 +131,16 @@ export interface Item extends RecordModel {
   rentmanId: string;
 }
 
+// A bulk item's quantity at one stock location, and the shelf or bin it's
+// on there (pb_hooks/lib/stock.js). The item's stockQty is their total.
+export interface ItemStock extends RecordModel {
+  org: string;
+  item: string;
+  location: string;
+  qty: number;
+  bin: string;
+}
+
 export interface Serial extends RecordModel {
   org: string;
   item: string;
@@ -130,12 +149,16 @@ export interface Serial extends RecordModel {
   label: string;
   status: SerialStatus;
   location: string;
+  // Shelf or bin at its location.
+  bin: string;
   purchaseDate: string;
   purchaseCost: number;
   nextInspection: string;
   notes: string;
   custom: Record<string, unknown> | null;
   rentmanId: string;
+  files: string[];
+  fileInfo: FileInfo | null;
 }
 
 // What a repair status does to the kit (pb_hooks/lib/repairs.js): open
@@ -256,6 +279,7 @@ export interface Repair extends RecordModel {
 
 export type MaintenanceKind = "inspection" | "test_tag" | "service";
 export type IntervalUnit = "day" | "week" | "month" | "year";
+export type PlanRepeat = "" | "fixed";
 
 // Repeating maintenance (pb_hooks/lib/maintenance.js): each unit of its
 // serialised items, and each bulk item, gets its own scheduled job.
@@ -265,6 +289,9 @@ export interface MaintenancePlan extends RecordModel {
   kind: MaintenanceKind;
   every: number;
   unit: IntervalUnit;
+  // "" counts each next one from when the last was done; "fixed" keeps to
+  // the calendar from firstDue (every month on the 15th).
+  repeat: PlanRepeat;
   items: string[];
   // Calendar days ("2026-10-22"), like the jobs' dates.
   firstDue: string;
@@ -389,7 +416,8 @@ export interface ItemInfo {
   priceUnit: PriceUnit;
   barcode: string;
   description: string;
-  locationInWarehouse: string;
+  // Where it's kept: "Main store, Bay 3", or each place with how many.
+  where: string;
   weightKg: number;
   powerW: number;
   archived: boolean;
@@ -914,7 +942,7 @@ export interface Dashboards {
 }
 
 // The list pages with saved views (pb_hooks/lib/views.js).
-export type ViewPage = "projects" | "inventory" | "contacts" | "locations" | "crew" | "rostering";
+export type ViewPage = "projects" | "inventory" | "contacts" | "locations" | "crew" | "rostering" | "maintenance" | "repairs" | "maintenance-history";
 
 // A saved view's settings: the page's filters and columns, as JSON.
 export type ViewConfig = Record<string, unknown>;
@@ -1020,9 +1048,10 @@ export interface XeroJob {
 
 export interface PlanInput {
   name: string;
-  kind: MaintenanceKind;
+  kind?: MaintenanceKind;
   every: number;
   unit: IntervalUnit;
+  repeat: PlanRepeat;
   items: string[];
   firstDue: string;
   instructions: string;
@@ -1187,6 +1216,9 @@ export const api = {
   // up a level). See pb_hooks/routes_folders.pb.js.
   deleteFolder: (id: string, contents: boolean) =>
     request<{ deleted: number; archived: number; moved: number }>(`/api/folders/${id}/delete`, json("POST", { contents })),
+  // Replace a bulk item's stock by location (pb_hooks/records_stock.pb.js).
+  setItemStock: (itemId: string, stock: { location: string; qty: number; bin: string }[]) =>
+    request<{ item: Item; stock: ItemStock[] }>(`/api/items/${itemId}/stock`, json("PUT", { stock })),
   setOutOfService: (itemId: string, quantity: number, note?: string) =>
     request<Item>(`/api/items/${itemId}/out-of-service`, json("POST", { quantity, note })),
   // Search online for a photo and let the local vision model pick one; saves
@@ -1209,10 +1241,13 @@ export const api = {
     request<Repair>(`/api/repairs/${id}`, json("PATCH", body)),
   uploadRepairFile: (id: string, file: File) => request<Repair>(`/api/repairs/${id}/files`, upload(file)),
   deleteRepairFile: (id: string, name: string) => request<Repair>(`/api/repairs/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
+  uploadSerialFile: (id: string, file: File) => request<Serial>(`/api/serials/${id}/files`, upload(file)),
+  deleteSerialFile: (id: string, name: string) => request<Serial>(`/api/serials/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
   saveCrewRoles: (roles: { id?: string; name: string }[]) => request<CrewRole[]>("/api/crew-roles", json("PUT", { roles })),
   searchAddresses: (q: string) => request<AddressMatch[]>(`/api/addresses?q=${encodeURIComponent(q)}`),
+  warmAddressLookup: () => request<AddressMatch[]>("/api/addresses?warm=1"),
   trackingProjects: () => request<TrackedProject[]>("/api/tracking/projects"),
   acceptTrackingStatus: (jobId: string, status: string) => request<JobSummary>(`/api/jobs/${jobId}/tracking-status`, json("POST", { status })),
   saveTrackingSteps: (steps: TrackingStepInput[]) => request<TrackingStep[]>("/api/tracking-steps", json("PUT", { steps })),
@@ -1223,7 +1258,7 @@ export const api = {
   createPlan: (body: PlanInput) => request<MaintenancePlan>("/api/maintenance/plans", json("POST", body)),
   updatePlan: (id: string, body: Partial<PlanInput>) => request<MaintenancePlan>(`/api/maintenance/plans/${id}`, json("PATCH", body)),
   deletePlan: (id: string) => request<{ ok: true }>(`/api/maintenance/plans/${id}`, json("DELETE")),
-  scheduleJobs: (body: { name: string; kind: MaintenanceKind; item?: string; serials?: string[]; dueOn: string; notes?: string }) =>
+  scheduleJobs: (body: { name: string; kind?: MaintenanceKind; item?: string; serials?: string[]; dueOn: string; notes?: string }) =>
     request<MaintenanceJob[]>("/api/maintenance/jobs", json("POST", body)),
   updateJob: (id: string, body: Partial<Pick<MaintenanceJob, "name" | "dueOn" | "notes" | "cost" | "doneBy">>) =>
     request<MaintenanceJob>(`/api/maintenance/jobs/${id}`, json("PATCH", body)),
@@ -1252,9 +1287,6 @@ export const api = {
     request<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`, { signal }),
 
   // Imports
-  // One step of a Rentman import: see runRentmanStep in pb_hooks/lib/imports.js.
-  importRentman: (body: { step: RentmanImportStep; runId?: string; cursor?: string | null; final?: boolean }) =>
-    request<RentmanImportResult>("/api/import/rentman", json("POST", body)),
   importCsv: (kind: "items" | "contacts", rows: Record<string, string>[], dryRun: boolean) =>
     request<CsvImportResult>("/api/import/csv", json("POST", { kind, rows, dryRun })),
   listImportRuns: () => request<ImportRun[]>("/api/import/runs"),
@@ -1282,11 +1314,25 @@ export const api = {
   updateLabel: (id: string, template: LabelTemplateData) =>
     request<LabelTemplateData & { id: string }>(`/api/labels/${id}`, json("PUT", template)),
   deleteLabel: (id: string) => request<{ ok: true }>(`/api/labels/${id}`, json("DELETE")),
-  print: (
-    args:
+  // A 502 is a printer that couldn't be reached — reported, not thrown, so
+  // the print dialog can try the next printer.
+  print: async (
+    args: (
       | { templateId: string; serialId?: string; imageDataUrl: string; label: string }
-      | { customText: string; imageDataUrl: string; label: string },
-  ) => request<{ ok: boolean; message: string }>("/api/print", json("POST", args)),
+      | { customText: string; imageDataUrl: string; label: string }
+    ) & { printerId?: string },
+  ): Promise<PrintResult> => {
+    try {
+      return await request<PrintResult>("/api/print", json("POST", args));
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      return { ok: false, message: (err as Error).message, unreachable: status === 502 || status === 0 };
+    }
+  },
+  getPrinting: () => request<PrintingConfig>("/api/printing"),
+  updatePrinting: (config: PrintingConfig) => request<PrintingConfig>("/api/printing", json("PUT", config)),
+  checkPrinters: (ids?: string[]) =>
+    request<Record<string, { ok: boolean; message: string }>>("/api/printing/check", json("POST", ids ? { ids } : {})),
   // Names for imported "custom_<id>" fields — see routes_custom_fields.pb.js.
   listCustomFields: () => request<CustomFieldDef[]>("/api/custom-fields"),
 
@@ -1354,9 +1400,9 @@ export const api = {
   // Roles — see routes_roles.pb.js.
   permissions: () => request<PermissionCatalogue>("/api/permissions"),
   listRoles: (orgId: string) => request<OrgRole[]>(`/api/orgs/${orgId}/roles`),
-  createRole: (orgId: string, data: { name: string; description: string; permissions: string[] }) =>
+  createRole: (orgId: string, data: { name: string; permissions: string[] }) =>
     request<OrgRole>(`/api/orgs/${orgId}/roles`, json("POST", data)),
-  updateRole: (orgId: string, roleId: string, data: { name: string; description: string; permissions: string[] }) =>
+  updateRole: (orgId: string, roleId: string, data: { name: string; permissions: string[] }) =>
     request<OrgRole>(`/api/orgs/${orgId}/roles/${roleId}`, json("PATCH", data)),
   deleteRole: (orgId: string, roleId: string) => request<{ ok: true }>(`/api/orgs/${orgId}/roles/${roleId}`, json("DELETE")),
 };

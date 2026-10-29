@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
 import LabelDesigner from "../components/LabelDesigner";
 import type { LabelElement } from "../lib/labelSpec";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 export default function LabelEditor() {
   const { id } = useParams();
@@ -14,6 +15,7 @@ export default function LabelEditor() {
   const [name, setName] = useState("New template");
   const [widthMm, setWidthMm] = useState(62);
   const [heightMm, setHeightMm] = useState(29);
+  const [sizeId, setSizeId] = useState("tape-62");
   const [elements, setElements] = useState<LabelElement[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -23,6 +25,7 @@ export default function LabelEditor() {
       setName(t.name);
       setWidthMm(t.widthMm);
       setHeightMm(t.heightMm);
+      setSizeId(t.sizeId ?? "");
       setElements(t.elements);
     });
   }, [id, isNew]);
@@ -30,7 +33,7 @@ export default function LabelEditor() {
   async function save() {
     setSaving(true);
     try {
-      const template = { name, widthMm, heightMm, elements };
+      const template = { name, widthMm, heightMm, sizeId, elements };
       if (isNew) {
         const created = await api.createLabel(template);
         navigate(`/labels/${created.id}`, { replace: true });
@@ -47,9 +50,7 @@ export default function LabelEditor() {
 
   return (
     <div className="lg:h-full flex flex-col gap-4 lg:min-h-0">
-      <Link to="/settings/labels" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Settings
-      </Link>
+      <Breadcrumbs crumbs={[{ label: "Settings", to: "/settings" }, { label: "Labels", to: "/settings/labels" }, { label: name || "Label" }]} />
 
       <div className="flex items-center justify-between">
         <input
@@ -66,9 +67,11 @@ export default function LabelEditor() {
         widthMm={widthMm}
         heightMm={heightMm}
         elements={elements}
-        onSizeChange={(w, h) => {
+        sizeId={sizeId}
+        onSizeChange={(w, h, size) => {
           setWidthMm(w);
           setHeightMm(h);
+          setSizeId(size);
         }}
         onElementsChange={setElements}
       />

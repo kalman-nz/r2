@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { useLocations } from "../lib/catalog";
 import { errorText } from "../lib/errors";
-import { InlineText } from "./InlineInput";
+import AddressInput from "./AddressInput";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 import { withOrg } from "../lib/currentOrg";
 import { useCan } from "../lib/roles";
 
-// Settings > Storage locations: where units live in the warehouse.
+// Settings > Storage locations: where stock and units are kept.
 // (Inventory folders are managed on the Inventory page itself.)
 export default function CatalogSettings() {
   return <Locations />;
@@ -22,6 +22,7 @@ function Locations() {
   const confirm = useConfirm();
   const { data: locations = [] } = useLocations();
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["locations"] });
 
   async function save(id: string | null, data: { name?: string; address?: string }) {
@@ -37,7 +38,7 @@ function Locations() {
   async function remove(id: string, locationName: string) {
     const ok = await confirm({
       title: "Delete location",
-      message: `Delete "${locationName}"? Units there will have no location set.`,
+      message: `Delete "${locationName}"? Anything kept there has to be moved somewhere else first.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -54,25 +55,10 @@ function Locations() {
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Storage locations</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Warehouses or stores where units live. With only one, new units go there automatically.</p>
       </div>
       <div className="card p-4 flex flex-col gap-2">
         {locations.map((l) => (
-          <div key={l.id} className="flex items-center gap-2">
-            <InlineText value={l.name} onCommit={(v) => v && save(l.id, { name: v })} disabled={!can("locations.edit")} className="w-48" />
-            <InlineText
-              value={l.address}
-              onCommit={(v) => save(l.id, { address: v })}
-              disabled={!can("locations.edit")}
-              placeholder="Address"
-              className="flex-1"
-            />
-            {can("locations.delete") && (
-              <button onClick={() => remove(l.id, l.name)} className="text-gray-400 hover:text-red-500 text-base leading-none px-1" title="Delete">
-                ×
-              </button>
-            )}
-          </div>
+          <LocationRow key={l.id} location={l} canEdit={can("locations.edit")} canDelete={can("locations.delete")} onSave={(data) => save(l.id, data)} onRemove={() => remove(l.id, l.name)} />
         ))}
         {locations.length === 0 && <p className="text-sm text-gray-500">No locations yet.</p>}
         {can("locations.create") && (
@@ -80,18 +66,74 @@ function Locations() {
             onSubmit={async (e) => {
               e.preventDefault();
               if (!name.trim()) return;
-              await save(null, { name: name.trim() });
+              await save(null, { name: name.trim(), address: address.trim() });
               setName("");
+              setAddress("");
             }}
-            className="flex items-center gap-2 pt-3 mt-1 border-t border-gray-100"
+            className="flex items-start gap-2 pt-3 mt-1 border-t border-gray-100 flex-wrap"
           >
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main warehouse" className="input py-1.5 max-w-xs flex-1" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. Main warehouse" className="input py-1.5 w-48" />
+            <div className="flex-1 min-w-48">
+              <AddressInput value={address} onChange={setAddress} rows={2} />
+            </div>
             <button type="submit" disabled={!name.trim()} className="btn-secondary py-1.5">
               Add
             </button>
           </form>
         )}
       </div>
+    </div>
+  );
+}
+
+// One storage location: its name and its address (looked up as you type),
+// saved when you say.
+function LocationRow({
+  location,
+  canEdit,
+  canDelete,
+  onSave,
+  onRemove,
+}: {
+  location: { id: string; name: string; address: string };
+  canEdit: boolean;
+  canDelete: boolean;
+  onSave: (data: { name: string; address: string }) => Promise<void>;
+  onRemove: () => void;
+}) {
+  const [name, setName] = useState(location.name);
+  const [address, setAddress] = useState(location.address);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setName(location.name);
+    setAddress(location.address);
+  }, [location.name, location.address]);
+  const dirty = name.trim() !== location.name || address.trim() !== (location.address ?? "");
+  return (
+    <div className="flex items-start gap-2 flex-wrap py-1">
+      <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} className="input py-1.5 w-48" aria-label="Name" />
+      <div className="flex-1 min-w-48">
+        <AddressInput value={address} onChange={setAddress} disabled={!canEdit} rows={2} />
+      </div>
+      {canEdit && dirty && (
+        <button
+          onClick={async () => {
+            if (!name.trim()) return;
+            setSaving(true);
+            await onSave({ name: name.trim(), address: address.trim() });
+            setSaving(false);
+          }}
+          disabled={saving || !name.trim()}
+          className="btn-primary py-1.5"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      )}
+      {canDelete && (
+        <button onClick={onRemove} className="text-gray-400 hover:text-red-500 text-base leading-none px-1 pt-2" title="Delete">
+          ×
+        </button>
+      )}
     </div>
   );
 }

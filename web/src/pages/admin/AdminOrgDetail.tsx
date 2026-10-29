@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminApi, type AdminOrg, type AdminOrgRow, type Invitation, type Member } from "../../lib/api";
 import { useOrg } from "../../lib/org";
@@ -11,23 +11,35 @@ import Field from "../../components/Field";
 import Modal from "../../components/Modal";
 import InviteForm, { SignupLinkNotice } from "../../components/InviteForm";
 import { InvitationList, MemberList } from "../../components/TeamLists";
-import { StatusPill } from "./AdminOrgs";
 import { FeatureSwitches } from "../../components/FeaturesSettings";
+import Breadcrumbs from "../../components/Breadcrumbs";
+import { TabBar, useTab, type TabDef } from "../../components/Tabs";
+import { useDropdown } from "../../lib/dropdown";
+
+type OrgTab = "people" | "features";
 
 export default function AdminOrgDetail() {
   const { id = "" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const unsentInvite = (location.state as { unsentInvite?: string } | null)?.unsentInvite;
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const confirm = useConfirm();
   // Your own organisations list changes when you change one you're in.
-  const { refresh: refreshMe } = useOrg();
-  const [name, setName] = useState("");
+  const { org: currentOrg, memberships, switchOrg, refresh: refreshMe } = useOrg();
+  const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const { data: org, isLoading, error } = useQuery({ queryKey: ["admin", "org", id], queryFn: () => adminApi.org(id) });
-  useEffect(() => setName(org?.name ?? ""), [org?.name]);
+  // The list's counts (items, projects) for the header.
+  const { data: rows } = useQuery({ queryKey: ["admin", "orgs"], queryFn: adminApi.orgs });
+  const row = rows?.find((r) => r.id === id);
+  const tabs: TabDef<OrgTab>[] = [
+    { key: "people", label: "People", count: org?.members.length },
+    { key: "features", label: "Features" },
+  ];
+  const [tab, openTab] = useTab(tabs);
   const reload = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin"] }), refreshMe()]);
 
   async function act(work: () => Promise<unknown>, done?: string) {
@@ -69,25 +81,49 @@ export default function AdminOrgDetail() {
 
   const hasAdmin = org.members.some((m) => m.isAdmin);
   const adminRole = org.roles.find((r) => r.locked);
+  // You can only step into organisations you're a member of.
+  const canOpen = !org.suspended && memberships.some((m) => m.org.id === id);
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const facts = [
+    `Created ${formatDate(org.created)}`,
+    plural(org.members.length, "member"),
+    row && plural(row.items, "item"),
+    row && plural(row.jobs, "project"),
+  ].filter(Boolean);
 
   return (
-    <div className="flex flex-col gap-5 max-w-3xl">
-      <Link to="/admin/orgs" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Organisations
-      </Link>
+    <div className="flex flex-col gap-4">
+      <Breadcrumbs crumbs={[{ label: "Organisations", to: "/admin/orgs" }, { label: org.name }]} />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900 truncate">{org.name}</h2>
-            <StatusPill suspended={org.suspended} />
-          </div>
-          <p className="text-xs text-gray-500">Created {formatDate(org.created)}</p>
+          <h2 className="text-lg font-semibold text-gray-900 truncate">{org.name}</h2>
+          <p className="text-xs text-gray-500">
+            {org.suspended && <span className="font-semibold text-amber-700">Suspended · </span>}
+            {facts.join(" · ")}
+          </p>
         </div>
-        <button onClick={toggleSuspended} className="btn-secondary">
-          {org.suspended ? "Lift suspension" : "Suspend"}
-        </button>
+        <div className="flex items-center gap-2">
+          {canOpen && (
+            <button
+              onClick={() => {
+                if (currentOrg?.id !== id) switchOrg(id);
+                navigate("/");
+              }}
+              className="btn-secondary"
+            >
+              Open
+            </button>
+          )}
+          <ManageMenu
+            suspended={org.suspended}
+            onRename={() => setRenaming(true)}
+            onSuspend={toggleSuspended}
+            onDelete={() => setDeleting(true)}
+          />
+        </div>
       </div>
+
       {org.suspended && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Suspended: members can't open it and invitations to it can't be accepted. Nothing has been deleted.
@@ -99,72 +135,117 @@ export default function AdminOrgDetail() {
         </div>
       )}
 
-      <section className="card p-4 flex flex-col gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Features</h3>
-          <p className="text-xs text-gray-500 mt-0.5">What {org.name} has. Its own people don&apos;t see this: what it hasn&apos;t got is just not there for them.</p>
-        </div>
-        <FeatureSwitches orgId={id} orgName={org.name} features={org.features} onChanged={reload} />
-      </section>
+      <TabBar tabs={tabs} current={tab} onOpen={openTab} label="Organisation" />
 
-      <section className="card p-4 flex flex-col gap-3">
-        <h3 className="text-sm font-semibold text-gray-900">Invite someone</h3>
-        {unsentInvite && <SignupLinkNotice email={unsentInvite} />}
-        <InviteForm
-          roles={org.roles}
-          defaultRoleId={hasAdmin ? undefined : adminRole?.id}
-          onInvite={(email, roleId) => adminApi.invite(id, email, roleId).finally(reload)}
+      {tab === "people" && (
+        <div className="flex flex-col gap-5 max-w-3xl">
+          <section className="card p-4 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold text-gray-900">Invite someone</h3>
+            {unsentInvite && <SignupLinkNotice email={unsentInvite} />}
+            <InviteForm
+              roles={org.roles}
+              defaultRoleId={hasAdmin ? undefined : adminRole?.id}
+              onInvite={(email, roleId) => adminApi.invite(id, email, roleId).finally(reload)}
+            />
+          </section>
+          <InvitationList
+            invitations={org.invitations}
+            roles={org.roles}
+            onCancel={(invitation: Invitation) => act(() => adminApi.revokeInvitation(id, invitation.id), `Invitation to ${invitation.email} cancelled`)}
+          />
+          <MemberList
+            members={org.members}
+            grantable={org.roles}
+            editable={() => true}
+            showVerified
+            onRole={(member: Member, roleId: string) =>
+              act(() => adminApi.setRole(id, member.id, roleId), `${member.name || member.email} is now ${org.roles.find((r) => r.id === roleId)?.name}`)
+            }
+            onRemove={removeMember}
+          />
+        </div>
+      )}
+
+      {tab === "features" && (
+        <section className="card p-4 flex flex-col gap-3 max-w-3xl">
+          <p className="text-sm text-gray-500">What {org.name} has. Its own admins can't change these.</p>
+          <FeatureSwitches orgId={id} orgName={org.name} features={org.features} onChanged={reload} />
+        </section>
+      )}
+
+      {renaming && (
+        <RenameOrgModal
+          name={org.name}
+          onClose={() => setRenaming(false)}
+          onSave={(name) => act(() => adminApi.updateOrg(id, { name }), "Renamed").then(() => setRenaming(false))}
         />
-      </section>
+      )}
+      {deleting && <DeleteOrgModal org={org} onClose={() => setDeleting(false)} />}
+    </div>
+  );
+}
 
-      <InvitationList
-        invitations={org.invitations}
-        roles={org.roles}
-        onCancel={(invitation: Invitation) => act(() => adminApi.revokeInvitation(id, invitation.id), `Invitation to ${invitation.email} cancelled`)}
-      />
-      <MemberList
-        members={org.members}
-        grantable={org.roles}
-        editable={() => true}
-        showVerified
-        onRole={(member: Member, roleId: string) =>
-          act(() => adminApi.setRole(id, member.id, roleId), `${member.name || member.email} is now ${org.roles.find((r) => r.id === roleId)?.name}`)
-        }
-        onRemove={removeMember}
-      />
-
-      <form
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          act(() => adminApi.updateOrg(id, { name: name.trim() }), "Renamed");
-        }}
-        className="card p-4 flex flex-col gap-1"
-      >
-        <label htmlFor="admin-org-name" className="text-sm text-gray-500">
-          Name
-        </label>
-        <div className="flex gap-2">
-          <input id="admin-org-name" required value={name} onChange={(e) => setName(e.target.value)} className="input py-2 flex-1 min-w-0" />
-          <button type="submit" disabled={!name.trim() || name.trim() === org.name} className="btn-secondary">
-            Rename
+// Rare, organisation-wide actions, kept out of the way.
+function ManageMenu({ suspended, onRename, onSuspend, onDelete }: { suspended: boolean; onRename: () => void; onSuspend: () => void; onDelete: () => void }) {
+  const { open, setOpen, ref } = useDropdown();
+  const item = "w-full text-left px-3 py-2 hover:bg-gray-50";
+  const pick = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} className="btn-secondary flex items-center gap-1.5" aria-haspopup="menu" aria-expanded={open}>
+        Manage
+        <svg viewBox="0 0 20 20" className="w-4 h-4 text-gray-400" aria-hidden>
+          <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-1 w-56 max-w-[calc(100vw-1.5rem)] card shadow-lg py-1 z-40 text-sm text-gray-700">
+          <button role="menuitem" onClick={pick(onRename)} className={item}>
+            Rename…
           </button>
-        </div>
-      </form>
-
-      <section className="card p-4 flex flex-col gap-2 border-red-200">
-        <h3 className="text-sm font-semibold text-red-700">Delete organisation</h3>
-        <p className="text-sm text-gray-600">
-          Erases {org.name} and everything in it: inventory, jobs, quotes, contacts and settings. People's accounts stay. This can't be
-          undone.
-        </p>
-        <div>
-          <button onClick={() => setDeleting(true)} className="btn-danger">
+          <button role="menuitem" onClick={pick(onSuspend)} className={item}>
+            {suspended ? "Lift suspension" : "Suspend…"}
+          </button>
+          <div className="border-t border-gray-100 my-1" />
+          <button role="menuitem" onClick={pick(onDelete)} className={`${item} text-red-700`}>
             Delete organisation…
           </button>
         </div>
-      </section>
-      {deleting && <DeleteOrgModal org={org} onClose={() => setDeleting(false)} />}
+      )}
     </div>
+  );
+}
+
+function RenameOrgModal({ name: current, onClose, onSave }: { name: string; onClose: () => void; onSave: (name: string) => Promise<unknown> }) {
+  const [name, setName] = useState(current);
+  const [saving, setSaving] = useState(false);
+  const trimmed = name.trim();
+  return (
+    <Modal title="Rename organisation" onClose={onClose}>
+      <form
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          setSaving(true);
+          void onSave(trimmed).finally(() => setSaving(false));
+        }}
+        className="flex flex-col gap-3"
+      >
+        <Field label="Name">
+          <input autoFocus required value={name} onChange={(e) => setName(e.target.value)} className="input py-2" />
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving || !trimmed || trimmed === current} className="btn-primary">
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

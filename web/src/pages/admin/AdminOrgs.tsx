@@ -9,11 +9,11 @@ import Field from "../../components/Field";
 import PresetPicker from "../../components/PresetPicker";
 import Modal from "../../components/Modal";
 
-export function StatusPill({ suspended }: { suspended: boolean }) {
+function StatusText({ suspended }: { suspended: boolean }) {
   return suspended ? (
-    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Suspended</span>
+    <span className="font-medium text-amber-700">Suspended</span>
   ) : (
-    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700">Active</span>
+    <span className="text-gray-500">Active</span>
   );
 }
 
@@ -76,7 +76,7 @@ export default function AdminOrgs() {
                   <td className="px-3 py-2.5 text-right tabular-nums">{o.jobs}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-500">{formatDate(o.created)}</td>
                   <td className="px-4 py-2.5">
-                    <StatusPill suspended={o.suspended} />
+                    <StatusText suspended={o.suspended} />
                   </td>
                 </tr>
               ))}
@@ -124,7 +124,7 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
         <Field label="Name">
           <input required autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Harbour AV Hire" className="input py-2" />
         </Field>
-        <Field label="First admin's email" hint="They're invited to sign up and run it. You can invite more people afterwards.">
+        <Field label="First admin's email">
           <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} className="input py-2" />
         </Field>
         <PresetPicker value={preset} onChange={setPreset} />

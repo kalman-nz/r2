@@ -1,13 +1,12 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
-import { api, type Item } from "../lib/api";
-import { useCategories, useCategoryPaths } from "../lib/catalog";
-import { indexFolders, trail } from "../lib/folders";
+import { api, type Item, type Serial } from "../lib/api";
+import { useCategoryPaths, useLocations } from "../lib/catalog";
 import { buildItemLabelContext } from "../lib/labelSpec";
 import { errorText } from "../lib/errors";
-import { nzd, priceLabel } from "../lib/format";
+import { priceLabel } from "../lib/format";
 import { useFeature, useRole } from "../lib/roles";
 import ItemForm from "../components/item/ItemForm";
 import ItemDetails from "../components/item/ItemDetails";
@@ -24,7 +23,10 @@ import { useFollowOrg } from "../lib/org";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import NewRepairModal from "../components/repair/NewRepairModal";
 import MaintenanceSection from "../components/item/MaintenanceSection";
+import StockLocations from "../components/item/StockLocations";
+import { placesText, unitPlaces, useItemStock } from "../lib/stock";
 import { invalidateMaintenance } from "../lib/maintenance";
+import Breadcrumbs, { useFolderCrumbs } from "../components/Breadcrumbs";
 
 type Tab = "general" | "units" | "contents" | "accessories" | "maintenance" | "history";
 // Every tab any item can have; each item shows the ones that fit it.
@@ -32,7 +34,7 @@ const ALL_TABS: TabDef<Tab>[] = [
   { key: "general", label: "General" },
   { key: "units", label: "Units" },
   { key: "contents", label: "Contents" },
-  { key: "accessories", label: "Accessories" },
+  // Accessories (LinksSection kind="accessory") are hidden until they're ready.
   { key: "maintenance", label: "Maintenance" },
   { key: "history", label: "History" },
 ];
@@ -45,8 +47,6 @@ export default function ItemDetail() {
   const { can } = useRole();
   const feature = useFeature();
   const paths = useCategoryPaths();
-  const { data: categories = [] } = useCategories();
-  const folders = useMemo(() => indexFolders(categories), [categories]);
   const [searchParams] = useSearchParams();
   const newInFolder = isNew ? (searchParams.get("folder") ?? "") : "";
 
@@ -56,6 +56,7 @@ export default function ItemDetail() {
     enabled: !isNew,
   });
   useFollowOrg(item?.org);
+  const folderCrumbs = useFolderCrumbs(isNew ? newInFolder : (item?.category ?? ""));
   const { data: serialCount = 0 } = useQuery({
     queryKey: ["serials", id, "count"],
     queryFn: async () =>
@@ -69,6 +70,9 @@ export default function ItemDetail() {
     enabled: !isNew,
   });
   const { data: projects } = useItemHistory(isNew || !feature("projects") ? "" : id);
+  // For a bulk label: the shelf its stock is on, when there's just one.
+  const { data: stockRows = [] } = useItemStock(id, !isNew);
+  const bins = [...new Set(stockRows.filter((r) => r.qty > 0).map((r) => r.bin).filter(Boolean))];
   const [requestedTab, openTab] = useTab(ALL_TABS);
   const [archiving, setArchiving] = useState(false);
   const [repairing, setRepairing] = useState(false);
@@ -154,9 +158,7 @@ export default function ItemDetail() {
   if (isNew) {
     return (
       <div className="max-w-3xl mx-auto flex flex-col gap-4">
-        <Link to={newInFolder ? `/inventory?folder=${newInFolder}` : "/inventory"} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-          ← {folders.byId.get(newInFolder)?.name ?? "Inventory"}
-        </Link>
+        <Breadcrumbs crumbs={[...folderCrumbs, { label: "New item" }]} />
         <h1 className="text-xl font-semibold text-gray-900">New item</h1>
         <section className="card p-4">
           <ItemForm item={null} defaultFolder={newInFolder} readOnly={false} hasSerials={false} onSaved={saved} />
@@ -169,12 +171,10 @@ export default function ItemDetail() {
   if (error || !item) return <p className="text-red-600 text-sm">Couldn't load this item: {error ? errorText(error) : "not found"}</p>;
 
   const categoryPath = paths.get(item.category) ?? "";
-  const type = item.kind === "kit" ? "Kit" : item.tracking === "serial" ? "Serialised" : "Bulk";
   const serialised = item.kind === "item" && item.tracking === "serial";
   const tabs = ALL_TABS.filter(
     (t) =>
       t.key === "general" ||
-      t.key === "accessories" ||
       // Which projects it's been on.
       (t.key === "history" && feature("projects")) ||
       (t.key === "maintenance"
@@ -196,9 +196,7 @@ export default function ItemDetail() {
 
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
-      <Link to={item.category ? `/inventory?folder=${item.category}` : "/inventory"} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← {folders.byId.get(item.category)?.name ?? "Inventory"}
-      </Link>
+      <Breadcrumbs crumbs={[...folderCrumbs, { label: item.name }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4 min-w-0">
@@ -207,50 +205,16 @@ export default function ItemDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               {item.code && <span className="text-xl text-gray-400 font-mono">{item.code}</span>}
               <h1 className="text-xl font-semibold text-gray-900">{item.name}</h1>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{type}</span>
             </div>
-            <nav className="flex items-center gap-1 text-sm text-gray-500 flex-wrap" aria-label="Folder">
-              <Link to="/inventory" className="hover:text-gray-900">
-                Inventory
-              </Link>
-              {trail(folders, item.category).map((f) => (
-                <span key={f.id} className="flex items-center gap-1">
-                  <span className="text-gray-300">›</span>
-                  <Link to={`/inventory?folder=${f.id}`} className="hover:text-gray-900">
-                    {f.name}
-                  </Link>
-                </span>
-              ))}
-            </nav>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           {item.kind === "item" && can("units.flag") && feature("repairs") && (
             <button onClick={() => setRepairing(true)} className="btn-secondary">
-              Repair
+              Create repair
             </button>
           )}
-          {can("items.edit") && !item.archived && (
-            <button onClick={() => setArchived(true)} disabled={archiving} className="btn-secondary">
-              Archive
-            </button>
-          )}
-          {can("items.delete") && (
-            <span
-              title={
-                hasHistory
-                  ? history!.lines + history!.scans > 0
-                    ? `Used on ${history!.lines > 0 ? `${history!.lines} project line${history!.lines === 1 ? "" : "s"}` : "a project"}${history!.scans > 0 ? ` and scanned ${history!.scans} time${history!.scans === 1 ? "" : "s"}` : ""}, so it can't be deleted. Archive it instead`
-                    : "It has repairs or maintenance on record, so it can't be deleted. Archive it instead"
-                  : undefined
-              }
-            >
-              <button onClick={remove} disabled={!history || hasHistory} className="btn-secondary hover:text-fault-ink disabled:opacity-40">
-                Delete
-              </button>
-            </span>
-          )}
-          <PrintButton context={buildItemLabelContext(item, categoryPath)} label={item.tracking === "serial" ? "Print item label" : "Print label"} />
+          <PrintButton context={buildItemLabelContext(item, categoryPath, bins.length === 1 ? bins[0] : "")} label="Print bulk label" />
         </div>
       </div>
 
@@ -298,6 +262,7 @@ export default function ItemDetail() {
                   {cards.identification}
                 </div>
                 <div className="flex flex-col gap-4 min-w-0">
+                  {item.kind === "item" && <StockLocations item={item} canEdit={can("items.edit")} onSaved={saved} />}
                   {cards.pricing}
                   {cards.warehouse}
                   {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
@@ -308,20 +273,39 @@ export default function ItemDetail() {
               </div>
             )}
           </ItemDetails>
+          {(can("items.edit") || can("items.delete")) && (
+            <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+              {can("items.edit") && !item.archived && (
+                <button onClick={() => setArchived(true)} disabled={archiving} className="btn-secondary">
+                  Archive
+                </button>
+              )}
+              {can("items.delete") && (
+                <span
+                  title={
+                    hasHistory
+                      ? history!.lines + history!.scans > 0
+                        ? `Used on ${history!.lines > 0 ? `${history!.lines} project line${history!.lines === 1 ? "" : "s"}` : "a project"}${history!.scans > 0 ? ` and scanned ${history!.scans} time${history!.scans === 1 ? "" : "s"}` : ""}, so it can't be deleted. Archive it instead`
+                        : "It has repairs or maintenance on record, so it can't be deleted. Archive it instead"
+                      : undefined
+                  }
+                >
+                  <button onClick={remove} disabled={!history || hasHistory} className="btn-secondary hover:text-fault-ink disabled:opacity-40 disabled:pointer-events-none">
+                    Delete
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-          <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
-            {tab === "units" && <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />}
-            {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
-            {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
-            {tab === "history" && <HistorySection item={item} />}
-            {tab === "maintenance" && <MaintenanceSection item={item} canRecord={can("units.flag")} />}
-          </div>
-          <div className="flex flex-col gap-4">
-            {item.kind === "item" && item.tracking === "bulk" && can("units.flag") && <OutOfService item={item} onSaved={saved} />}
-            <UsedIn item={item} />
-          </div>
+        // Full width: the side cards (stock, used in) live on General.
+        <div className="flex flex-col gap-4 min-w-0">
+          {tab === "units" && <SerialsSection item={item} categoryPath={categoryPath} canAdd={can("units.create")} />}
+          {tab === "contents" && <LinksSection item={item} kind="component" canEdit={can("items.kits")} />}
+          {tab === "accessories" && <LinksSection item={item} kind="accessory" canEdit={can("items.kits")} />}
+          {tab === "history" && <HistorySection item={item} />}
+          {tab === "maintenance" && <MaintenanceSection item={item} canRecord={can("units.flag")} />}
         </div>
       )}
     </div>
@@ -335,6 +319,7 @@ function KeyFacts({ item }: { item: Item }) {
   const free = freeNow(data);
   const stock = data?.stock ?? null;
   const booked = data?.bookings.length ?? null;
+  const where = useWhere(item);
   const tile = (label: string, value: string, tone = "text-gray-900") => (
     <div className="card px-4 py-3 flex flex-col gap-0.5 min-w-0">
       <span className="eyebrow text-gray-500">{label}</span>
@@ -342,22 +327,35 @@ function KeyFacts({ item }: { item: Item }) {
     </div>
   );
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {feature("pricing")
-        ? tile("Price", item.price > 0 ? priceLabel(item) : "—")
-        : tile("Replacement cost", item.replacementValue > 0 ? nzd(item.replacementValue) : "—")}
+    <div className={`grid grid-cols-2 gap-4 ${["lg:grid-cols-2", "lg:grid-cols-3", "lg:grid-cols-4"][Number(feature("pricing")) + Number(feature("projects"))]}`}>
+      {feature("pricing") && tile("Price", item.price > 0 ? priceLabel(item) : "—")}
       {/* Without projects nothing's booked: what's free is what's in service. */}
       {tile(
         feature("projects") ? "Free now" : "In service",
         free === null ? "…" : stock !== null ? `${free} of ${stock}` : String(free),
         free !== null && free <= 0 ? "text-fault-ink" : "text-gray-900",
       )}
-      {feature("projects")
-        ? tile("Booked, next 60 days", booked === null ? "…" : booked === 0 ? "Nothing" : `${booked} project${booked === 1 ? "" : "s"}`)
-        : tile("Tracked", item.kind === "kit" ? "As a kit" : item.tracking === "serial" ? "Unit by unit" : "As a quantity")}
-      {tile("Location", item.kind === "kit" ? "Kit" : item.locationInWarehouse || "—")}
+      {feature("projects") &&
+        tile("Booked, next 60 days", booked === null ? "…" : booked === 0 ? "Nothing" : `${booked} project${booked === 1 ? "" : "s"}`)}
+      {tile("Location", item.kind === "kit" ? "Kit" : where || "—")}
     </div>
   );
+}
+
+// Where it's kept, in a few words: one place, or how many places.
+function useWhere(item: Item): string {
+  const { data: locations = [] } = useLocations();
+  const serialised = item.kind === "item" && item.tracking === "serial";
+  const { data: stock = [] } = useItemStock(item.id, item.kind === "item" && !serialised);
+  const { data: units = [] } = useQuery({
+    queryKey: ["serials", item.id],
+    queryFn: () => pb.collection("serials").getFullList<Serial>({ filter: pb.filter("item = {:item}", { item: item.id }), sort: "barcode" }),
+    enabled: serialised,
+  });
+  const places = (serialised ? unitPlaces(units) : stock.map((s) => ({ location: s.location, bin: s.bin, qty: s.qty }))).filter((p) => p.qty > 0);
+  const located = new Set(places.map((p) => p.location).filter(Boolean));
+  if (located.size > 1) return `${located.size} locations`;
+  return placesText(places, (id) => locations.find((l) => l.id === id)?.name ?? "");
 }
 
 // Bulk stock can't be flagged unit by unit, so anyone with units.flag can

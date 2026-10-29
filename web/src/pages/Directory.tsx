@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RecordModel } from "pocketbase";
 import { pb } from "../lib/pocketbase";
 import type { Job, ViewConfig } from "../lib/api";
-import { formatDate } from "../lib/format";
+import { formatDate, oneLineAddress } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useRole } from "../lib/roles";
 import AddressInput from "../components/AddressInput";
@@ -18,6 +18,7 @@ import { useConfirm } from "../components/ConfirmProvider";
 import { orgFilter, withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
 import { asBool, asString, asStrings } from "../lib/views";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // Contacts and venues are plain records with a list, an edit form and the
 // jobs that use them, so one config-driven pair of pages serves both.
@@ -41,6 +42,8 @@ interface ColumnSpec {
   className?: string;
   shown?: boolean;
   format?: (value: unknown) => string;
+  // Long values cut off with "…" (the whole thing on hover).
+  truncate?: boolean;
 }
 
 interface DirectoryConfig {
@@ -90,7 +93,7 @@ const CONTACTS: DirectoryConfig = {
     { key: "contactPerson", label: "Contact", className: "hidden md:table-cell" },
     { key: "email", label: "Email", className: "hidden sm:table-cell" },
     { key: "phone", label: "Phone", className: "hidden lg:table-cell" },
-    { key: "billingAddress", label: "Billing address", className: "hidden lg:table-cell", shown: false },
+    { key: "billingAddress", label: "Billing address", className: "hidden lg:table-cell", shown: false, format: (v) => oneLineAddress(v as string), truncate: true },
   ],
   searchKeys: ["name", "contactPerson", "email", "phone"],
   kinds: [
@@ -115,7 +118,7 @@ const VENUES: DirectoryConfig = {
   ],
   columns: [
     { key: "name", label: "Name" },
-    { key: "address", label: "Address", className: "hidden sm:table-cell" },
+    { key: "address", label: "Address", className: "hidden sm:table-cell", format: (v) => oneLineAddress(v as string), truncate: true },
     { key: "contactName", label: "Contact", className: "hidden md:table-cell" },
     { key: "phone", label: "Phone", className: "hidden lg:table-cell", shown: false },
     { key: "notes", label: "Notes", className: "hidden lg:table-cell", shown: false },
@@ -209,12 +212,19 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
           <tbody className="divide-y divide-gray-100">
             {filtered.map((r) => (
               <tr key={r.id} onClick={() => navigate(`${config.path}/${r.id}`)} className="hover:bg-gray-50 cursor-pointer">
-                {columns.map((c, i) => (
-                  <td key={c.key} className={`px-3 py-2 ${i === 0 ? "font-medium text-gray-900" : "text-gray-600"} ${c.className ?? ""}`}>
-                    {String((c.format ? c.format(r[c.key]) : r[c.key]) || (i === 0 ? "(no name)" : "—")).split("\n")[0]}
-                    {i === 0 && r.archived && <span className="ml-2 text-xs text-gray-400 font-normal">Archived</span>}
-                  </td>
-                ))}
+                {columns.map((c, i) => {
+                  const text = String((c.format ? c.format(r[c.key]) : r[c.key]) || (i === 0 ? "(no name)" : "—")).split("\n")[0];
+                  return (
+                    <td
+                      key={c.key}
+                      title={c.truncate ? text : undefined}
+                      className={`px-3 py-2 ${i === 0 ? "font-medium text-gray-900" : "text-gray-600"} ${c.truncate ? "max-w-xs truncate" : ""} ${c.className ?? ""}`}
+                    >
+                      {text}
+                      {i === 0 && r.archived && <span className="ml-2 text-xs text-gray-400 font-normal">Archived</span>}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -301,9 +311,7 @@ function DirectoryDetail({ config }: { config: DirectoryConfig }) {
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-4">
-      <Link to={config.path} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← {config.title}
-      </Link>
+      <Breadcrumbs crumbs={[{ label: config.title, to: config.path }, { label: isNew ? `New ${config.singular}` : String(initial.name || "(no name)") }]} />
       <h1 className="text-xl font-semibold text-gray-900">{isNew ? `New ${config.singular}` : String(initial.name || "(no name)")}</h1>
 
       <section className="card p-4 flex flex-col gap-4">

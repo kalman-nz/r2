@@ -1,110 +1,86 @@
-import { api, type Item } from "./api";
+import { api, type PrintResult } from "./api";
 import { saveFile } from "./download";
-import {
-  buildItemLabelContext,
-  buildLabelContext,
-  dotsPerMm,
-  labelIdForWidth,
-  SAMPLE_CONTEXT,
-  type LabelDataContext,
-  type LabelTemplateData,
-  type LabelUnit,
-} from "./labelSpec";
+import { SAMPLE_CONTEXT, type LabelDataContext, type LabelTemplateData } from "./labelSpec";
+import { printGeometry, type LabelSize, type Printer } from "./printing";
 
-// The label renderer (Konva + the barcode library) is most of the app's
-// weight, and only needed once someone prints, so it loads on first use —
+type Design = Pick<LabelTemplateData, "widthMm" | "heightMm" | "elements">;
+
+// The label renderer (the barcode library and fonts) is most of the app's
+// weight and only needed once someone prints, so it loads on first use —
 // the scan page on a phone never downloads it.
-async function renderToDataUrl(
-  template: LabelTemplateData & { id: string },
-  context: LabelDataContext,
-): Promise<string> {
-  const { renderLabelToCanvas } = await import("./renderLabel");
-  const canvas = await renderLabelToCanvas(template, context, dotsPerMm(template.widthMm));
-  return canvas.toDataURL("image/png");
+const renderer = () => import("./renderLabel");
+
+// For looking at, not printing: the design as it is, at screen resolution.
+export async function renderPreview(design: Design, context: LabelDataContext, scale = 10): Promise<string> {
+  const { renderLabelToCanvas } = await renderer();
+  return (await renderLabelToCanvas(design, context, scale)).toDataURL("image/png");
 }
 
-// Renders-only, for a preview step before committing to print — see
-// LabelPreviewModal, PrintButton, BatchPrintBar.
-export function renderContextImage(context: LabelDataContext, template: LabelTemplateData & { id: string }) {
-  return renderToDataUrl(template, context);
+// Exactly what a Brother with this stock in needs: the tape's or label's
+// printable pixels, turned if the design is sideways to it.
+export async function renderForPrinter(design: Design, context: LabelDataContext, size: LabelSize | null) {
+  const { renderLabelToCanvas, rotateCanvas90 } = await renderer();
+  const geometry = printGeometry(design, size);
+  const canvas = await renderLabelToCanvas(design, context, geometry.scale, {
+    canvasWidth: geometry.canvasWidth,
+    canvasHeight: geometry.canvasHeight,
+  });
+  return { image: (geometry.rotate ? rotateCanvas90(canvas) : canvas).toDataURL("image/png"), label: geometry.label };
 }
 
-export function renderUnitLabelImage(unit: LabelUnit, template: LabelTemplateData & { id: string }) {
-  return renderToDataUrl(template, buildLabelContext(unit));
+// For a PDF page at the design's real size (any printer with a driver).
+export async function renderForPdf(design: Design, context: LabelDataContext): Promise<string> {
+  const { renderLabelToCanvas } = await renderer();
+  return (await renderLabelToCanvas(design, context, 300 / 25.4)).toDataURL("image/png");
 }
 
-export function renderItemLabelImage(item: Item, categoryPath: string, template: LabelTemplateData & { id: string }) {
-  return renderToDataUrl(template, buildItemLabelContext(item, categoryPath));
+// What the print log records: a template (and the unit, if one) or a
+// one-off label's text.
+export type PrintJob = { templateId: string; serialId?: string } | { customText: string };
+
+export interface SendResult extends PrintResult {
+  printer: string; // the printer that took it, or the last one tried
+  skipped: Printer[]; // printers tried first that couldn't be reached
 }
 
-// Sends an already-rendered image straight to the printer — used once a
-// preview has been confirmed, so repeat copies don't re-render the canvas.
-export function sendRenderedLabel(
-  imageDataUrl: string,
-  template: LabelTemplateData & { id: string },
-  serialId?: string,
-): Promise<{ ok: boolean; message: string }> {
-  return api.print({ templateId: template.id, serialId, imageDataUrl, label: labelIdForWidth(template.widthMm) });
+// Tries each printer in turn, moving on only when one can't be reached —
+// any other failure (a bad label) would fail on the next printer too.
+export async function sendToPrinters(job: PrintJob, image: string, label: string, chain: Printer[]): Promise<SendResult> {
+  const skipped: Printer[] = [];
+  let last: PrintResult = { ok: false, message: "No printer to send it to" };
+  for (const printer of chain) {
+    last = await api.print({ ...job, imageDataUrl: image, label, printerId: printer.id });
+    if (last.ok || !last.unreachable) return { ...last, printer: printer.name, skipped };
+    skipped.push(printer);
+  }
+  return { ...last, printer: chain[chain.length - 1]?.name ?? "", skipped };
 }
 
-// Shared by every "print a template against some data" path — a specific
-// unit (serialId set, so the print log can name it), an item type or
-// hand-typed values (omitted).
-export async function printRecord(
-  context: LabelDataContext,
-  template: LabelTemplateData & { id: string },
-  serialId?: string,
-): Promise<{ ok: boolean; message: string }> {
-  const imageDataUrl = await renderToDataUrl(template, context);
-  return sendRenderedLabel(imageDataUrl, template, serialId);
-}
-
-// A real saved template, but the field values are typed in by hand instead
-// of pulled from a real asset — see CustomLabelPage's "From template" mode.
-export function printWithManualData(template: LabelTemplateData & { id: string }, context: LabelDataContext) {
-  return printRecord(context, template);
-}
-
-// Renders a saved template filled with hand-typed values (CustomLabelPage).
-export function renderTemplateImage(template: LabelTemplateData & { id: string }, context: LabelDataContext) {
-  return renderToDataUrl(template, context);
-}
-
-// A one-off label built on the Custom label page, never saved as a template.
-type LabelDesign = Pick<LabelTemplateData, "widthMm" | "heightMm" | "elements">;
-
-export async function renderDesignImage(design: LabelDesign) {
-  const { renderLabelToCanvas } = await import("./renderLabel");
-  const canvas = await renderLabelToCanvas(design, SAMPLE_CONTEXT, dotsPerMm(design.widthMm));
-  return canvas.toDataURL("image/png");
-}
-
-// The print log names the label by its text, e.g. Printed custom label "Jam Stands".
-export async function printDesign(design: LabelDesign): Promise<{ ok: boolean; message: string }> {
+// The print log names a one-off label by its text, e.g. Printed custom label "Jam Stands".
+export function designText(design: Design): string {
   const text = design.elements
     .filter((el) => el.type === "staticText" && el.text?.trim())
     .map((el) => el.text!.trim().replace(/\s+/g, " "))
     .join(" / ");
-  const imageDataUrl = await renderDesignImage(design);
-  return api.print({ customText: text || "Custom label", imageDataUrl, label: labelIdForWidth(design.widthMm) });
+  return text || "Custom label";
 }
 
 // One PDF page per label at its real size, for printers other than the
-// networked Brother (Zebra, Dymo, a Brother over USB) — see /api/labels/pdf.
+// networked Brothers (Zebra, Dymo, a Brother over USB) — see /api/labels/pdf.
 export async function downloadLabelsPdf(labels: { imageDataUrl: string; widthMm: number; heightMm: number; copies: number }[]) {
   saveFile(await api.labelsPdf(labels));
 }
 
-// Not tied to any unit — for labelling cases, shelves, areas, etc.
-// with arbitrary big text instead of pulling from a specific serial number.
-export async function printCustomText(
-  text: string,
-  widthMm: number,
-  heightMm: number,
-  rotate90: boolean,
-): Promise<{ ok: boolean; message: string }> {
-  const { renderCustomTextCanvas } = await import("./customLabel");
-  const canvas = await renderCustomTextCanvas(text, widthMm, heightMm, dotsPerMm(widthMm), rotate90, SAMPLE_CONTEXT);
-  const imageDataUrl = canvas.toDataURL("image/png");
-  return api.print({ customText: text, imageDataUrl, label: labelIdForWidth(widthMm) });
+// A test label for one printer, sized to the stock loaded in it.
+export async function printTestLabel(printer: Printer, size: LabelSize | null): Promise<PrintResult> {
+  const { buildCustomTextTemplate } = await import("./customLabel");
+  const widthMm = size?.widthMm ?? 62;
+  const lengthMm = size?.lengthMm ?? 29;
+  // Wide-and-short reads best on tape, so lay it across the stock.
+  const [w, h] = size?.continuous && widthMm < 40 ? [Math.max(lengthMm, 50), widthMm] : [widthMm, lengthMm];
+  const text = `${printer.name}\n${new Date().toLocaleString()}`;
+  const template = buildCustomTextTemplate(text, w, h);
+  const { image, label } = await renderForPrinter(template, SAMPLE_CONTEXT, size);
+  if (!label) return { ok: false, message: "The loaded label size isn't Brother stock" };
+  return api.print({ customText: `Test label for ${printer.name}`, imageDataUrl: image, label, printerId: printer.id });
 }

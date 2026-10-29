@@ -84,13 +84,6 @@ export default function MembersSettings() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-900">Team</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Who can work in {org?.name}. Planners and admins run projects and quotes; techs scan, flag and print.
-        </p>
-      </div>
-
       <section className="card p-4 flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-gray-900">Invite someone</h3>
         <InviteForm
@@ -121,9 +114,6 @@ export default function MembersSettings() {
               Rename
             </button>
           </div>
-          <p className="text-xs text-gray-500">
-            What people see in the organisation switcher. Quotes print the business name from Business settings.
-          </p>
         </form>
       )}
     </div>

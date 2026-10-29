@@ -95,7 +95,7 @@ export function ResetPasswordPage() {
       }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Field label="New password" hint="At least 8 characters. You'll sign in with it next.">
+        <Field label="New password" hint="At least 8 characters">
           <input
             required
             type="password"

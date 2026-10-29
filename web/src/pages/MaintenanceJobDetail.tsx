@@ -5,7 +5,7 @@ import { pb } from "../lib/pocketbase";
 import { api, type MaintenanceJob } from "../lib/api";
 import { orgFilter } from "../lib/currentOrg";
 import { errorText } from "../lib/errors";
-import { assetLabel, describeInterval, formatDay, invalidateMaintenance, kindOf, today, type JobWithExpand } from "../lib/maintenance";
+import { assetLabel, describePlan, formatDay, invalidateMaintenance, kindOf, today, type JobWithExpand } from "../lib/maintenance";
 import { useAuthRecord } from "../lib/pocketbase";
 import { useFollowOrg } from "../lib/org";
 import { useRole } from "../lib/roles";
@@ -14,6 +14,7 @@ import NumberInput from "../components/NumberInput";
 import { ResultBadge } from "../components/maintenance/ResultBadge";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // One piece of maintenance: what and when, recording how it went (a fail
 // can take the kit out of service on a repair), its files, and what's been
@@ -96,9 +97,13 @@ export default function MaintenanceJobDetail() {
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4">
-      <Link to={scheduled ? "/maintenance" : "/maintenance?tab=history"} className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Maintenance
-      </Link>
+      <Breadcrumbs
+        crumbs={[
+          { label: "Maintenance", to: "/maintenance" },
+          scheduled ? { label: "Due", to: "/maintenance" } : { label: "History", to: "/maintenance?tab=history" },
+          { label: job.name },
+        ]}
+      />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
@@ -107,10 +112,8 @@ export default function MaintenanceJobDetail() {
             <ResultBadge job={job} />
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
-            {k.label}
             {item ? (
               <>
-                {" on "}
                 <Link to={unit ? `/assets/${unit.id}` : `/inventory/${item.id}`} className="hover:underline text-gray-700">
                   {assetLabel(job)}
                 </Link>
@@ -122,7 +125,7 @@ export default function MaintenanceJobDetail() {
                 <Link to={`/maintenance/plans/${plan.id}`} className="hover:underline text-gray-700">
                   {plan.name}
                 </Link>
-                {`, ${describeInterval(plan.every, plan.unit).toLowerCase()}`}
+                {`, ${describePlan(plan).toLowerCase()}`}
               </>
             ) : (
               " · one-off"
@@ -193,7 +196,6 @@ export default function MaintenanceJobDetail() {
             upload={(file) => api.uploadJobFile(id, file)}
             remove={(name) => api.deleteJobFile(id, name)}
             onChanged={setJob}
-            hint="Certificates, test reports, photos: any file up to 25 MB."
           />
           {item && (
             <section className="card overflow-hidden text-sm">
@@ -312,7 +314,6 @@ function RecordCard({ job, onDone }: { job: JobWithExpand; onDone: () => Promise
             <button onClick={save} disabled={saving || !doneOn || (result === "fail" && repair && !!job.item && !fault.trim())} className="btn-primary">
               {saving ? "Recording…" : "Record"}
             </button>
-            {job.plan && <span className="text-xs text-gray-500">The next one's scheduled from the day it was done.</span>}
           </div>
         </>
       )}

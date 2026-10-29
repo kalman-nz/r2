@@ -38,6 +38,44 @@ function addressLines(p, home) {
   return lines;
 }
 
+const PHOTON = "https://photon.komoot.io/api/";
+const HEADERS = { "User-Agent": "R2 equipment hire (address lookup)", Accept: "application/json" };
+
+// Answers kept in memory for a day, so the same search (backspacing, the
+// next person typing the same street) doesn't wait on Photon again.
+const CACHE_PREFIX = "addresses:";
+const CACHE_FOR = 24 * 60 * 60 * 1000;
+const CACHE_MAX = 2000;
+
+function cached(key) {
+  const hit = $app.store().get(CACHE_PREFIX + key);
+  return hit && hit.until > Date.now() ? hit.matches : null;
+}
+
+function remember(key, matches) {
+  const store = $app.store();
+  const count = (store.get(CACHE_PREFIX + "#") || 0) + 1;
+  if (count > CACHE_MAX) {
+    const all = store.getAll();
+    for (const k in all) if (k.indexOf(CACHE_PREFIX) === 0) store.remove(k);
+    store.set(CACHE_PREFIX + "#", 1);
+  } else {
+    store.set(CACHE_PREFIX + "#", count);
+  }
+  store.set(CACHE_PREFIX + key, { until: Date.now() + CACHE_FOR, matches: matches });
+}
+
+// Most of a lookup's time is opening the secure connection to Photon, so
+// the address box asks for this when it's focused: a tiny search that
+// leaves a connection open for the real one to reuse.
+function warmAddressLookup() {
+  try {
+    $http.send({ method: "GET", url: PHOTON + "?limit=1&q=nz", headers: HEADERS, timeout: 3 });
+  } catch (_) {
+    // Only a head start; the real lookup reports any problem.
+  }
+}
+
 // Up to six addresses matching what's been typed, the organisation's own
 // country first: [{ label (one line), address (one per line) }].
 function searchAddresses(org, query) {
@@ -45,11 +83,14 @@ function searchAddresses(org, query) {
   if (q.length < 3) return [];
   const { getAllSettings, DEFAULTS } = require("./settings.js");
   const home = countryFor(getAllSettings(org).timezone || DEFAULTS.timezone);
-  let url = "https://photon.komoot.io/api/?limit=20&lang=en&q=" + encodeURIComponent(q);
+  const key = home + ":" + q.toLowerCase().replace(/\s+/g, " ");
+  const hit = cached(key);
+  if (hit) return hit;
+  let url = PHOTON + "?limit=15&lang=en&q=" + encodeURIComponent(q);
   if (COUNTRIES[home]) url += "&lat=" + COUNTRIES[home].lat + "&lon=" + COUNTRIES[home].lon;
   let res;
   try {
-    res = $http.send({ method: "GET", url: url, headers: { "User-Agent": "R2 equipment hire (address lookup)", Accept: "application/json" }, timeout: 8 });
+    res = $http.send({ method: "GET", url: url, headers: HEADERS, timeout: 6 });
   } catch (_) {
     throw new BadRequestError("The address lookup isn't answering: type the address in");
   }
@@ -68,7 +109,9 @@ function searchAddresses(org, query) {
     found.push({ label: lines.join(", "), address: address, home: !home || (p.countrycode || "").toUpperCase() === home });
   }
   const ordered = found.filter((a) => a.home).concat(found.filter((a) => !a.home));
-  return ordered.slice(0, 6).map((a) => ({ label: a.label, address: a.address }));
+  const matches = ordered.slice(0, 6).map((a) => ({ label: a.label, address: a.address }));
+  remember(key, matches);
+  return matches;
 }
 
-module.exports = { countryFor, addressLines, searchAddresses };
+module.exports = { countryFor, addressLines, searchAddresses, warmAddressLookup };

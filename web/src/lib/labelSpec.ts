@@ -1,18 +1,26 @@
 import type { Item, Serial } from "./api";
 
-export type ElementType = "text" | "barcode" | "qr" | "staticText" | "image";
+export type ElementType = "text" | "barcode" | "qr" | "staticText" | "image" | "rect" | "ellipse" | "line";
+
+export type LabelFont = "system" | "archivo" | "condensed" | "mono" | "serif";
+export type InkColor = "black" | "white";
 
 export interface LabelElement {
   id: string;
   type: ElementType;
-  x: number; // mm from left
-  y: number; // mm from top
+  x: number; // mm from left (of the unrotated box)
+  y: number; // mm from top (of the unrotated box)
   width: number; // mm
   height: number; // mm
   dataField?: string; // text/barcode/qr — a DataFieldKey, or a "custom_<id>" imported custom field (see CustomFieldDef in lib/api.ts)
   text?: string; // literal content, staticText only
   fontSize?: number; // mm-ish character height, text/staticText only
   bold?: boolean;
+  italic?: boolean; // text/staticText only
+  font?: LabelFont; // text/staticText only, defaults to "system" (what every older template used)
+  lineHeight?: number; // text/staticText only, multiple of the font size, defaults to 1.2
+  color?: InkColor; // text/staticText ink, defaults to black — white is for text on a black box
+  inverted?: boolean; // text/staticText only — fills the box black and prints the text white
   align?: "left" | "center" | "right"; // text/staticText only, defaults to left
   valign?: "top" | "middle" | "bottom"; // text/staticText only, defaults to top
   wrap?: boolean; // text/staticText only — wrap to multiple lines within width/height instead of squishing onto one line
@@ -21,7 +29,14 @@ export interface LabelElement {
   lockAspect?: boolean; // resize keeps width:height fixed — QR codes and images generally want this
   imageData?: string; // data: URL, image only — a logo/icon baked into the template
   folderLevels?: number[]; // dataField === "equipmentFolder" only — 1-indexed path segments to include; empty/unset = full path
-  rotation?: 0 | 90 | 180 | 270; // any element type — rotates around the box's own center
+  rotation?: number; // degrees clockwise, any element type — rotates around the box's own center (older templates only used 0/90/180/270)
+  showText?: boolean; // barcode only — print the value in small text under the bars
+  fill?: InkColor | "none"; // rect/ellipse — defaults to none
+  stroke?: InkColor | "none"; // rect/ellipse/line — defaults to black
+  strokeWidth?: number; // mm, rect/ellipse/line — defaults to 0.5
+  cornerRadius?: number; // mm, rect and inverted text
+  dashed?: boolean; // rect/ellipse/line — e.g. a cut line
+  locked?: boolean; // designer only — can't be selected on the canvas or moved by accident
 }
 
 export interface LabelTemplateData {
@@ -29,6 +44,7 @@ export interface LabelTemplateData {
   name: string;
   widthMm: number;
   heightMm: number;
+  sizeId?: string; // the label size (lib/printing.ts) it's designed for; unset on older templates
   elements: LabelElement[];
 }
 
@@ -65,7 +81,6 @@ export const DATA_FIELDS: { key: DataFieldKey; label: string }[] = [
   { key: "serial", label: "Serial number" },
   { key: "status", label: "Status" },
   { key: "remark", label: "Unit notes" },
-  { key: "nextInspection", label: "Next test & tag" },
   { key: "purchaseDate", label: "Purchase date" },
   { key: "purchasePrice", label: "Purchase cost" },
   { key: "location", label: "Stock location" },
@@ -78,7 +93,7 @@ export const DATA_FIELDS: { key: DataFieldKey; label: string }[] = [
   { key: "equipmentPower", label: "Power (W)" },
   { key: "equipmentExternalRemark", label: "Item description" },
   { key: "equipmentInternalRemark", label: "Item notes" },
-  { key: "locationInWarehouse", label: "Location in warehouse" },
+  { key: "locationInWarehouse", label: "Shelf / bin" },
 ];
 
 // A plain string-keyed map rather than Record<DataFieldKey, string> — a
@@ -147,7 +162,6 @@ function itemFields(item: Item | null, categoryPath: string): LabelDataContext {
     equipmentPower: numberText(item?.powerW),
     equipmentExternalRemark: item?.description ?? "",
     equipmentInternalRemark: item?.notes ?? "",
-    locationInWarehouse: item?.locationInWarehouse ?? "",
   };
 }
 
@@ -178,6 +192,8 @@ export function buildLabelContext(unit: LabelUnit): LabelDataContext {
     location: unit.locationName,
     project: unit.currentJob,
     ...itemFields(item, unit.categoryPath),
+    // The unit's own shelf or bin (the key is from when it was the item's).
+    locationInWarehouse: serial.bin ?? "",
     // Older templates' keys for the same values.
     ref: serial.barcode,
     active: serial.status === "active" ? "Yes" : "No",
@@ -193,7 +209,8 @@ export function buildLabelContext(unit: LabelUnit): LabelDataContext {
 // For labelling an item *type* rather than one unit (bulk stock like
 // cable, which has no units to open at all). The item's own barcode is the
 // scan value; unit-only fields are blank.
-export function buildItemLabelContext(item: Item, categoryPath: string): LabelDataContext {
+// bin: the shelf or bin its stock is on, when that's one place.
+export function buildItemLabelContext(item: Item, categoryPath: string, bin = ""): LabelDataContext {
   return {
     displayname: item.name,
     qrcodes: item.barcode,
@@ -206,6 +223,7 @@ export function buildItemLabelContext(item: Item, categoryPath: string): LabelDa
     location: "",
     project: "",
     ...itemFields(item, categoryPath),
+    locationInWarehouse: bin,
     ref: item.barcode,
     active: "",
     rentmanId: item.rentmanId,

@@ -30,8 +30,8 @@ if [ ! -x "$BIN" ]; then
   rm .pb/pb.zip
 fi
 
-# PDFs are drawn by print/r2_pdf.py, so give it a venv the first time. Only
-# the PDF requirements: label printing needs a LAN Brother printer anyway.
+# PDFs are drawn by print/r2_pdf.py and labels sent by print/print_label.py,
+# so give them a venv the first time.
 VENV=.pb/venv
 if [ ! -x "$VENV/bin/python" ]; then
   if command -v python3 >/dev/null 2>&1; then
@@ -41,6 +41,14 @@ if [ ! -x "$VENV/bin/python" ]; then
   else
     echo "No python3 found; PDF downloads won't work locally (everything else will)."
   fi
+fi
+# Label printing: brother_ql without its pinned Pillow 9.5, which won't
+# install on new Pythons — print_label.py makes it work with the current
+# Pillow. Also done for venvs made before printing was set up here.
+if [ -x "$VENV/bin/python" ] && ! "$VENV/bin/python" -c "import brother_ql" >/dev/null 2>&1; then
+  echo "Setting up label printing in $VENV…"
+  grep -v -i '^pillow' print/requirements.txt | "$VENV/bin/pip" install --quiet --no-deps -r /dev/stdin \
+    || echo "Couldn't set up label printing; PDFs still work."
 fi
 export R2_PYTHON="$PWD/$VENV/bin/python"
 export R2_PRINT_DIR="$PWD/print"

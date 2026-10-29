@@ -13,6 +13,7 @@ export interface Sort {
 
 // Up to three sorts: by the first, then the next for ties, and so on.
 export const MAX_SORTS = 3;
+export const MAX_GROUPS = 3;
 
 // Rows in order of `sorts`, using each column's sortValue: numbers as
 // numbers, the rest as text (with numbers inside it in number order).
@@ -46,7 +47,7 @@ export interface GroupOption<R> {
 
 // How a saved view keeps them: the first sort as sortKey and sortDir (as
 // views did before there could be more), the rest as thenSort, and the
-// group keys in order (group, then subgroup) as groupBy.
+// group keys in order (group, then subgroups) as groupBy.
 export function sortSettings(sorts: Sort[]): ViewConfig {
   return { sortKey: sorts[0]?.key ?? "", sortDir: sorts[0]?.dir ?? "asc", thenSort: sorts.slice(1) };
 }
@@ -67,7 +68,7 @@ export function readSorts(s: ViewConfig, valid: string[], fallback: Sort): Sort[
 
 export function readGroups(s: ViewConfig, valid: string[]): string[] {
   const keys = Array.isArray(s.groupBy) ? s.groupBy.filter((k): k is string => typeof k === "string" && valid.includes(k)) : [];
-  return [...new Set(keys)].slice(0, 2);
+  return [...new Set(keys)].slice(0, MAX_GROUPS);
 }
 
 // Clicking a column's heading: sorts by it first (or flips it, if it's
@@ -75,4 +76,12 @@ export function readGroups(s: ViewConfig, valid: string[]): string[] {
 export function headingSort(sorts: Sort[], key: string): Sort[] {
   if (sorts[0]?.key === key) return [{ key, dir: sorts[0].dir === "asc" ? "desc" : "asc" }, ...sorts.slice(1)];
   return [{ key, dir: "asc" as SortDir }, ...sorts.filter((s) => s.key !== key)].slice(0, MAX_SORTS);
+}
+
+// Column widths a saved view kept: { key: px }, anything else dropped.
+export function readWidths(s: ViewConfig): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (s.widths && typeof s.widths === "object" && !Array.isArray(s.widths))
+    for (const [k, v] of Object.entries(s.widths)) if (typeof v === "number" && v > 0) out[k] = v;
+  return out;
 }

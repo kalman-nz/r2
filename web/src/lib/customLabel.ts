@@ -1,4 +1,4 @@
-import { renderLabelToCanvas, rotateCanvas90, wrapText } from "./renderLabel";
+import { fontFor, renderLabelToCanvas, rotateCanvas90, wrapText } from "./renderLabel";
 import type { LabelDataContext, LabelElement, LabelTemplateData } from "./labelSpec";
 
 export const PADDING_MM = 3;
@@ -19,12 +19,20 @@ function longestWordWidth(ctx: CanvasRenderingContext2D, text: string): number {
 // within the label — "big text, readable from a distance" means using as
 // much of the label as the text allows, not a fixed size that's too small
 // for a short label or overflows a long one.
-export function fitFontSizeMm(text: string, widthMm: number, heightMm: number): number {
+// `style` measures with a text element's own font and line height; left
+// out, it's bold sans-serif with the custom label's padding.
+export function fitFontSizeMm(
+  text: string,
+  widthMm: number,
+  heightMm: number,
+  style: Pick<LabelElement, "bold" | "italic" | "font" | "lineHeight" | "padding"> = { bold: true, padding: PADDING_MM },
+): number {
   const ctx = document.createElement("canvas").getContext("2d");
   if (!ctx) return 8;
 
-  const innerW = (widthMm - PADDING_MM * 2) * MEASURE_SCALE;
-  const innerH = (heightMm - PADDING_MM * 2) * MEASURE_SCALE;
+  const paddingMm = style.padding ?? 0;
+  const innerW = (widthMm - paddingMm * 2) * MEASURE_SCALE;
+  const innerH = (heightMm - paddingMm * 2) * MEASURE_SCALE;
   const maxSizeMm = Math.max(2, Math.min(heightMm, 40));
 
   // Two passes: first only accept a size if every word fits on a line by
@@ -38,10 +46,10 @@ export function fitFontSizeMm(text: string, widthMm: number, heightMm: number): 
   for (const allowWordBreaks of [false, true]) {
     for (let sizeMm = maxSizeMm; sizeMm >= 2; sizeMm -= 0.5) {
       const fontPx = sizeMm * MEASURE_SCALE;
-      ctx.font = `bold ${fontPx}px sans-serif`;
+      ctx.font = fontFor(style, fontPx);
       if (!allowWordBreaks && longestWordWidth(ctx, text) > innerW) continue;
       const lines = wrapText(ctx, text, innerW);
-      const lineHeight = fontPx * 1.2;
+      const lineHeight = fontPx * (style.lineHeight ?? 1.2);
       const blockHeight = lines.length * lineHeight;
       const longestLine = Math.max(...lines.map((l) => ctx.measureText(l).width));
       if (blockHeight <= innerH && longestLine <= innerW) return sizeMm;

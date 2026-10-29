@@ -4,10 +4,11 @@
 //
 //   item code  5 digits, counting up per organisation from 00001: short
 //              enough to say out loud and write on a case
-//   barcode    10 digits, so it never looks like an item code on the same
-//              label; never starts with 0 (spreadsheets drop it), and the
-//              last digit is a Luhn check digit, so a mistyped barcode
-//              doesn't land on another item's
+//   barcode    7 digits, so it never looks like a 5-digit item code on the
+//              same label; never starts with 0 (spreadsheets drop it), and
+//              the last digit is a Luhn check digit, so a mistyped barcode
+//              doesn't land on another item's. (Barcodes made before were
+//              10 digits; migration 0044 swapped them for 7-digit ones.)
 //
 // Both are only filled in when left blank, so imported codes and existing
 // asset tags still work.
@@ -29,14 +30,17 @@ function luhnDigit(digits) {
 }
 
 // random() returns [0, 1), like Math.random.
+const BARCODE_DIGITS = 7;
+
 function makeBarcode(random) {
   let body = String(1 + Math.floor(random() * 9));
-  for (let i = 0; i < 8; i++) body += String(Math.floor(random() * 10));
+  for (let i = 0; i < BARCODE_DIGITS - 2; i++) body += String(Math.floor(random() * 10));
   return body + luhnDigit(body);
 }
 
+// One R2 made.
 function isGeneratedBarcode(code) {
-  return /^[1-9]\d{9}$/.test(code) && luhnDigit(code.slice(0, 9)) === code[9];
+  return new RegExp("^[1-9]\\d{" + (BARCODE_DIGITS - 1) + "}$").test(code) && luhnDigit(code.slice(0, -1)) === code[code.length - 1];
 }
 
 // What someone typed, as it would have been printed: "123 456-7890" →

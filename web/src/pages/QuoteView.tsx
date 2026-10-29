@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type QuoteLine, type QuoteStatus } from "../lib/api";
-import { formatDate, formatRange, nzd, MODE_SUFFIX } from "../lib/format";
+import { formatDate, formatRange, nzd, MODE_SUFFIX, oneLineAddress, stackedAddress } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { QuoteStatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { useCan } from "../lib/roles";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // A quote, rendered entirely from the snapshot taken when it was issued
 // (lib/jobs.js issueQuote) — never from the live job. The PDF to send the
@@ -82,9 +83,7 @@ export default function QuoteView() {
     <div className="min-h-screen bg-paper print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <Link to={`/projects/${quote.job}`} className="text-sm text-gray-500 hover:text-gray-900">
-            ← Project #{s.job.number}
-          </Link>
+          <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: `#${s.job.number} ${s.job.name}`, to: `/projects/${quote.job}` }, { label: `Quote ${number}` }]} />
           <QuoteStatusBadge status={quote.status} />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -119,7 +118,7 @@ export default function QuoteView() {
         <header className="flex items-start justify-between gap-6">
           <div>
             <h1 className="text-xl font-bold text-gray-900">{s.business.name || "Your business name"}</h1>
-            <p className="whitespace-pre-line text-gray-600">{s.business.address}</p>
+            <p className="whitespace-pre-line text-gray-600">{stackedAddress(s.business.address)}</p>
             <p className="text-gray-600">{[s.business.phone, s.business.email].filter(Boolean).join(" · ")}</p>
           </div>
           <div className="text-right shrink-0">
@@ -138,7 +137,7 @@ export default function QuoteView() {
               <>
                 <p className="font-semibold text-gray-900">{s.client.name}</p>
                 {s.client.contactPerson && <p>Attn: {s.client.contactPerson}</p>}
-                <p className="whitespace-pre-line">{s.client.billingAddress}</p>
+                <p className="whitespace-pre-line">{stackedAddress(s.client.billingAddress)}</p>
                 <p className="text-gray-600">{[s.client.email, s.client.phone].filter(Boolean).join(" · ")}</p>
               </>
             ) : (
@@ -150,10 +149,10 @@ export default function QuoteView() {
             <p className="font-semibold text-gray-900">{s.job.name}</p>
             {s.job.reference && <p>Your ref: {s.job.reference}</p>}
             {s.venue && (
-              <p>
-                {s.venue.name}
-                {s.venue.address ? `, ${s.venue.address}` : ""}
-              </p>
+              <>
+                <p>{s.venue.name}</p>
+                {oneLineAddress(s.venue.address) && <p className="text-gray-600">{oneLineAddress(s.venue.address)}</p>}
+              </>
             )}
             <p className="text-gray-600">{dates}</p>
           </div>

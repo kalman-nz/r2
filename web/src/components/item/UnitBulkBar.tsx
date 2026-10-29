@@ -4,22 +4,22 @@ import { api, type Item, type Serial, type SerialStatus } from "../../lib/api";
 import { useLocations } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import { fromDateInput } from "../../lib/format";
-import type { LabelUnit } from "../../lib/labelSpec";
-import { renderUnitLabelImage, sendRenderedLabel } from "../../lib/print";
+import { buildLabelContext, type LabelUnit } from "../../lib/labelSpec";
 import { useCan, useFeature } from "../../lib/roles";
 import { SERIAL_STATUS_LABELS } from "../../lib/statuses";
 import BatchPrintBar from "../BatchPrintBar";
+import SelectionBar from "../SelectionBar";
 import { useConfirm } from "../ConfirmProvider";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
 import { useToast } from "../ToastProvider";
 import { updateEach } from "./BulkEditModal";
 import NewRepairModal from "../repair/NewRepairModal";
-import NewJobModal from "../maintenance/NewJobModal";
 
 // The units tab's selection bar: the same actions as the inventory list's,
-// for units. Status goes through the status route (it logs the change and
-// the note) rather than a plain update, like on a unit's own page.
+// for units. Edit covers every field, status and location included; status
+// goes through the status route (it logs the change and the note) rather
+// than a plain update, like on a unit's own page.
 export default function UnitBulkBar({
   item,
   units,
@@ -40,7 +40,7 @@ export default function UnitBulkBar({
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { data: locations = [] } = useLocations();
-  const [open, setOpen] = useState<"edit" | "move" | "repair" | "schedule" | "status" | null>(null);
+  const [open, setOpen] = useState<"edit" | "repair" | null>(null);
   const [busy, setBusy] = useState(false);
   const what = `${units.length} unit${units.length === 1 ? "" : "s"}`;
 
@@ -96,27 +96,50 @@ export default function UnitBulkBar({
     }, `Deleted ${what}`);
   }
 
+  // Retired units stay on record but can't go out. Restore puts them back.
+  const allRetired = units.every((u) => u.status === "retired");
+  async function retire() {
+    if (allRetired) return setStatus("active", "");
+    const ok = await confirm({
+      title: `Retire ${what}`,
+      message: `Retire ${what}? They stay on record but can't go out on projects. You can restore them any time.`,
+      confirmLabel: "Retire",
+    });
+    if (ok) await setStatus("retired", "");
+  }
+
+  // One save for everything ticked in Edit: plain fields first, then the
+  // status through its own route so the change and note are logged.
+  async function applyEdit(body: Record<string, unknown>, status: { status: SerialStatus; note: string } | null) {
+    await run(async () => {
+      const failed = Object.keys(body).length > 0 ? await updateEach("serials", units, () => body) : [];
+      if (status) {
+        const failedIds = new Set(failed.map((f) => f.record.id));
+        for (const unit of units) {
+          if (failedIds.has(unit.id) || (unit.status === status.status && !status.note)) continue;
+          try {
+            await api.setSerialStatus(unit.id, status.status, status.note);
+          } catch (error) {
+            failed.push({ record: unit, error });
+          }
+        }
+      }
+      return failed;
+    }, `Updated ${what}`);
+  }
+
   return (
-    <div className="flex items-center gap-2 flex-wrap text-sm card px-4 py-2">
-      <span className="font-medium text-gray-900 mr-1">{units.length} selected</span>
-      {can("units.edit") && (
-        <>
-          <button onClick={() => setOpen("edit")} disabled={busy} className="btn-primary">
-            Edit
-          </button>
-          {locations.length > 0 && (
-            <button onClick={() => setOpen("move")} disabled={busy} className="btn-secondary">
-              Move
-            </button>
-          )}
-        </>
+    <SelectionBar count={units.length} onClear={onClear}>
+      {(can("units.edit") || can("units.flag")) && (
+        <button onClick={() => setOpen("edit")} disabled={busy} className="btn-primary">
+          Edit
+        </button>
       )}
       <BatchPrintBar<Serial>
-        bare
         items={units}
         getDisplayName={(s) => s.label || s.barcode}
-        renderImage={(s, t) => renderUnitLabelImage(unitFor(s), t)}
-        sendPrint={(image, t, s) => sendRenderedLabel(image, t, s.id)}
+        getContext={(s) => buildLabelContext(unitFor(s))}
+        getSerialId={(s) => s.id}
         onDone={onClear}
       />
       {can("units.flag") && (
@@ -126,13 +149,8 @@ export default function UnitBulkBar({
               Repair
             </button>
           )}
-          {feature("maintenance") && (
-            <button onClick={() => setOpen("schedule")} disabled={busy} className="btn-secondary" title="Schedule one-off maintenance on these units">
-              Schedule
-            </button>
-          )}
-          <button onClick={() => setOpen("status")} disabled={busy} className="btn-secondary">
-            Status
+          <button onClick={retire} disabled={busy} className="btn-secondary">
+            {allRetired ? "Restore" : "Retire"}
           </button>
         </>
       )}
@@ -141,37 +159,26 @@ export default function UnitBulkBar({
           Delete
         </button>
       )}
-      <button onClick={onClear} className="text-gray-500 hover:text-gray-900 ml-auto">
-        Clear selection
-      </button>
 
       {open === "edit" && (
         <EditModal
           what={what}
           busy={busy}
-          onClose={() => setOpen(null)}
-          onApply={(body) => run(() => updateEach("serials", units, () => body), `Updated ${what}`)}
-        />
-      )}
-      {open === "move" && (
-        <MoveModal
-          what={what}
-          busy={busy}
           locations={locations}
+          canEdit={can("units.edit")}
+          canStatus={can("units.flag")}
           onClose={() => setOpen(null)}
-          onApply={(location) =>
-            run(
-              () => updateEach("serials", units, () => ({ location })),
-              `Moved ${what} to ${locations.find((l) => l.id === location)?.name ?? "no location"}`,
-            )
-          }
+          onApply={applyEdit}
         />
       )}
       {open === "repair" && (
         <NewRepairModal
           item={item}
           serials={units.filter((u) => u.status === "active").map((u) => u.id)}
-          onClose={() => setOpen(null)}
+          onClose={async () => {
+            setOpen(null);
+            await onChanged();
+          }}
           onCreated={async (repair) => {
             setOpen(null);
             await onChanged();
@@ -180,21 +187,7 @@ export default function UnitBulkBar({
           }}
         />
       )}
-      {open === "schedule" && (
-        <NewJobModal
-          item={item}
-          serials={units.map((u) => u.id)}
-          onClose={() => setOpen(null)}
-          onCreated={async (jobs) => {
-            setOpen(null);
-            await onChanged();
-            onClear();
-            showToast("success", `Scheduled ${jobs.length} job${jobs.length === 1 ? "" : "s"}`);
-          }}
-        />
-      )}
-      {open === "status" && <StatusModal what={what} busy={busy} onClose={() => setOpen(null)} onApply={setStatus} />}
-    </div>
+    </SelectionBar>
   );
 }
 
@@ -202,17 +195,28 @@ export default function UnitBulkBar({
 function EditModal({
   what,
   busy,
+  locations,
+  canEdit,
+  canStatus,
   onClose,
   onApply,
 }: {
   what: string;
   busy: boolean;
+  locations: { id: string; name: string }[];
+  canEdit: boolean;
+  canStatus: boolean;
   onClose: () => void;
-  onApply: (body: Record<string, unknown>) => void;
+  onApply: (body: Record<string, unknown>, status: { status: SerialStatus; note: string } | null) => void;
 }) {
-  const [nextInspection, setNextInspection] = useState("");
+  const [status, setStatusValue] = useState<SerialStatus>("active");
+  const [note, setNote] = useState("");
+  const [location, setLocation] = useState(locations[0]?.id ?? "");
+  const [bin, setBin] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
   const [purchaseCost, setPurchaseCost] = useState(0);
+  const [nextInspection, setNextInspection] = useState("");
+  const [notes, setNotes] = useState("");
   const [on, setOn] = useState<Set<string>>(new Set());
   const tick = (key: string, value = true) =>
     setOn((prev) => {
@@ -224,10 +228,13 @@ function EditModal({
 
   function apply() {
     const body: Record<string, unknown> = {};
-    if (on.has("nextInspection")) body.nextInspection = fromDateInput(nextInspection);
+    if (on.has("location")) body.location = location;
+    if (on.has("bin")) body.bin = bin.trim();
     if (on.has("purchaseDate")) body.purchaseDate = fromDateInput(purchaseDate);
     if (on.has("purchaseCost")) body.purchaseCost = purchaseCost;
-    onApply(body);
+    if (on.has("nextInspection")) body.nextInspection = fromDateInput(nextInspection);
+    if (on.has("notes")) body.notes = notes;
+    onApply(body, on.has("status") ? { status, note: note.trim() } : null);
   }
 
   const row = (key: string, label: string, input: ReactNode) => (
@@ -240,125 +247,129 @@ function EditModal({
 
   return (
     <Modal title={`Edit ${what}`} onClose={busy ? () => {} : onClose}>
-      <p className="text-xs text-gray-500 -mt-2">Tick what to change. Leave a date empty to clear it.</p>
+      <p className="text-xs text-gray-500 -mt-2">Tick what to change. Everything else stays as it is on each unit. Leave a date empty to clear it.</p>
       <div className="flex flex-col divide-y divide-gray-100">
-        {row(
-          "nextInspection",
-          "Test & tag due",
-          <input
-            type="date"
-            value={nextInspection}
-            onChange={(e) => {
-              setNextInspection(e.target.value);
-              tick("nextInspection");
-            }}
-            className="input py-1.5 w-full"
-          />,
-        )}
-        {row(
-          "purchaseDate",
-          "Purchase date",
-          <input
-            type="date"
-            value={purchaseDate}
-            onChange={(e) => {
-              setPurchaseDate(e.target.value);
-              tick("purchaseDate");
-            }}
-            className="input py-1.5 w-full"
-          />,
-        )}
-        {row(
-          "purchaseCost",
-          "Purchase cost",
-          <NumberInput
-            value={purchaseCost}
-            min={0}
-            onChange={(n) => {
-              setPurchaseCost(n);
-              tick("purchaseCost");
-            }}
-            className="input py-1.5 w-full"
-          />,
-        )}
+        {canStatus &&
+          row(
+            "status",
+            "Status",
+            <div className="flex flex-col gap-1.5">
+              <select
+                value={status}
+                onChange={(e) => {
+                  setStatusValue(e.target.value as SerialStatus);
+                  tick("status");
+                }}
+                className="input py-1.5 w-full"
+              >
+                {/* In repair comes from opening a repair (the Repair button), so it's tracked. */}
+                {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[])
+                  .filter((s) => s !== "repair")
+                  .map((s) => (
+                    <option key={s} value={s}>
+                      {SERIAL_STATUS_LABELS[s]}
+                    </option>
+                  ))}
+              </select>
+              {on.has("status") && (
+                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why? (optional, logged)" className="input py-1.5 w-full" />
+              )}
+            </div>,
+          )}
+        {canEdit && locations.length > 0 &&
+          row(
+            "location",
+            "Location",
+            <select
+              value={location}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                tick("location");
+              }}
+              className="input py-1.5 w-full"
+            >
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+              <option value="">No location</option>
+            </select>,
+          )}
+        {canEdit &&
+          row(
+            "bin",
+            "Shelf / bin",
+            <input
+              value={bin}
+              onChange={(e) => {
+                setBin(e.target.value);
+                tick("bin");
+              }}
+              className="input py-1.5 w-full"
+            />,
+          )}
+        {canEdit &&
+          row(
+            "purchaseDate",
+            "Purchase date",
+            <input
+              type="date"
+              value={purchaseDate}
+              onChange={(e) => {
+                setPurchaseDate(e.target.value);
+                tick("purchaseDate");
+              }}
+              className="input py-1.5 w-full"
+            />,
+          )}
+        {canEdit &&
+          row(
+            "purchaseCost",
+            "Purchase cost",
+            <NumberInput
+              value={purchaseCost}
+              min={0}
+              onChange={(n) => {
+                setPurchaseCost(n);
+                tick("purchaseCost");
+              }}
+              className="input py-1.5 w-full"
+            />,
+          )}
+        {canEdit &&
+          row(
+            "nextInspection",
+            "Next inspection",
+            <input
+              type="date"
+              value={nextInspection}
+              onChange={(e) => {
+                setNextInspection(e.target.value);
+                tick("nextInspection");
+              }}
+              className="input py-1.5 w-full"
+            />,
+          )}
+        {canEdit &&
+          row(
+            "notes",
+            "Notes",
+            <textarea
+              value={notes}
+              rows={2}
+              placeholder="Replaces each unit's notes"
+              onChange={(e) => {
+                setNotes(e.target.value);
+                tick("notes");
+              }}
+              className="input py-1.5 w-full"
+            />,
+          )}
       </div>
       <div className="flex items-center gap-2">
         <button onClick={apply} disabled={busy || on.size === 0} className="btn-primary">
           {busy ? "Saving…" : `Update ${what}`}
-        </button>
-        <button onClick={onClose} disabled={busy} className="btn-secondary">
-          Cancel
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-function MoveModal({
-  what,
-  busy,
-  locations,
-  onClose,
-  onApply,
-}: {
-  what: string;
-  busy: boolean;
-  locations: { id: string; name: string }[];
-  onClose: () => void;
-  onApply: (location: string) => void;
-}) {
-  const [location, setLocation] = useState(locations[0]?.id ?? "");
-  return (
-    <Modal title={`Move ${what} to…`} onClose={busy ? () => {} : onClose}>
-      <select value={location} onChange={(e) => setLocation(e.target.value)} className="input py-1.5">
-        {locations.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.name}
-          </option>
-        ))}
-        <option value="">No location</option>
-      </select>
-      <div className="flex items-center gap-2">
-        <button onClick={() => onApply(location)} disabled={busy} className="btn-primary">
-          {busy ? "Moving…" : "Move here"}
-        </button>
-        <button onClick={onClose} disabled={busy} className="btn-secondary">
-          Cancel
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-function StatusModal({
-  what,
-  busy,
-  onClose,
-  onApply,
-}: {
-  what: string;
-  busy: boolean;
-  onClose: () => void;
-  onApply: (status: SerialStatus, note: string) => void;
-}) {
-  const [status, setStatus] = useState<SerialStatus>("lost");
-  const [note, setNote] = useState("");
-  return (
-    <Modal title={`Set status of ${what}`} onClose={busy ? () => {} : onClose}>
-      <select value={status} onChange={(e) => setStatus(e.target.value as SerialStatus)} className="input py-1.5">
-        {/* In repair comes from opening a repair (the Repair button), so it's tracked. */}
-        {(Object.keys(SERIAL_STATUS_LABELS) as SerialStatus[])
-          .filter((s) => s !== "repair")
-          .map((s) => (
-            <option key={s} value={s}>
-              {SERIAL_STATUS_LABELS[s]}
-            </option>
-          ))}
-      </select>
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's wrong? (optional)" className="input py-1.5" />
-      <div className="flex items-center gap-2">
-        <button onClick={() => onApply(status, note.trim())} disabled={busy} className="btn-primary">
-          {busy ? "Saving…" : "Update status"}
         </button>
         <button onClick={onClose} disabled={busy} className="btn-secondary">
           Cancel

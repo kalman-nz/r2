@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isDate, addInterval, describeInterval } = require("../pb_hooks/lib/dates.js");
+const { isDate, addInterval, nextOnSchedule, describeInterval } = require("../pb_hooks/lib/dates.js");
 
 test("isDate takes real calendar days only", () => {
   assert.equal(isDate("2026-10-22"), true);
@@ -38,4 +38,17 @@ test("bad intervals are refused", () => {
 test("describeInterval reads naturally", () => {
   assert.equal(describeInterval(1, "year"), "every year");
   assert.equal(describeInterval(3, "month"), "every 3 months");
+});
+
+test("a fixed schedule keeps its day, done early or late", () => {
+  // Every month on the 15th, from 15 Jan.
+  assert.equal(nextOnSchedule("2026-01-15", 1, "month", "2026-01-15", false), "2026-02-15", "done on the day");
+  assert.equal(nextOnSchedule("2026-01-15", 1, "month", "2026-03-20", false), "2026-04-15", "done late");
+  assert.equal(nextOnSchedule("2026-01-15", 1, "month", "2026-01-10", true), "2026-01-15", "not started yet");
+  assert.equal(nextOnSchedule("2026-01-31", 1, "month", "2026-02-28", false), "2026-03-31", "the 31st doesn't drift to the 28th");
+  assert.equal(nextOnSchedule("2026-01-31", 1, "month", "2026-02-27", false), "2026-02-28");
+  assert.equal(nextOnSchedule("2026-10-06", 2, "week", "2026-10-29", true), "2026-11-03");
+  assert.equal(nextOnSchedule("2020-03-01", 3, "month", "2026-10-29", true), "2026-12-01", "years in");
+  assert.equal(nextOnSchedule("2020-02-29", 1, "year", "2026-10-29", false), "2027-02-28");
+  assert.equal(nextOnSchedule("2026-10-29", 1, "day", "2026-10-29", true), "2026-10-29");
 });

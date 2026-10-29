@@ -11,7 +11,7 @@ import { MAINTENANCE_KINDS } from "./statuses";
 // ("2026-10-22"), compared as text with today's local date.
 
 export type JobWithExpand = MaintenanceJob & { expand?: { item?: Item; serial?: Serial; plan?: MaintenancePlan } };
-export type RepairWithItem = Repair & { expand?: { item?: Item; job?: { id: string; number: number; name: string } } };
+export type RepairWithItem = Repair & { expand?: { item?: Item; job?: { id: string; number: number; name: string }; serials?: Serial[] } };
 
 export const today = () => localDateInput(new Date());
 
@@ -55,6 +55,26 @@ export function describeInterval(every: number, unit: IntervalUnit): string {
   return every === 1 ? `Every ${unit}` : `Every ${every} ${unit}s`;
 }
 
+function ordinal(n: number): string {
+  const rem = n % 100;
+  if (rem >= 11 && rem <= 13) return `${n}th`;
+  return `${n}${{ 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th"}`;
+}
+
+// How a plan repeats: "Every month on the 15th", "Every 2 weeks on
+// Tuesday", "Every year on 15 March", or "Every 3 months after completion".
+export function describePlan(plan: Pick<MaintenancePlan, "every" | "unit" | "repeat" | "firstDue">): string {
+  const every = describeInterval(plan.every, plan.unit);
+  const start = dayToDate(plan.firstDue ?? "");
+  if (plan.repeat !== "fixed" || !start) return `${every} after completion`;
+  if (plan.unit === "week") return `${every} on ${start.toLocaleDateString(undefined, { weekday: "long" })}`;
+  const dayMonth = start.toLocaleDateString(undefined, { day: "numeric", month: "long" });
+  if (plan.unit === "month" && plan.every % 12 === 0) return `${describeInterval(plan.every / 12, "year")} on ${dayMonth}`;
+  if (plan.unit === "month") return plan.every === 1 ? `${every} on the ${ordinal(start.getDate())}` : `${every} on the ${ordinal(start.getDate())}, from ${dayMonth}`;
+  if (plan.unit === "year") return `${every} on ${dayMonth}`;
+  return `${every} from ${formatDay(plan.firstDue)}`;
+}
+
 export function kindOf(kind: MaintenanceKind) {
   return MAINTENANCE_KINDS.find((k) => k.value === kind) ?? MAINTENANCE_KINDS[0];
 }
@@ -72,6 +92,28 @@ export function assetLabel(job: JobWithExpand): string {
   const unit = job.expand?.serial;
   if (!item) return job.item ? "(deleted item)" : "—";
   return unit ? `${item.name} · ${unit.label || unit.barcode || "unit"}` : item.name;
+}
+
+// A unit's name on a list: its label, else its barcode.
+export function unitName(unit: Pick<Serial, "label" | "barcode"> | null | undefined): string {
+  return unit ? unit.label || unit.barcode || "unit" : "";
+}
+
+// Where a due date falls, for grouping: overdue, this week, or later.
+export function dueBucket(day: string): { id: string; label: string; order: number } {
+  const n = daysUntil(day);
+  if (n < 0) return { id: "overdue", label: "Overdue", order: 0 };
+  if (n <= 7) return { id: "week", label: "Due in the next 7 days", order: 1 };
+  if (n <= 30) return { id: "month", label: "Due in the next 30 days", order: 2 };
+  return { id: "later", label: "Later", order: 3 };
+}
+
+// "October 2026" for grouping by month; order is "2026-10".
+export function monthOf(day: string): { id: string; label: string; order: string } {
+  const d = dayToDate(day);
+  if (!d) return { id: "none", label: "No date", order: "9999" };
+  const id = day.slice(0, 7);
+  return { id, label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }), order: id };
 }
 
 export function useMaintenanceJobs(filter: string, sort = "dueOn", enabled = true) {
@@ -118,7 +160,7 @@ export function useRepairStatuses() {
 export function useRepairs(filter?: string, enabled = true) {
   return useQuery({
     queryKey: ["repairs", filter ?? ""],
-    queryFn: () => pb.collection("repairs").getFullList<RepairWithItem>({ filter: orgFilter(filter), sort: "-number", expand: "item,job" }),
+    queryFn: () => pb.collection("repairs").getFullList<RepairWithItem>({ filter: orgFilter(filter), sort: "-number", expand: "item,job,serials" }),
     enabled,
   });
 }

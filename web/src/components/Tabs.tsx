@@ -19,7 +19,7 @@ export function useTab<K extends string>(tabs: TabDef<K>[]): [K, (tab: K) => voi
 // The underlined tab row under a record page's header (projects, items).
 export function TabBar<K extends string>({ tabs, current, onOpen, label }: { tabs: TabDef<K>[]; current: K; onOpen: (tab: K) => void; label: string }) {
   return (
-    <nav className="flex items-center gap-6 border-b border-gray-200 overflow-x-auto" aria-label={label}>
+    <nav className="flex items-center gap-6 border-b border-gray-200 overflow-x-auto overflow-y-hidden scrollbar-none" aria-label={label}>
       {tabs.map((t) => (
         <button
           key={t.key}

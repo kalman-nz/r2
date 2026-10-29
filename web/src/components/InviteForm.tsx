@@ -24,7 +24,6 @@ export default function InviteForm({
   const [email, setEmail] = useState("");
   const [chosen, setChosen] = useState("");
   const roleId = chosen || defaultRoleId || smallestRole(roles)?.id || "";
-  const role = roles.find((r) => r.id === roleId);
   const [sending, setSending] = useState(false);
   const [unsent, setUnsent] = useState<string | null>(null);
 
@@ -65,11 +64,6 @@ export default function InviteForm({
           {sending ? "Inviting…" : "Invite"}
         </button>
       </form>
-      {role?.description && (
-        <p className="text-xs text-gray-500">
-          {role.name}: {role.description}
-        </p>
-      )}
       {unsent && <SignupLinkNotice email={unsent} />}
     </div>
   );

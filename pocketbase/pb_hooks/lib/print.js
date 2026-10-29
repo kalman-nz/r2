@@ -12,18 +12,39 @@ const { pythonBin, printDir } = require("./python.js");
 // Printer in the UI) — callers should pass that in. Falls back to the
 // PRINTER_HOST env var so a deployment keeps working before anyone's
 // visited Settings yet.
-function printLabelPng(pngBase64, label, printerHost) {
-  const host = printerHost || $os.getenv("PRINTER_HOST");
-  if (!host) {
-    return { ok: false, message: "No printer configured — set one on the Settings > Printer page." };
-  }
-
+// Runs print/print_label.py and reads its one-line JSON result:
+// { ok, unreachable, message }. unreachable = the printer didn't answer
+// (switched off, wrong address), so the job can go to another printer;
+// anything else (a bad image) would fail on any printer.
+function runPrintScript(args) {
+  let output;
   try {
-    $os.cmd(pythonBin(), printDir() + "/print_label.py", "--image-base64", pngBase64, "--host", host, "--label", label || "62").run();
-    return { ok: true, message: "Sent to printer" };
+    output = toString($os.cmd(pythonBin(), printDir() + "/print_label.py", "--json", ...args).output());
   } catch (err) {
-    return { ok: false, message: String((err && err.message) || err) };
+    return { ok: false, unreachable: false, message: "Printing isn't set up on this server (couldn't run " + pythonBin() + ")" };
   }
+  try {
+    const result = JSON.parse(output.trim().split("\n").pop());
+    return { ok: !!result.ok, unreachable: !!result.unreachable, message: String(result.message || "") };
+  } catch (_) {
+    return { ok: false, unreachable: false, message: "The print script gave no result" };
+  }
+}
+
+// pngBase64 must already be rendered at the printer's native resolution
+// (see printGeometry in web/src/lib/printing.ts).
+function printLabelPng(pngBase64, label, printerHost, model) {
+  if (!printerHost) return { ok: false, unreachable: false, message: "No printer set up — add one in Settings → Printer setup." };
+  const result = runPrintScript(["--image-base64", pngBase64, "--host", printerHost, "--model", model || "QL-810W", "--label", label || "62"]);
+  if (result.ok) result.message = "Sent to printer";
+  return result;
+}
+
+// Whether the printer answers on the network, without printing anything.
+function checkPrinter(host) {
+  if (!host) return { ok: false, message: "No address set" };
+  const result = runPrintScript(["--check", "--host", host]);
+  return { ok: result.ok, message: result.ok ? "Online" : result.unreachable ? "Not reachable" : result.message };
 }
 
 const PNG_PREFIX = "data:image/png;base64,";
@@ -38,6 +59,7 @@ function validatePrintBody(data) {
     throw new BadRequestError("imageDataUrl must be a data:image/png;base64, URL");
   }
   if (typeof data.label !== "string") throw new BadRequestError("label is required");
+  const printerId = typeof data.printerId === "string" ? data.printerId : "";
 
   if (typeof data.templateId === "string") {
     return {
@@ -46,12 +68,13 @@ function validatePrintBody(data) {
       serialId: typeof data.serialId === "string" ? data.serialId : undefined,
       imageDataUrl: data.imageDataUrl,
       label: data.label,
+      printerId: printerId,
     };
   }
   if (typeof data.customText === "string" && data.customText) {
-    return { kind: "custom", customText: data.customText, imageDataUrl: data.imageDataUrl, label: data.label };
+    return { kind: "custom", customText: data.customText, imageDataUrl: data.imageDataUrl, label: data.label, printerId: printerId };
   }
   throw new BadRequestError("Either templateId or customText is required");
 }
 
-module.exports = { printLabelPng, validatePrintBody, PNG_PREFIX };
+module.exports = { printLabelPng, checkPrinter, validatePrintBody, PNG_PREFIX };

@@ -15,6 +15,8 @@ import ProjectPicker, { type ProjectRef } from "../components/ProjectPicker";
 import { RepairStatusBadge, SerialStatusBadge } from "../components/StatusBadge";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
+import AssigneeInput from "../components/repair/AssigneeInput";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 type RepairWithExpand = Repair & {
   expand?: { item?: Item; serials?: Serial[]; job?: ProjectRef; createdBy?: { name: string; email: string } };
@@ -117,9 +119,7 @@ export default function RepairDetail() {
 
   return (
     <div className="max-w-4xl mx-auto flex flex-col gap-4">
-      <Link to="/maintenance?tab=repairs" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Repairs
-      </Link>
+      <Breadcrumbs crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "Repairs", to: "/maintenance?tab=repairs" }, { label: `R${repair.number}` }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
@@ -192,8 +192,8 @@ export default function RepairDetail() {
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-gray-500">Repaired by</span>
-              <input value={draft.repairer} onChange={(e) => set("repairer", e.target.value)} disabled={!canEdit} className="input py-1.5" />
+              <span className="text-gray-500">Assigned to</span>
+              <AssigneeInput value={draft.repairer} onChange={(v) => set("repairer", v)} disabled={!canEdit} />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-gray-500">Expected back</span>

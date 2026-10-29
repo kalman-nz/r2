@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { pb } from "../../lib/pocketbase";
-import type { Item, PriceUnit } from "../../lib/api";
-import { displayPath, useCategories, useCategoryPaths } from "../../lib/catalog";
+import { api, type Item, type PriceUnit } from "../../lib/api";
+import { displayPath, useCategories, useCategoryPaths, useLocations } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import Field from "../Field";
 import NumberInput from "../NumberInput";
 import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
 import { currentOrgId } from "../../lib/currentOrg";
+import { useFeature } from "../../lib/roles";
 
 interface ItemDraft {
   name: string;
@@ -23,9 +24,15 @@ interface ItemDraft {
   powerW: number;
   bufferHours: number;
   barcode: string;
-  locationInWarehouse: string;
   notes: string;
   archived: boolean;
+}
+
+// Where a new bulk item's stock starts: one storage location and shelf.
+// More locations are added on the item afterwards (StockLocations).
+interface StartingPlace {
+  location: string;
+  bin: string;
 }
 
 function draftFrom(item: Item | null, defaultFolder = ""): ItemDraft {
@@ -43,7 +50,6 @@ function draftFrom(item: Item | null, defaultFolder = ""): ItemDraft {
     powerW: item?.powerW ?? 0,
     bufferHours: item?.bufferHours ?? 0,
     barcode: item?.barcode ?? "",
-    locationInWarehouse: item?.locationInWarehouse ?? "",
     notes: item?.notes ?? "",
     archived: item?.archived ?? false,
   };
@@ -71,12 +77,17 @@ export default function ItemForm({
   onSaved: (item: Item) => void;
   footer?: ReactNode;
 }) {
+  // Hire prices with prices and quotes; turnaround between bookings with projects.
+  const feature = useFeature();
   const [draft, setDraft] = useState<ItemDraft>(() => draftFrom(item, defaultFolder));
   const [photo, setPhoto] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const { showToast } = useToast();
   const { data: categories = [] } = useCategories();
   const paths = useCategoryPaths();
+  const { data: locations = [] } = useLocations();
+  const [place, setPlace] = useState<StartingPlace>({ location: "", bin: "" });
+  const startAt = place.location || locations[0]?.id || "";
   const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   useEffect(() => setDraft(draftFrom(item, defaultFolder)), [item, defaultFolder]);
@@ -88,12 +99,23 @@ export default function ItemForm({
     setSaving(true);
     try {
       const data = new FormData();
-      for (const [key, value] of Object.entries({ ...draft, name: draft.name.trim() })) data.append(key, String(value));
+      // A new bulk item's stock goes where it was asked to, just after.
+      const placed = !item && !isKit && draft.tracking === "bulk" && !!startAt;
+      const fields = { ...draft, name: draft.name.trim(), ...(placed ? { stockQty: 0 } : {}) };
+      for (const [key, value] of Object.entries(fields)) data.append(key, String(value));
       if (photo) data.append("photo", photo);
       if (!item) data.append("org", currentOrgId());
-      const saved = item
+      let saved = item
         ? await pb.collection("items").update<Item>(item.id, data)
         : await pb.collection("items").create<Item>(data);
+      if (placed && (draft.stockQty > 0 || place.bin.trim())) {
+        // The item's made either way, so a problem here doesn't stop it opening.
+        try {
+          saved = (await api.setItemStock(saved.id, [{ location: startAt, qty: draft.stockQty, bin: place.bin.trim() }])).item;
+        } catch (err) {
+          showToast("error", `Item created, but its stock couldn't be set: ${errorText(err)}`);
+        }
+      }
       setPhoto(null);
       onSaved(saved);
       showToast("success", item ? "Saved" : "Item created");
@@ -146,9 +168,9 @@ export default function ItemForm({
           />
         </Field>
         {!isKit && (
-          <Field label="Tracking">
+          <Field label="Item type">
             <Segmented
-              label="Tracking"
+              label="Item type"
               value={draft.tracking}
               onChange={(v) => set("tracking", v)}
               disabled={readOnly || hasSerials}
@@ -170,29 +192,31 @@ export default function ItemForm({
         </Field>
       </Group>
 
-      <Group title="Pricing">
-        <Field label="Price (ex GST)" className="sm:col-span-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} disabled={readOnly} className="input py-2 w-36" />
-            <Segmented
-              compact
-              label="Price per"
-              value={draft.priceUnit}
-              onChange={(v) => set("priceUnit", v)}
-              disabled={readOnly}
-              options={[
-                { value: "each", label: "/ea" },
-                { value: "hour", label: "/hr" },
-                { value: "day", label: "/day" },
-                { value: "week", label: "/week" },
-              ]}
-            />
-          </div>
-        </Field>
-        <Field label="Replacement cost">
-          <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} disabled={readOnly} className="input py-2" />
-        </Field>
-      </Group>
+      {feature("pricing") && (
+        <Group title="Pricing">
+          <Field label="Price (ex GST)" className="sm:col-span-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} disabled={readOnly} className="input py-2 w-36" />
+              <Segmented
+                compact
+                label="Price per"
+                value={draft.priceUnit}
+                onChange={(v) => set("priceUnit", v)}
+                disabled={readOnly}
+                options={[
+                  { value: "each", label: "/ea" },
+                  { value: "hour", label: "/hr" },
+                  { value: "day", label: "/day" },
+                  { value: "week", label: "/week" },
+                ]}
+              />
+            </div>
+          </Field>
+          <Field label="Replacement cost">
+            <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} disabled={readOnly} className="input py-2" />
+          </Field>
+        </Group>
+      )}
 
       {!isKit && (
         <Group title="Warehouse">
@@ -201,18 +225,33 @@ export default function ItemForm({
               <NumberInput value={draft.stockQty} min={0} onChange={(n) => set("stockQty", Math.round(n))} disabled={readOnly} className="input py-2" />
             </Field>
           )}
-          <Field label="Location in warehouse">
-            <input
-              value={draft.locationInWarehouse}
-              onChange={(e) => set("locationInWarehouse", e.target.value)}
-              disabled={readOnly}
-              className="input py-2"
-              placeholder="e.g. Bay 3, top shelf"
-            />
-          </Field>
-          <Field label="Extra turnaround (h)">
-            <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} disabled={readOnly} className="input py-2" />
-          </Field>
+          {draft.tracking === "bulk" && !item && locations.length > 0 && (
+            <>
+              <Field label="Storage location">
+                <select value={startAt} onChange={(e) => setPlace((p) => ({ ...p, location: e.target.value }))} disabled={readOnly} className="input py-2">
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Shelf / bin">
+                <input
+                  value={place.bin}
+                  onChange={(e) => setPlace((p) => ({ ...p, bin: e.target.value }))}
+                  disabled={readOnly}
+                  className="input py-2"
+                  placeholder="e.g. Bay 3, top shelf"
+                />
+              </Field>
+            </>
+          )}
+          {feature("projects") && (
+            <Field label="Extra turnaround (h)">
+              <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} disabled={readOnly} className="input py-2" />
+            </Field>
+          )}
           <Field label="Weight (kg)">
             <NumberInput value={draft.weightKg} min={0} onChange={(n) => set("weightKg", n)} disabled={readOnly} className="input py-2" />
           </Field>

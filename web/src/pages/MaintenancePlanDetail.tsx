@@ -5,13 +5,14 @@ import { pb } from "../lib/pocketbase";
 import { api, type Item, type MaintenancePlan } from "../lib/api";
 import { orgFilter } from "../lib/currentOrg";
 import { errorText } from "../lib/errors";
-import { assetLabel, describeInterval, dueLabel, formatDay, invalidateMaintenance, kindOf, today, type JobWithExpand } from "../lib/maintenance";
+import { assetLabel, describePlan, dueLabel, formatDay, invalidateMaintenance, today, type JobWithExpand } from "../lib/maintenance";
 import { useFollowOrg } from "../lib/org";
 import { useRole } from "../lib/roles";
 import PlanModal from "../components/maintenance/PlanModal";
 import { ResultBadge } from "../components/maintenance/ResultBadge";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // A repeating plan: what it is, what it covers, and where each unit stands
 // (when it was last done and how it went, when it's next due).
@@ -79,15 +80,13 @@ export default function MaintenancePlanDetail() {
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4">
-      <Link to="/maintenance?tab=plans" className="text-sm text-gray-500 hover:text-gray-900 w-fit">
-        ← Plans
-      </Link>
+      <Breadcrumbs crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "Plans", to: "/maintenance?tab=plans" }, { label: plan.name }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">{plan.name}</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {kindOf(plan.kind).label} · {describeInterval(plan.every, plan.unit)}, from the day each one's done
+            {describePlan(plan)}
           </p>
         </div>
         {canManage && (
@@ -104,7 +103,7 @@ export default function MaintenancePlanDetail() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          ["Covers", `${items.length} item${items.length === 1 ? "" : "s"}`],
+          ["Items", String(items.length)],
           ["Scheduled", String(rows.length)],
           ["Overdue", String(overdue)],
           ["Next due", rows[0] ? formatDay(rows[0].next!.dueOn) : "—"],
@@ -126,7 +125,7 @@ export default function MaintenancePlanDetail() {
       <section className="card p-4 flex flex-col gap-2 text-sm">
         <h2 className="eyebrow text-gray-500">Items</h2>
         {items.length === 0 ? (
-          <p className="text-gray-500 text-xs">None yet{canManage ? ": Change plan to add some." : "."}</p>
+          <p className="text-gray-500 text-xs">None yet.</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {items.map((i) => (
@@ -173,7 +172,7 @@ export default function MaintenancePlanDetail() {
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <p className="px-4 py-6 text-gray-500 text-sm text-center">{search ? "No units match." : "Nothing scheduled: add items to the plan."}</p>}
+        {rows.length === 0 && <p className="px-4 py-6 text-gray-500 text-sm text-center">{search ? "No units match." : "Nothing scheduled."}</p>}
       </section>
 
       {editing && (

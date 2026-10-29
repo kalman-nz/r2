@@ -48,9 +48,34 @@ function addInterval(date, every, unit) {
   return format(y, m, Math.min(p.d, daysInMonth(y, m)));
 }
 
+// The first day on a fixed schedule (`start`, then every `every`
+// days/weeks/months/years from it) that comes after `after`, or on it
+// when `onOrAfter`. Each step counts from `start`, so "every month from
+// the 31st" stays on the 31st (or the month's last day) and never drifts.
+function nextOnSchedule(start, every, unit, after, onOrAfter) {
+  if (!isDate(start) || !isDate(after)) throw new Error("Not a date");
+  const n = Number(every);
+  if (!Number.isInteger(n) || n < 1) throw new Error("Every has to be a whole number, 1 or more");
+  const beats = (day) => (onOrAfter ? day >= after : day > after);
+  if (beats(start)) return start;
+  // Jump close first, then step: steps of about this many days.
+  const approx = { day: 1, week: 7, month: 28, year: 365 }[unit] * n;
+  const a = parts(start);
+  const b = parts(after);
+  const gap = (Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000;
+  let k = Math.max(1, Math.floor(gap / approx) - 2);
+  // Months are up to 31 days, so a jump of gap/28 can overshoot: back off.
+  while (k > 1 && beats(addInterval(start, (k - 1) * n, unit))) k--;
+  for (;;) {
+    const day = addInterval(start, k * n, unit);
+    if (beats(day)) return day;
+    k++;
+  }
+}
+
 // "every 12 months", "every week"
 function describeInterval(every, unit) {
   return Number(every) === 1 ? "every " + unit : "every " + every + " " + unit + "s";
 }
 
-module.exports = { UNITS, isDate, addInterval, describeInterval };
+module.exports = { UNITS, isDate, addInterval, nextOnSchedule, describeInterval };

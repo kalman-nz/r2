@@ -47,20 +47,16 @@ export default function AccountingSettings() {
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Accounting (Xero)</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Used for the invoice file on the Xero export page (Finance → Xero export). Find your account codes and tax rate names in Xero under Accounting →
-          Chart of accounts and Accounting → Advanced → Tax rates.
-        </p>
       </div>
       <div className="card p-4 flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-          <Field label="Sales account code" hint="Equipment hire income, e.g. 200 (Sales)">
+          <Field label="Sales account code">
             <input value={draft.xeroAccountCode} onChange={(e) => set("xeroAccountCode", e.target.value)} className="input py-2 font-mono" />
           </Field>
-          <Field label="Tax rate name" hint="Exactly as Xero names it">
+          <Field label="Tax rate name">
             <input value={draft.xeroTaxType} onChange={(e) => set("xeroTaxType", e.target.value)} className="input py-2" />
           </Field>
-          <Field label="Payment terms (days)" hint="Due date = invoice date + this">
+          <Field label="Payment terms (days)">
             <input value={draft.xeroDueDays} onChange={(e) => set("xeroDueDays", e.target.value)} inputMode="numeric" className="input py-2" />
           </Field>
           <Field label="Invoice number prefix" hint={`Project #1001 becomes ${draft.invoicePrefix || ""}1001. Use one Xero isn't already using.`}>

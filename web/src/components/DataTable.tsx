@@ -73,7 +73,7 @@ export default function DataTable<R>({
   onWidthsChange,
   selected,
   onSelectedChange,
-  before,
+  body,
   empty,
 }: {
   // The columns showing, in order.
@@ -92,8 +92,10 @@ export default function DataTable<R>({
   // With these, rows get tick boxes.
   selected?: Set<string>;
   onSelectedChange?: (selected: Set<string>) => void;
-  // Rows above the others (Inventory's folders), given the full column span.
-  before?: (span: number) => ReactNode;
+  // Lays the rows out itself (Inventory's folder tree), with the usual row
+  // (its first cell's left padding in px, for indenting) and the full
+  // column span. Groups don't apply then.
+  body?: (renderRow: (row: R, indent?: number) => ReactNode, span: number) => ReactNode;
   // Shown under the header when there are no rows.
   empty?: ReactNode;
 }) {
@@ -179,9 +181,14 @@ export default function DataTable<R>({
 
   const span = columns.length + (selectable ? 1 : 0);
 
-  function renderRow(row: R) {
+  function renderRow(row: R, indent?: number) {
     const id = rowKey(row);
     const isTicked = selectable && selected!.has(id);
+    // An indented row carries its tick box in with it, beside the first cell.
+    const inset = selectable && indent !== undefined;
+    const tickBox = (
+      <input type="checkbox" aria-label="Select" checked={isTicked} onChange={() => toggle(id)} onClick={(e) => e.stopPropagation()} />
+    );
     return (
       <tr
         key={id}
@@ -190,16 +197,24 @@ export default function DataTable<R>({
       >
         {selectable && (
           <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
-            <input type="checkbox" aria-label="Select" checked={isTicked} onChange={() => toggle(id)} />
+            {!inset && tickBox}
           </td>
         )}
-        {columns.map((c) => (
+        {columns.map((c, i) => (
           <td
             key={c.key}
             title={c.title?.(row)}
+            style={i === 0 && indent !== undefined ? { paddingLeft: indent } : undefined}
             className={`px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis border-r border-gray-100 last:border-r-0 ${c.align === "right" ? "text-right" : ""}`}
           >
-            {c.render(row)}
+            {i === 0 && inset ? (
+              <span className="flex items-center gap-2 min-w-0">
+                {tickBox}
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">{c.render(row)}</span>
+              </span>
+            ) : (
+              c.render(row)
+            )}
           </td>
         ))}
       </tr>
@@ -208,7 +223,7 @@ export default function DataTable<R>({
 
   // Rows grouped by groups[level] and below, each group with a heading row.
   function renderGroups(list: R[], level: number, parent: string): ReactNode {
-    if (level >= groups.length) return list.map(renderRow);
+    if (level >= groups.length) return list.map((r) => renderRow(r));
     const option = groups[level];
     const byId = new Map<string, { label: string; order: string | number; rows: R[] }>();
     for (const row of list) {
@@ -315,8 +330,7 @@ export default function DataTable<R>({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {before?.(span)}
-            {renderGroups(rows, 0, "")}
+            {body ? body(renderRow, span) : renderGroups(rows, 0, "")}
           </tbody>
         </table>
         {empty}

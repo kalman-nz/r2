@@ -43,8 +43,8 @@ onRecordUpdate((e) => {
 }, "items");
 
 // Every organisation starts with the default project and repair statuses,
-// crew roles, dashboards and project documents, however it's made (first-run setup,
-// the admin panel, a script).
+// crew roles, dashboards, project documents and a Default storage location,
+// however it's made (first-run setup, the admin panel, a script).
 onRecordAfterCreateSuccess((e) => {
   const { createDefaultStatuses } = require(`${__hooks}/lib/repairs.js`);
   const { createDefaultJobStatuses } = require(`${__hooks}/lib/jobStatuses.js`);
@@ -59,5 +59,10 @@ onRecordAfterCreateSuccess((e) => {
   createDefaultStatuses(e.app, e.record.id);
   createDefaultDashboards(e.app, e.record.id);
   createDefaultDocuments(e.app, e.record.id);
+  // Somewhere for units to be, to start with.
+  const locations = e.app.findCollectionByNameOrId("locations");
+  if (e.app.findRecordsByFilter("locations", "org = {:org}", "", 1, 0, { org: e.record.id }).length === 0) {
+    e.app.save(new Record(locations, { org: e.record.id, name: "Default" }));
+  }
   e.next();
 }, "organisations");

@@ -1,13 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
-import { api, type Item, type MaintenanceJob, type MaintenanceKind, type Serial } from "../../lib/api";
+import { api, type Item, type MaintenanceJob, type Serial } from "../../lib/api";
 import { orgFilter } from "../../lib/currentOrg";
 import { errorText } from "../../lib/errors";
 import { today } from "../../lib/maintenance";
-import { MAINTENANCE_KINDS } from "../../lib/statuses";
 import Modal from "../Modal";
-import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
 
 const SHOWN = 8;
@@ -28,7 +26,6 @@ export default function NewJobModal({
 }) {
   const { showToast } = useToast();
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<MaintenanceKind>("service");
   const [dueOn, setDueOn] = useState(today());
   const [notes, setNotes] = useState("");
   const [item, setItem] = useState<Item | null>(givenItem ?? null);
@@ -59,7 +56,6 @@ export default function NewJobModal({
     try {
       const jobs = await api.scheduleJobs({
         name: name.trim(),
-        kind,
         dueOn,
         notes: notes.trim(),
         ...(item ? { item: item.id, serials: serialised ? [...picked] : [] } : {}),
@@ -78,10 +74,6 @@ export default function NewJobModal({
         <span className="text-gray-500">What needs doing</span>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} className="input py-1.5" placeholder="e.g. Replace the fan, update firmware" />
       </label>
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="text-gray-500">Kind of work</span>
-        <Segmented label="Kind of work" value={kind} onChange={setKind} options={MAINTENANCE_KINDS.map((x) => ({ value: x.value, label: x.label }))} />
-      </div>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-gray-500">Due</span>
         <input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} className="input py-1.5 w-44" />

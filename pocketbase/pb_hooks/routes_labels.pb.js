@@ -73,6 +73,7 @@ routerAdd(
     record.set("name", data.name);
     record.set("widthMm", data.widthMm);
     record.set("heightMm", data.heightMm);
+    record.set("sizeId", data.sizeId);
     record.set("elements", data.elements);
     $app.save(record);
     logEvent(ctx.orgId, "label_updated", e.auth.get("name") || e.auth.get("email"), { id: record.id, name: record.get("name") });

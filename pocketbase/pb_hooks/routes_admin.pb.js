@@ -151,6 +151,7 @@ routerAdd(
         "job_statuses",
         "repair_statuses",
         "serials",
+        "item_stock",
         "item_components",
         "custom_fields",
         "import_runs",

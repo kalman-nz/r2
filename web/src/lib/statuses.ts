@@ -12,10 +12,18 @@ export const JOB_STATUSES: { value: JobStatus; label: string; hint: string }[] =
 // What each organisation's own repair statuses can do to the kit
 // (Settings → Repair statuses names them; pb_hooks/lib/repairs.js).
 export const REPAIR_STAGES: { value: RepairStage; label: string; hint: string }[] = [
-  { value: "open", label: "Out of service", hint: "The kit's held out of service while the repair's in this status" },
-  { value: "repaired", label: "Repaired", hint: "Ends the repair: the kit goes back in service" },
-  { value: "unrepairable", label: "Unrepairable", hint: "Ends the repair: units are retired, bulk stock goes down" },
+  { value: "open", label: "Out of service", hint: "Takes the kit out of stock, so it can't be booked on projects or tracked out until the repair's finished" },
+  { value: "repaired", label: "Repaired", hint: "Finishes the repair and puts the kit back in stock, ready to book again" },
+  { value: "unrepairable", label: "Unrepairable", hint: "Finishes the repair and writes the kit off: units are retired, and bulk stock goes down by however many were being repaired" },
 ];
+
+// What a stage does, for an organisation without projects (nothing's booked).
+export function repairStageHint(stage: RepairStage, projectsOn: boolean): string {
+  if (projectsOn) return REPAIR_STAGES.find((s) => s.value === stage)?.hint ?? "";
+  if (stage === "open") return "Takes the kit out of stock, so it doesn't count as available until the repair's finished";
+  if (stage === "repaired") return "Finishes the repair and puts the kit back in stock";
+  return REPAIR_STAGES.find((s) => s.value === stage)?.hint ?? "";
+}
 
 // Badge colours a status can have.
 export const STATUS_COLOURS: Record<StatusColour, { label: string; badge: string; dot: string }> = {

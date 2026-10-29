@@ -9,7 +9,6 @@ import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 import Field from "./Field";
 import Modal from "./Modal";
-import RoleBadge from "./RoleBadge";
 
 // Settings → Roles: this organisation's own roles, each a set of
 // permissions (pocketbase/pb_hooks/lib/permissions.js). Admin is fixed and
@@ -28,13 +27,7 @@ export default function RolesSettings() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900">Roles</h2>
-          <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
-            What each role can do in {org?.name}. Everyone can look up inventory, projects, contacts and locations; everything else depends on
-            their role. Give people roles under Team.
-          </p>
-        </div>
+        <span />
         {manage && (
           <button
             onClick={() => {
@@ -59,9 +52,7 @@ export default function RolesSettings() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-gray-900">{role.name}</span>
-                {role.locked && <RoleBadge name="Always everything" locked />}
               </div>
-              {role.description && <div className="text-xs text-gray-500 mt-0.5">{role.description}</div>}
             </div>
             <div className="text-xs text-gray-500 shrink-0 text-right">
               <div>
@@ -115,7 +106,6 @@ function RoleEditor({
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [name, setName] = useState(role?.name ?? (copyFrom ? `${copyFrom.name} (copy)` : ""));
-  const [description, setDescription] = useState(role?.description ?? copyFrom?.description ?? "");
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(role?.permissions ?? copyFrom?.permissions ?? []));
   const [saving, setSaving] = useState(false);
 
@@ -164,7 +154,7 @@ function RoleEditor({
     e.preventDefault();
     setSaving(true);
     try {
-      const data = { name: name.trim(), description: description.trim(), permissions: [...chosen] };
+      const data = { name: name.trim(), permissions: [...chosen] };
       if (role) await api.updateRole(org!.id, role.id, data);
       else await api.createRole(org!.id, data);
       await Promise.all([queryClient.invalidateQueries({ queryKey: ["roles"] }), queryClient.invalidateQueries({ queryKey: ["me"] })]);
@@ -198,10 +188,7 @@ function RoleEditor({
     <Modal title={title} onClose={onClose} wide>
       <form onSubmit={save} className="flex flex-col gap-4">
         {role?.locked && (
-          <p className="rounded-md border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-gray-900">
-            Admin always has every permission, including ones added to R2 later, and can't be changed. Every organisation keeps at least
-            one admin.
-          </p>
+          <p className="text-sm text-gray-500">The Admin role can&apos;t be edited.</p>
         )}
         {!role?.locked && beyondMe.length > 0 && manage && (
           <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -213,9 +200,6 @@ function RoleEditor({
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="Name">
               <input required autoFocus={!role} disabled={readOnly} value={name} onChange={(e) => setName(e.target.value)} className="input py-2" placeholder="e.g. Warehouse lead" />
-            </Field>
-            <Field label="Description">
-              <input disabled={readOnly} value={description} onChange={(e) => setDescription(e.target.value)} className="input py-2" placeholder="What it's for" />
             </Field>
           </div>
         )}
@@ -268,15 +252,17 @@ function RoleEditor({
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
           <div className="flex items-center gap-3">
             {role && manage && !role.locked && !readOnly && (
-              <button
-                type="button"
-                onClick={remove}
-                disabled={inUse}
-                title={inUse ? "Give its people (and invitations) another role first" : undefined}
-                className="text-sm text-red-600 hover:text-red-700 disabled:text-gray-400 disabled:cursor-not-allowed"
-              >
-                Delete role
-              </button>
+              <span className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={remove}
+                  disabled={inUse}
+                  className="text-sm text-red-600 hover:text-red-700 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                  Delete role
+                </button>
+                {inUse && <span className="text-xs text-amber-700">{inUseText(role.members ?? 0, role.invitations ?? 0)}</span>}
+              </span>
             )}
             {role && manage && (
               <button type="button" onClick={() => onDuplicate(role)} className="text-sm text-gray-600 hover:text-gray-900">
@@ -298,4 +284,13 @@ function RoleEditor({
       </form>
     </Modal>
   );
+}
+
+// Why a role can't be deleted yet, said where the button is.
+function inUseText(members: number, invitations: number): string {
+  const who = [
+    members > 0 && `${members} ${members === 1 ? "person has" : "people have"} this role`,
+    invitations > 0 && `${invitations} ${invitations === 1 ? "invitation is" : "invitations are"} waiting with it`,
+  ].filter(Boolean);
+  return `Can't delete yet: ${who.join(" and ")}. Give ${members + invitations === 1 ? "them" : "each"} another role on the Members tab first.`;
 }

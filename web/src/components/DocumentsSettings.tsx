@@ -147,7 +147,7 @@ export default function DocumentsSettings() {
               <Field label="Name">
                 <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="input py-2" placeholder="Technical handover" />
               </Field>
-              <Field label="Description" hint="Shown in the Documents menu">
+              <Field label="Description">
                 <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="input py-2" />
               </Field>
               <Field label="Equipment" hint={EQUIPMENT_MODES.find((m) => m.value === draft.equipment)?.hint}>

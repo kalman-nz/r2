@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import { api, type Item, type Repair, type Serial } from "../../lib/api";
 import { orgFilter } from "../../lib/currentOrg";
 import { errorText } from "../../lib/errors";
 import { fromDateInput } from "../../lib/format";
-import { useRepairStatuses } from "../../lib/maintenance";
+import { today, useRepairStatuses } from "../../lib/maintenance";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
 import ProjectPicker, { type ProjectRef } from "../ProjectPicker";
 import { useFeature } from "../../lib/roles";
 import { useToast } from "../ToastProvider";
+import AssigneeInput from "./AssigneeInput";
+import { useLocations } from "../../lib/catalog";
 
 const SHOWN = 8;
 
@@ -18,6 +20,9 @@ const SHOWN = 8;
 // the units tab or a scan), then which units or how many, and what's
 // wrong. Saving takes them out of service straight away. The project it
 // came back damaged from, and photos of the damage, can go on it now too.
+// With a start date in the future (and maintenance on), it's booked in as
+// a one-off maintenance job for that day instead, and the kit stays in
+// service until then.
 export default function NewRepairModal({
   item: givenItem,
   itemId,
@@ -49,7 +54,10 @@ export default function NewRepairModal({
   const fixedItem = !!givenItem || !!itemId;
   const [job, setJob] = useState<ProjectRef | null>(givenJob);
   // The project it was damaged on, while the organisation uses projects.
-  const projectsOn = useFeature()("projects");
+  const feature = useFeature();
+  const projectsOn = feature("projects");
+  const [startOn, setStartOn] = useState("");
+  const later = feature("maintenance") && startOn > today();
   const [files, setFiles] = useState<File[]>([]);
   const filesInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
@@ -85,14 +93,18 @@ export default function NewRepairModal({
     queryFn: () => pb.collection("serials").getFullList<Serial>({ filter: pb.filter("item = {:item}", { item: item!.id }), sort: "barcode" }),
     enabled: !!item && serialised,
   });
+  const { data: locations = [] } = useLocations();
+  const locationName = useCallback((id: string) => locations.find((l) => l.id === id)?.name ?? "", [locations]);
   // Lost and retired units aren't in service to begin with.
   const repairable = units.filter((u) => u.status === "active" || picked.has(u.id));
   // Barcode, name or serial number; ticked ones stay at the top.
   const shownUnits = useMemo(() => {
     const term = unitSearch.trim().toLowerCase();
-    const matches = term ? repairable.filter((u) => [u.barcode, u.label, u.serialNumber].some((v) => v.toLowerCase().includes(term))) : repairable;
+    const matches = term
+      ? repairable.filter((u) => [u.barcode, u.label, u.serialNumber, locationName(u.location)].some((v) => v.toLowerCase().includes(term)))
+      : repairable;
     return [...matches].sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)));
-  }, [repairable, unitSearch, picked]);
+  }, [repairable, unitSearch, picked, locationName]);
   const toggle = (id: string, on?: boolean) =>
     setPicked((prev) => {
       const next = new Set(prev);
@@ -119,6 +131,25 @@ export default function NewRepairModal({
   async function save() {
     if (!item) return;
     setSaving(true);
+    if (later) {
+      try {
+        const jobs = await api.scheduleJobs({
+          name: fault.trim().split("\n")[0].slice(0, 120),
+          kind: "service",
+          dueOn: startOn,
+          notes: [fault.trim(), repairer.trim() && `Assigned to ${repairer.trim()}`].filter(Boolean).join("\n\n"),
+          item: item.id,
+          serials: serialised ? [...picked] : [],
+        });
+        showToast("success", `Repair booked in for ${startOn.split("-").reverse().join("/")}${jobs.length > 1 ? ` (${jobs.length} jobs)` : ""}`);
+        onClose();
+      } catch (err) {
+        showToast("error", `Couldn't schedule the repair: ${errorText(err)}`);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     try {
       let repair = await api.openRepair({
         item: item.id,
@@ -146,7 +177,7 @@ export default function NewRepairModal({
   }
 
   return (
-    <Modal title="New repair" onClose={saving ? () => {} : onClose}>
+    <Modal title="Create repair" onClose={saving ? () => {} : onClose}>
       <div className="flex flex-col gap-1 text-sm">
         <span className="text-gray-500">Item</span>
         {item ? (
@@ -208,7 +239,7 @@ export default function NewRepairModal({
             <p className="text-gray-500">No units in service.</p>
           ) : (
             <>
-              {repairable.length > 5 && (
+              {repairable.length > 1 && (
                 <input
                   value={unitSearch}
                   onChange={(e) => setUnitSearch(e.target.value)}
@@ -227,15 +258,22 @@ export default function NewRepairModal({
             <div className="flex flex-col max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
               {shownUnits.length === 0 && <p className="px-3 py-2 text-gray-500">No units match.</p>}
               {shownUnits.map((u) => (
-                <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50">
+                <label key={u.id} className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
                   <input type="checkbox" checked={picked.has(u.id)} onChange={() => toggle(u.id)} />
-                  <span className="font-mono">{u.barcode || "(no barcode)"}</span>
-                  {(u.label || u.serialNumber) && (
-                    <span className="text-xs text-gray-400">{[u.label, u.serialNumber].filter(Boolean).join(" · ")}</span>
-                  )}
+                  <span className="flex flex-col min-w-0">
+                    <span className="text-gray-900 truncate">{u.label || u.barcode || "(no barcode)"}</span>
+                    <span className="text-xs text-gray-500 truncate">
+                      {[u.label && u.barcode, u.serialNumber && `S/N ${u.serialNumber}`, locationName(u.location)].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
                 </label>
               ))}
             </div>
+            {unitSearch.trim() && shownUnits.some((u) => !picked.has(u.id)) && (
+              <button type="button" onClick={() => shownUnits.forEach((u) => toggle(u.id, true))} className="self-start text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
+                Pick all {shownUnits.length} shown
+              </button>
+            )}
             </>
           )}
         </div>
@@ -258,7 +296,7 @@ export default function NewRepairModal({
           placeholder="e.g. Crackles when the cable moves"
         />
       </label>
-      {startable.length > 1 && (
+      {!later && startable.length > 1 && (
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-gray-500">Status</span>
           <select value={startIn} onChange={(e) => setStatus(e.target.value)} className="input py-1.5 w-auto">
@@ -270,23 +308,32 @@ export default function NewRepairModal({
           </select>
         </label>
       )}
-      {projectsOn && (
+      {!later && projectsOn && (
         <div className="flex flex-col gap-1 text-sm">
           <span className="text-gray-500">Came back damaged from (optional)</span>
           <ProjectPicker value={job} onChange={setJob} />
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {feature("maintenance") && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-gray-500">Start on (optional)</span>
+            <input type="date" value={startOn} min={today()} onChange={(e) => setStartOn(e.target.value)} className="input py-1.5" />
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-gray-500">Repaired by (optional)</span>
-          <input value={repairer} onChange={(e) => setRepairer(e.target.value)} className="input py-1.5" placeholder="In house, or a supplier" />
+          <span className="text-gray-500">Assigned to (optional)</span>
+          <AssigneeInput value={repairer} onChange={setRepairer} />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-gray-500">Expected back (optional)</span>
-          <input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="input py-1.5" />
-        </label>
+        {!later && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-gray-500">Expected back (optional)</span>
+            <input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="input py-1.5" />
+          </label>
+        )}
       </div>
 
+      {!later && (
       <div className="flex flex-col gap-1 text-sm">
         <span className="text-gray-500">Files (optional)</span>
         <div className="flex items-center gap-2 flex-wrap">
@@ -314,15 +361,15 @@ export default function NewRepairModal({
           }}
         />
       </div>
+      )}
 
       <div className="flex items-center gap-2">
         <button onClick={save} disabled={!ready || saving} className="btn-primary">
-          {saving ? "Opening…" : "Open repair"}
+          {saving ? (later ? "Scheduling…" : "Creating…") : later ? "Schedule repair" : "Create repair"}
         </button>
         <button onClick={onClose} disabled={saving} className="btn-secondary">
           Cancel
         </button>
-        <span className="text-xs text-gray-500 ml-auto">Takes it out of service until it's repaired.</span>
       </div>
     </Modal>
   );

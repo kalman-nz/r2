@@ -48,10 +48,6 @@ export default function IntegrationsSettings() {
     <div className="flex flex-col gap-8">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Integrations</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Keep R2 in step with the other systems you use. R2 checks for changes every minute in the background, so you can keep working in either one.
-          Nothing is ever deleted across systems: something removed on one side is archived on the other.
-        </p>
       </div>
       <RentmanCard summary={data.rentman} />
       <MomentusCard summary={data.momentus} />
@@ -82,13 +78,12 @@ function useSave(provider: IntegrationProvider) {
   return { save, saving };
 }
 
-function Card({ title, subtitle, status, children }: { title: string; subtitle: string; status: ReactNode; children: ReactNode }) {
+function Card({ title, status, children }: { title: string; status: ReactNode; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
         </div>
         {status}
       </div>
@@ -126,7 +121,7 @@ function StatusPill<C extends { enabled: boolean; paused: boolean }>({ summary }
   return <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${tone}`}>{label}</span>;
 }
 
-function SecretInput({ label, isSet, hint, onSave, saving }: { label: string; isSet: boolean; hint: string; onSave: (value: string) => void; saving: boolean }) {
+function SecretInput({ label, isSet, hint, onSave, saving }: { label: string; isSet: boolean; hint?: string; onSave: (value: string) => void; saving: boolean }) {
   const [value, setValue] = useState("");
   return (
     <div className="flex flex-col gap-1">
@@ -444,7 +439,6 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
   return (
     <Card
       title="Rentman"
-      subtitle="Two-way sync with your Rentman account, for running both side by side or switching over gradually."
       status={<StatusPill summary={summary} />}
     >
       <Controls provider="rentman" summary={summary} canStart={summary.secretSet} onEnable={turnOn} />
@@ -457,7 +451,6 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
           isSet={summary.secretSet}
           saving={saving}
           onSave={(secret) => save({ secret }, "Token saved")}
-          hint="Create one in Rentman under Configuration → Integrations → API. The same token as Settings → Import. Stored on the server, never shown again."
         />
         {summary.webhookUrl && (
           <CopyField
@@ -474,7 +467,7 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
         )}
       </Section>
 
-      <Section title="What syncs both ways" hint="Edits on either side go to the other. Everything else Rentman has (stock counts, serial numbers, addresses) comes into R2 only.">
+      <Section title="What syncs both ways">
         <div className="flex flex-col gap-3">
           {twoWay.map((t) => (
             <div key={t.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
@@ -507,7 +500,6 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
 
       <Section
         title="Projects"
-        hint="Rentman doesn't let other apps change its projects, so projects and their equipment come into R2 only. Edits made to them in R2 stay in R2 until that same detail changes in Rentman."
       >
         <Switch checked={draft.projects} onChange={(v) => set("projects", v)} label="Bring in projects and their equipment" />
         <Switch checked={draft.projectRequests} onChange={(v) => set("projectRequests", v)} label="Let people send R2 projects to Rentman as project requests" />
@@ -520,7 +512,7 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
 
       <Section title="When both sides change the same thing">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-          <Field label="Conflicts" hint="Every conflict is listed in the sync history">
+          <Field label="Conflicts">
             <select value={draft.conflictRule} onChange={(e) => set("conflictRule", e.target.value as RentmanSyncConfig["conflictRule"])} className="input py-2">
               {CONFLICT_OPTIONS("Rentman").map((o) => (
                 <option key={o.value} value={o.value}>
@@ -529,16 +521,16 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
               ))}
             </select>
           </Field>
-          <Field label="First sync of records imported before" hint="Where R2 and Rentman already differ">
+          <Field label="First sync of records imported before">
             <select value={draft.firstSync} onChange={(e) => set("firstSync", e.target.value as RentmanSyncConfig["firstSync"])} className="input py-2">
               <option value="remote">Rentman's version wins</option>
               <option value="local">R2's version wins</option>
             </select>
           </Field>
-          <Field label="Catch up every (minutes)" hint="In case a webhook was missed">
+          <Field label="Catch up every (minutes)">
             <input type="number" min={1} value={draft.pollMinutes} onChange={(e) => set("pollMinutes", Number(e.target.value))} className="input py-2" />
           </Field>
-          <Field label="Re-read all project equipment every (hours)" hint="The longest list; webhooks keep it current in between">
+          <Field label="Re-read all project equipment every (hours)">
             <input type="number" min={1} value={draft.linesPollHours} onChange={(e) => set("linesPollHours", Number(e.target.value))} className="input py-2" />
           </Field>
         </div>
@@ -629,7 +621,6 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
   return (
     <Card
       title="Momentus"
-      subtitle="For venues that take bookings in Momentus Enterprise: events come in as projects, AV is quoted in R2 and goes back as an order on the event."
       status={<StatusPill summary={summary} />}
     >
       <Controls provider="momentus" summary={summary} canStart={connected} />
@@ -638,13 +629,12 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
 
       <Section
         title="Connection"
-        hint="Needs the Momentus API module on your licence and an API user (in Momentus: API User screen). Sending orders and resources needs the API's add/edit licence too."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-          <Field label="Momentus address" hint="The https:// address you open Momentus at" className="sm:col-span-2">
+          <Field label="Momentus address" className="sm:col-span-2">
             <input value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://" className="input py-2 font-mono" />
           </Field>
-          <Field label="Organisation code" hint="Your Momentus org code, e.g. 10">
+          <Field label="Organisation code">
             <input value={draft.orgCode} onChange={(e) => set("orgCode", e.target.value)} className="input py-2 font-mono" />
           </Field>
           <Field label="API user ID">
@@ -656,11 +646,10 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
           isSet={summary.secretSet}
           saving={saving}
           onSave={(secret) => save({ secret }, "Secret saved")}
-          hint="Stored on the server, never shown again."
         />
       </Section>
 
-      <Section title="Events → projects" hint="Each event becomes a project, with its account as the client and its first room as the location.">
+      <Section title="Events → projects">
         <Switch checked={draft.pullEvents} onChange={(v) => set("pullEvents", v)} label="Bring in events" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
           <Field label="Days back">
@@ -669,10 +658,10 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
           <Field label="Months ahead">
             <input type="number" min={1} value={draft.windowMonths} onChange={(e) => set("windowMonths", Number(e.target.value))} className="input py-2" />
           </Field>
-          <Field label="Prep (hours before)" hint="Kit goes out">
+          <Field label="Prep (hours before)">
             <input type="number" min={0} value={draft.prepHours} onChange={(e) => set("prepHours", Number(e.target.value))} className="input py-2" />
           </Field>
-          <Field label="Return (hours after)" hint="Kit comes back">
+          <Field label="Return (hours after)">
             <input type="number" min={0} value={draft.returnHours} onChange={(e) => set("returnHours", Number(e.target.value))} className="input py-2" />
           </Field>
         </div>
@@ -725,14 +714,14 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
         </div>
       </Section>
 
-      <Section title="Orders → project equipment" hint="Items ordered for your department in Momentus become lines on the project, matched to R2 items by resource code.">
+      <Section title="Orders → project equipment">
         <Switch checked={draft.pullOrders} onChange={(v) => set("pullOrders", v)} label="Bring in orders" />
-        <Field label="Your department codes" hint="Separate with commas. Empty brings in every department's orders.">
+        <Field label="Your department codes">
           <input value={departments} onChange={(e) => setDepartments(e.target.value)} placeholder="AV" className="input py-2 font-mono" />
         </Field>
       </Section>
 
-      <Section title="Quotes → orders" hint="When you issue a quote on a project from Momentus, it goes to the event as an order (the same order each time you re-quote), priced to match the quote's total.">
+      <Section title="Quotes → orders">
         <Switch checked={draft.pushQuotes} onChange={(v) => set("pushQuotes", v)} label="Send issued quotes to Momentus" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
           <Field label="Order department">
@@ -741,15 +730,15 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
           <Field label="Order type">
             <input value={draft.orderType} onChange={(e) => set("orderType", e.target.value)} className="input py-2 font-mono" />
           </Field>
-          <Field label="Resource for other lines" hint="Labour, custom lines, items not in Momentus">
+          <Field label="Resource for other lines">
             <input value={draft.miscResource} onChange={(e) => set("miscResource", e.target.value)} className="input py-2 font-mono" />
           </Field>
         </div>
       </Section>
 
-      <Section title="Inventory → resources" hint="Your R2 items appear in Momentus as resources, by item code, so sales staff can sell them. Changes to items follow automatically.">
+      <Section title="Inventory → resources">
         <Switch checked={draft.pushInventory} onChange={(v) => set("pushInventory", v)} label="Send inventory to Momentus" />
-        <Field label="Only these categories" hint="None ticked sends every active item">
+        <Field label="Only these categories">
           <div className="flex flex-wrap gap-x-4 gap-y-1 max-h-32 overflow-y-auto">
             {[...categoryPaths.entries()]
               .sort((a, b) => a[1].localeCompare(b[1]))
@@ -783,7 +772,6 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
 
       <Section
         title="Advanced: API paths"
-        hint="R2's Momentus connection was built from Momentus's published API layout. If your instance's API Help page (/api/help) shows different paths, enter them here, e.g. { &quot;events&quot;: &quot;/api/v1/Events/{org}&quot; }."
       >
         <textarea value={endpoints} onChange={(e) => setEndpoints(e.target.value)} rows={3} spellCheck={false} className="input py-2 font-mono text-xs" />
         {endpointsValue === null && <p className="text-xs text-red-600">Not valid JSON yet.</p>}

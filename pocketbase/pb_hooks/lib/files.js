@@ -1,9 +1,9 @@
-// Files on repairs and maintenance jobs: a protected "files" field (only the
+// Files on repairs, maintenance jobs and units: a protected "files" field (only the
 // organisation's members can open them, through a file token) and
 // "fileInfo", { storedName: { name, size, by, at } } — PocketBase renames
 // what it stores ("PO 4471.pdf" → "po_4471_x8k2m4n6p1.pdf"), so this keeps
 // the name it was uploaded with, its size, and who added it when.
-// pb_migrations/0032 and 0033 have the fields; both limits must match them.
+// pb_migrations/0032, 0033 and 0046 have the fields; both limits must match them.
 
 const FILE_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 99;

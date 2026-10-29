@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type JobLineView } from "../lib/api";
-import { formatDateTime, formatPeriod } from "../lib/format";
+import { formatDateTime, formatPeriod, oneLineAddress } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { useToast } from "../components/ToastProvider";
 import { JobStatusBadge } from "../components/StatusBadge";
 import { linesByHeading } from "../lib/documents";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // What the warehouse packs for a job, laid out to print on A4 and tick off
 // by hand. Custom lines (delivery, labour) aren't packed, so they're left
@@ -40,9 +41,7 @@ export default function PackingList() {
   return (
     <div className="min-h-screen bg-paper print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3">
-        <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900">
-          ← Project #{job.number}
-        </Link>
+        <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: `#${job.number} ${job.name}`, to: `/projects/${job.id}` }, { label: "Packing list" }]} />
         <div className="flex items-center gap-1.5">
           <button onClick={() => window.print()} className="btn-secondary">
             Print
@@ -63,7 +62,7 @@ export default function PackingList() {
               #{job.number} {job.name}
             </h1>
             <p>{[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ")}</p>
-            {job.venueInfo?.address && <p className="text-gray-600">{job.venueInfo.address}</p>}
+            {oneLineAddress(job.venueInfo?.address) && <p className="text-gray-600">{oneLineAddress(job.venueInfo?.address)}</p>}
           </div>
           <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
             <JobStatusBadge status={job.status} jobStatus={job.jobStatus} />
@@ -174,7 +173,7 @@ function PackingGroup({
                 <span className="block text-[11px] text-gray-500">Out: {p.serialsOut.map((s) => s.label || s.barcode).join(", ")}</span>
               )}
             </td>
-            <td className="py-1.5 text-gray-600">{line.item?.locationInWarehouse}</td>
+            <td className="py-1.5 text-gray-600">{line.item?.where}</td>
             <td className="py-1.5 text-right tabular-nums text-gray-600">{p && !isKit ? `${p.scannedOut}/${p.needed}` : ""}</td>
           </tr>
         );

@@ -322,11 +322,11 @@ function PersonModal({ person, canEdit, onClose }: { person: CrewPerson | null; 
         <Field label="Phone">
           <input value={draft.phone} onChange={(e) => set("phone", e.target.value)} disabled={!canEdit} maxLength={40} className="input py-2" />
         </Field>
-        <Field label="Email" hint={member ? "Their account's, in Settings → Team" : undefined}>
+        <Field label="Email" hint={member ? "Their account's, in Settings → Users & access" : undefined}>
           <input type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} disabled={!canEdit || member} className="input py-2" />
         </Field>
       </div>
-      <Field label="Skills" hint="The crew roles they do: rostering suggests them for these first">
+      <Field label="Skills">
         {roles.length === 0 ? (
           <p className="text-xs text-gray-500">No crew roles yet (Settings → Crew roles).</p>
         ) : (

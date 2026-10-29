@@ -26,8 +26,6 @@ interface Draft {
   price: number;
   priceUnit: PriceUnit;
   replacementValue: number;
-  stockQty: number;
-  locationInWarehouse: string;
   bufferHours: number;
   weightKg: number;
   powerW: number;
@@ -39,7 +37,7 @@ interface Draft {
 const FIELDS: Record<Section, (keyof Draft)[]> = {
   identification: ["name", "barcode", "category", "kind", "tracking"],
   pricing: ["price", "priceUnit", "replacementValue"],
-  warehouse: ["stockQty", "locationInWarehouse", "bufferHours", "weightKg", "powerW"],
+  warehouse: ["bufferHours", "weightKg", "powerW"],
   notes: ["notes"],
   custom: ["custom"],
 };
@@ -72,8 +70,6 @@ function draftOf(item: Item): Draft {
     price: item.price,
     priceUnit: item.priceUnit || "day",
     replacementValue: item.replacementValue,
-    stockQty: item.stockQty,
-    locationInWarehouse: item.locationInWarehouse,
     bufferHours: item.bufferHours,
     weightKg: item.weightKg,
     powerW: item.powerW,
@@ -164,8 +160,7 @@ export default function ItemDetails({
   const { data: customFields = [] } = useItemCustomFields();
   const [editing, setEditing] = useState<Section | null>(null);
   const [draft, setDraft] = useState<Draft>(() => draftOf(item));
-  // Hire prices only while the organisation uses prices and quotes; what
-  // it's worth is still worth keeping.
+  // Prices (hire and replacement) only while the organisation uses prices and quotes.
   const pricing = useFeature()("pricing");
   // Turnaround between bookings, with projects.
   const projectsOn = useFeature()("projects");
@@ -239,22 +234,20 @@ export default function ItemDetails({
           <Segmented label="What is it?" value={draft.kind} onChange={(v) => set("kind", v)} disabled={hasSerials} options={KIND_OPTIONS} />
         </Row>
         {!isKit && (
-          <Row label="Tracking" value={labelOf(TRACKING_OPTIONS, item.tracking === "serial" ? "serial" : "bulk")}>
-            <Segmented label="Tracking" value={draft.tracking} onChange={(v) => set("tracking", v)} disabled={hasSerials} options={TRACKING_OPTIONS} />
+          <Row label="Item type" value={labelOf(TRACKING_OPTIONS, item.tracking === "serial" ? "serial" : "bulk")}>
+            <Segmented label="Item type" value={draft.tracking} onChange={(v) => set("tracking", v)} disabled={hasSerials} options={TRACKING_OPTIONS} />
           </Row>
         )}
       </Card>
     ),
-    pricing: (
-      <Card title={pricing ? "Pricing" : "Value"} {...card("pricing")}>
-        {pricing && (
-          <Row label="Price" value={item.price > 0 ? `${priceLabel(item)} ex GST` : null} empty="No price set">
-            <div className="flex items-center gap-2 flex-wrap">
-              <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-24" />
-              <Segmented compact label="Price per" value={draft.priceUnit} onChange={(v) => set("priceUnit", v)} options={PER_OPTIONS} />
-            </div>
-          </Row>
-        )}
+    pricing: !pricing ? null : (
+      <Card title="Pricing" {...card("pricing")}>
+        <Row label="Price" value={item.price > 0 ? `${priceLabel(item)} ex GST` : null} empty="No price set">
+          <div className="flex items-center gap-2 flex-wrap">
+            <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-24" />
+            <Segmented compact label="Price per" value={draft.priceUnit} onChange={(v) => set("priceUnit", v)} options={PER_OPTIONS} />
+          </div>
+        </Row>
         <Row label="Replacement cost" value={item.replacementValue > 0 ? nzd(item.replacementValue) : null}>
           <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} className="input py-1.5 w-full" />
         </Row>
@@ -262,19 +255,6 @@ export default function ItemDetails({
     ),
     warehouse: item.kind === "kit" ? null : (
         <Card title="Warehouse" {...card("warehouse")}>
-          {item.tracking === "bulk" && (
-            <Row label="Quantity owned" value={item.stockQty.toLocaleString()}>
-              <NumberInput value={draft.stockQty} min={0} onChange={(n) => set("stockQty", Math.round(n))} className="input py-1.5 w-full" />
-            </Row>
-          )}
-          <Row label="Location" value={item.locationInWarehouse || null}>
-            <input
-              value={draft.locationInWarehouse}
-              onChange={(e) => set("locationInWarehouse", e.target.value)}
-              placeholder="e.g. Bay 3, top shelf"
-              className="input py-1.5 w-full"
-            />
-          </Row>
           {projectsOn && (
             <Row
               label="Extra turnaround (h)"

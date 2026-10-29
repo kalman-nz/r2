@@ -167,10 +167,15 @@ assert.deepEqual(me.memberships.map((m) => [m.org.id, m.role.name, m.role.locked
 assert.ok(me.memberships[0].permissions.length >= 40, "admins hold every permission");
 const admin = as(adminUser.token, orgA);
 
-// Every organisation starts with Admin, Planner and Tech.
+// Every organisation starts with Admin alone, and makes the roles it needs.
 const roleIds = async (who) => Object.fromEntries((await who.ok("GET", `/api/orgs/${who.org}/roles`)).map((r) => [r.name, r.id]));
+assert.deepEqual(Object.keys(await roleIds(admin)), ["Admin"]);
+const ADMIN_ONLY = ["settings.edit", "calendar.manage", "team.manage", "roles.manage", "logs.view", "import.rentman", "integrations.manage", "views.publish"];
+const everyPermission = (await admin.ok("GET", "/api/permissions")).groups.flatMap((g) => g.permissions.map((p) => p.key));
+await admin.ok("POST", `/api/orgs/${orgA}/roles`, { name: "Planner", permissions: everyPermission.filter((k) => !ADMIN_ONLY.includes(k) && !k.startsWith("templates.")) });
+await admin.ok("POST", `/api/orgs/${orgA}/roles`, { name: "Tech", permissions: ["units.flag", "scan.out", "scan.in", "labels.print"] });
 const rolesA = await roleIds(admin);
-assert.deepEqual(Object.keys(rolesA), ["Admin", "Planner", "Tech", "Crew"]);
+assert.deepEqual(Object.keys(rolesA), ["Admin", "Planner", "Tech"]);
 
 // The admin invites the rest of the team.
 const plannerUser = await signUp("planner");
@@ -315,15 +320,15 @@ log("catalogue: categories, bulk + serial items, a kit, an accessory, and the ru
 // --- automatic codes and barcodes ---
 assert.match(k12.code, /^\d{5}$/, "items get a 5-digit code");
 assert.equal(Number(stand.code), Number(k12.code) + 1, "codes count up");
-assert.match(stand.barcode, /^[1-9]\d{9}$/, "and a 10-digit barcode");
+assert.match(stand.barcode, /^[1-9]\d{6}$/, "and a 7-digit barcode");
 assert.equal(xlr.barcode, `XLR-${run}`, "a barcode you give is kept");
 await planner.fails("PATCH", `/api/collections/items/records/${stand.id}`, { code: k12.code }, 400, /already used/);
 const autoUnit = await planner.create("serials", { item: k12.id, status: "active" });
-assert.match(autoUnit.barcode, /^[1-9]\d{9}$/, "units get a 10-digit barcode too");
+assert.match(autoUnit.barcode, /^[1-9]\d{6}$/, "units get a 7-digit barcode too");
 const spaced = `${autoUnit.barcode.slice(0, 3)} ${autoUnit.barcode.slice(3, 6)}-${autoUnit.barcode.slice(6)}`;
 assert.equal((await tech.ok("GET", `/api/lookup?code=${encodeURIComponent(spaced)}`)).id, autoUnit.id, "typed with spaces and dashes still finds it");
 await planner.ok("DELETE", `/api/collections/serials/records/${autoUnit.id}`);
-log("items get the next 5-digit code and 10-digit barcodes are generated, kept unique and easy to type");
+log("items get the next 5-digit code and 7-digit barcodes are generated, kept unique and easy to type");
 
 const client = await planner.create("contacts", { name: `Client ${run}`, email: `client-${run}@example.com` });
 const venue = await planner.create("venues", { name: `Venue ${run}` });
@@ -707,6 +712,23 @@ assert.deepEqual(lessFiles.files, [photoFile]);
 assert.equal(lessFiles.fileInfo[poFile], undefined);
 await tech.fails("DELETE", `/api/repairs/${repair.id}/files/${poFile}`, null, 404);
 
+// Units carry files too (the PO, a warranty), added by people who can edit units.
+async function uploadUnit(who, serialId, name) {
+  const form = new FormData();
+  form.append("files", new Blob([Buffer.from("%PDF-1.4\n%%EOF\n")], { type: "application/pdf" }), name);
+  const r = await fetch(`${BASE}/api/serials/${serialId}/files`, { method: "POST", headers: { Authorization: who.token, "X-Org": who.org }, body: form });
+  return { status: r.status, json: await r.json() };
+}
+const unitUp = await uploadUnit(planner, k12Serials[0].id, "PO 5120.pdf");
+assert.equal(unitUp.status, 200, JSON.stringify(unitUp.json));
+const unitFile = unitUp.json.files[0];
+assert.equal(unitUp.json.fileInfo[unitFile].name, "PO 5120.pdf");
+assert.equal((await uploadUnit(tech, k12Serials[0].id, "x.pdf")).status, 403, "techs can't edit units");
+assert.equal((await uploadUnit(bossB, k12Serials[0].id, "x.pdf")).status, 403);
+assert.equal((await fetch(`${BASE}/api/files/serials/${k12Serials[0].id}/${unitFile}?token=${await fileToken(tech)}`)).status, 200, "members can open them");
+assert.equal((await fetch(`${BASE}/api/files/serials/${k12Serials[0].id}/${unitFile}?token=${await fileToken(bossB)}`)).status, 404);
+assert.deepEqual((await planner.ok("DELETE", `/api/serials/${k12Serials[0].id}/files/${unitFile}`)).files, []);
+
 const unitStatus = async () => (await tech.ok("GET", `/api/collections/serials/records/${k12Serials[1].id}`)).status;
 await tech.fails("PATCH", `/api/repairs/${repair.id}`, { status: (await statusesOf(bossB))[0].id }, 400, /Pick one of the repair statuses/);
 await tech.ok("PATCH", `/api/repairs/${repair.id}`, { status: st["Backlog"] });
@@ -985,7 +1007,7 @@ await planner.fails("DELETE", `/api/collections/crew_people/records/${freelancer
 await planner.ok("DELETE", `/api/collections/job_periods/records/${packIn.id}`);
 assert.equal((await planner.ok("GET", `/api/collections/job_crew/records?filter=${encodeURIComponent(`need = "${labourNeed.id}" || need = "${audioNeed.id}"`)}`)).items.length, 0, "removing the item takes its crew off it");
 await planner.ok("DELETE", `/api/collections/crew_people/records/${freelancer.id}`);
-for (const page of ["crew", "rostering"]) assert.ok(Array.isArray((await tech.ok("GET", `/api/views?page=${page}`)).views), `${page} has saved views`);
+for (const page of ["crew", "rostering", "maintenance", "repairs", "maintenance-history"]) assert.ok(Array.isArray((await tech.ok("GET", `/api/views?page=${page}`)).views), `${page} has saved views`);
 log("crew roles, crew needs on schedule items, and rostering members and freelancers onto them");
 const minePage = await tech.ok("GET", `/api/collections/jobs/records?filter=${encodeURIComponent(`org = "${orgA}" && job_crew_via_job.user ?= "${techUser.id}"`)}`);
 assert.deepEqual(minePage.items.map((j) => j.id), [jobA.id], "my projects are the ones I'm crew on");
@@ -1047,7 +1069,6 @@ assert.equal((await tech.ok("GET", "/api/views?page=projects")).pick, savedView.
 assert.equal((await planner.ok("GET", "/api/views?page=inventory")).pick, "", "picks are each person's own");
 const adminInA = (await ok(adminUser.token, "GET", "/api/me")).memberships.find((m) => m.org.id === orgA);
 assert.ok(adminInA.permissions.includes("views.publish") && !techInA.permissions.includes("views.publish"), "only admins publish, to start with");
-assert.ok((await admin.ok("GET", `/api/orgs/${orgA}/roles`)).some((r) => r.name === "Crew" && r.permissions.length === 0), "and there's a Crew role");
 log("crew on projects, and everyone's own dashboards and views, shared with people or (admins) everyone");
 
 // --- delete protection ---
@@ -1086,7 +1107,6 @@ const desks = await planner.ok("GET", `/api/collections/categories/records?filte
 assert.equal(desks.items[0].parent, audio.id, "category path reuses the existing parent");
 assert.equal(desks.items[0].org, orgA);
 assert.equal((await bossB.ok("POST", "/api/import/csv", { kind: "items", rows: csvRows })).committed, true, "B can import the same codes");
-await planner.fails("POST", "/api/import/rentman", null, 403);
 // Address lookup: too short to look up (and nothing goes out for it).
 assert.deepEqual(await tech.ok("GET", "/api/addresses?q=ab"), []);
 log("search, scan lookup and CSV import (dry run, all-or-nothing, category paths, per organisation)");
@@ -1124,6 +1144,53 @@ const activity = await admin.ok("GET", "/api/activity");
 assert.ok(activity.some((a) => a.type === "scan_out" && a.summary.includes(`#${jobA.number}`)));
 assert.ok(activity.every((a) => !String(a.summary).includes(`B feed ${run}`)));
 log("stats and activity feed");
+
+// --- stock by location ---
+// A bulk item's stock is a quantity per location; the item's total follows.
+const [mainStore] = (await admin.ok("GET", `/api/collections/locations/records?filter=${encodeURIComponent(`org = "${orgA}"`)}&sort=created`)).items;
+const theatre = await admin.create("locations", { name: `Theatre ${run}` });
+const mics = await planner.create("items", { name: `SM58 ${run}`, kind: "item", tracking: "bulk", stockQty: 8 });
+const micRows = async () =>
+  (await planner.ok("GET", `/api/collections/item_stock/records?filter=${encodeURIComponent(`item = "${mics.id}"`)}&sort=created`)).items.map((r) => [r.location, r.qty, r.bin]);
+const micTotal = async () => (await planner.ok("GET", `/api/collections/items/records/${mics.id}`)).stockQty;
+assert.deepEqual(await micRows(), [[mainStore.id, 8, ""]], "stock owned starts at the first location");
+const micsMoved = await planner.ok("PUT", `/api/items/${mics.id}/stock`, {
+  stock: [
+    { location: mainStore.id, qty: 3, bin: " Bay 3 " },
+    { location: theatre.id, qty: 5 },
+  ],
+});
+assert.equal(micsMoved.item.stockQty, 8);
+assert.deepEqual(await micRows(), [[mainStore.id, 3, "Bay 3"], [theatre.id, 5, ""]]);
+await planner.ok("PUT", `/api/items/${mics.id}/stock`, { stock: [{ location: theatre.id, qty: 6 }] });
+assert.deepEqual([await micRows(), await micTotal()], [[[theatre.id, 6, ""]], 6], "lines left out are removed");
+await planner.fails("PUT", `/api/items/${mics.id}/stock`, { stock: [{ location: theatre.id, qty: 1 }, { location: theatre.id, qty: 1 }] }, 400, /once/);
+await tech.fails("PUT", `/api/items/${mics.id}/stock`, { stock: [] }, 403);
+await bossB.fails("PUT", `/api/items/${mics.id}/stock`, { stock: [] }, 403);
+const otherPlace = await bossB.create("locations", { name: `Elsewhere ${run}` });
+await planner.fails("PUT", `/api/items/${mics.id}/stock`, { stock: [{ location: otherPlace.id, qty: 1 }] }, 400, /another organisation/);
+// Rows changed through the records API move the total too, and the total
+// changed some other way moves the rows.
+const extra = await planner.create("item_stock", { item: mics.id, location: mainStore.id, qty: 2 });
+assert.equal(await micTotal(), 8);
+await planner.ok("PATCH", `/api/collections/items/records/${mics.id}`, { stockQty: 5 });
+assert.deepEqual(await micRows(), [[theatre.id, 3, ""], [mainStore.id, 2, ""]], "less comes off the largest first");
+await planner.ok("DELETE", `/api/collections/item_stock/records/${extra.id}`);
+assert.equal(await micTotal(), 3);
+// Out of service can't be more than what's left.
+await tech.ok("POST", `/api/items/${mics.id}/out-of-service`, { quantity: 2 });
+await planner.fails("PUT", `/api/items/${mics.id}/stock`, { stock: [{ location: theatre.id, qty: 1 }] }, 400, /out of service/);
+const serialMic = await planner.create("items", { name: `Serial mic ${run}`, kind: "item", tracking: "serial" });
+await planner.fails("POST", "/api/collections/item_stock/records", { org: orgA, item: serialMic.id, location: theatre.id, qty: 1 }, 400, /isn't bulk/);
+// A location with stock in it can't be deleted.
+await admin.fails("DELETE", `/api/collections/locations/records/${theatre.id}`, null, 400);
+// Packing lists say where it's kept.
+const stockJob = await planner.create("jobs", { name: `Stock job ${run}`, status: "confirmed", prepAt: "2031-05-01 08:00:00Z", returnAt: "2031-05-02 08:00:00Z" });
+await planner.ok("PUT", `/api/items/${mics.id}/stock`, { stock: [{ location: mainStore.id, qty: 1, bin: "Bay 3" }, { location: theatre.id, qty: 4 }] });
+await planner.ok("POST", `/api/jobs/${stockJob.id}/lines`, { itemId: mics.id, quantity: 1 });
+const stockSummary = await planner.ok("GET", `/api/jobs/${stockJob.id}/summary`);
+assert.equal(stockSummary.lines.find((l) => l.item?.id === mics.id).item.where, `${mainStore.name}, Bay 3 ×1 · Theatre ${run} ×4`);
+log("stock by location: per-location quantities and bins, the item's total kept in step both ways");
 
 // --- platform admin ---
 const orgs = await ok(platform, "GET", "/api/admin/orgs");

@@ -113,7 +113,6 @@ export default function LinksSection({ item, kind, canEdit }: { item: Item; kind
     <section className="card p-4 flex flex-col gap-3">
       <div>
         <h2 className="text-sm font-semibold text-gray-500">{copy.title}</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{copy.hint}</p>
       </div>
 
       {links.length === 0 ? (

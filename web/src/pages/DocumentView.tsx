@@ -1,10 +1,11 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type DocumentField, type DocumentTemplate, type JobLineView, type JobSummary } from "../lib/api";
 import { pb } from "../lib/pocketbase";
-import { formatDateTime, formatPeriod } from "../lib/format";
+import { formatDateTime, formatPeriod, oneLineAddress } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { linesByHeading } from "../lib/documents";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 // One of the organisation's project documents (Settings → Documents), filled
 // in with the project's details and laid out to print on A4 and fill in by
@@ -29,9 +30,7 @@ export default function DocumentView() {
   return (
     <div className="min-h-screen bg-paper print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3">
-        <Link to={`/projects/${job.id}`} className="text-sm text-gray-500 hover:text-gray-900">
-          ← Project #{job.number}
-        </Link>
+        <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: `#${job.number} ${job.name}`, to: `/projects/${job.id}` }, { label: doc.name }]} />
         <button onClick={() => window.print()} className="btn-primary" title="Print, or choose Save as PDF in the print window">
           Print or save PDF
         </button>
@@ -104,7 +103,7 @@ function DocumentHeader({ title, businessName, summary }: { title: string; busin
           #{job.number} {job.name}
         </h1>
         <p>{[client?.name, venue?.name].filter(Boolean).join(" · ")}</p>
-        {venue?.address && <p className="text-gray-600 whitespace-pre-line">{venue.address}</p>}
+        {oneLineAddress(venue?.address) && <p className="text-gray-600">{oneLineAddress(venue?.address)}</p>}
         {contacts.map((c) => (
           <p key={c as string} className="text-gray-600">
             {c}
@@ -185,7 +184,7 @@ function EquipmentTable({ mode, groups }: { mode: DocumentTemplate["equipment"];
                       <td className={`py-1.5 ${child ? "pl-4 text-gray-700" : ""}`}>{name}</td>
                     </>
                   )}
-                  {check && <td className="py-1.5 text-gray-600">{line.item?.locationInWarehouse}</td>}
+                  {check && <td className="py-1.5 text-gray-600">{line.item?.where}</td>}
                 </tr>
               );
             })}

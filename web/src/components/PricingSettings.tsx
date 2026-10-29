@@ -69,16 +69,13 @@ export default function PricingSettings() {
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Pricing & availability</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Used for every project's totals and every new quote. Issued quotes keep the numbers they were issued with.
-        </p>
       </div>
       <div className="card p-4 flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-          <Field label="GST rate (%)" hint="Prices are entered and quoted ex GST; GST is added on the total">
+          <Field label="GST rate (%)">
             <input value={draft.gstRate} onChange={(e) => set("gstRate", e.target.value)} inputMode="decimal" className="input py-2" />
           </Field>
-          <Field label="Quotes valid for (days)" hint="0 = no expiry date on quotes">
+          <Field label="Quotes valid for (days)">
             <input
               value={draft.quoteValidityDays}
               onChange={(e) => set("quoteValidityDays", e.target.value)}
@@ -89,14 +86,13 @@ export default function PricingSettings() {
           <Field
             label="Day factors"
             className="sm:col-span-2"
-            hint="How many day rates a hire costs for 1, 2, 3… days, comma-separated. 1, 1.5, 2 means a 3-day hire costs 2× the day rate."
           >
             <input value={draft.dayFactors} onChange={(e) => set("dayFactors", e.target.value)} className="input py-2 font-mono" />
           </Field>
-          <Field label="Each extra day adds" hint="For hires longer than the list above">
+          <Field label="Each extra day adds">
             <input value={draft.extraDayFactor} onChange={(e) => set("extraDayFactor", e.target.value)} inputMode="decimal" className="input py-2" />
           </Field>
-          <Field label="Turnaround buffer (hours)" hint="Kit stays unavailable this long after every project returns, for checking and cleaning">
+          <Field label="Turnaround buffer (hours)">
             <input value={draft.bufferHours} onChange={(e) => set("bufferHours", e.target.value)} inputMode="decimal" className="input py-2" />
           </Field>
         </div>
@@ -128,7 +124,7 @@ export default function PricingSettings() {
           <p className="text-xs text-red-600">Day factors need to be a list of positive numbers.</p>
         )}
 
-        <Field label="Quote terms" hint="Printed at the bottom of every quote">
+        <Field label="Quote terms">
           <textarea
             value={draft.quoteTerms}
             onChange={(e) => set("quoteTerms", e.target.value)}

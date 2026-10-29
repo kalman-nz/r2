@@ -65,10 +65,6 @@ export default function CrewRolesSettings() {
     <div className="flex flex-col gap-4 max-w-3xl">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Crew roles</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          What crew are booked to do. Schedule items say how many of each they need, and each person&apos;s skills are the roles they can do, so rostering
-          suggests them first.
-        </p>
       </div>
 
       <div className="card p-4 flex flex-col gap-2 text-sm">
