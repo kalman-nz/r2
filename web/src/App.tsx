@@ -199,11 +199,11 @@ function usePageViewLogging() {
   }, [location.pathname]);
 }
 
-// The browser tab shows "R2", plus the business's short name when set (just "R2 by Kalman" before then).
+// The browser tab shows "R2", plus the business's short name when set (just "R2" before then).
 function useTabTitle(enabled: boolean) {
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings, enabled });
   const shortOrFull = enabled ? settings?.businessShortName || settings?.businessName : "";
-  const tabTitle = shortOrFull ? `R2 | ${shortOrFull}` : "R2 by Kalman";
+  const tabTitle = shortOrFull ? `R2 | ${shortOrFull}` : "R2";
   useEffect(() => {
     document.title = tabTitle;
   }, [tabTitle]);
@@ -236,7 +236,7 @@ function AppShell() {
       <aside className="w-14 md:w-56 shrink-0 flex flex-col h-screen sticky top-0 py-3 bg-carbon">
         <Link to="/" className="flex items-center px-3.5 md:px-[1.125rem] h-10 mb-4 shrink-0 text-white" aria-label="R2, home">
           <img src="/favicon.svg" alt="" className="w-7 h-7 rounded-md md:hidden" />
-          <R2Lockup byline={false} className="hidden md:flex" />
+          <R2Lockup className="hidden md:flex" />
         </Link>
 
         <nav className="flex-1 overflow-y-auto flex flex-col">

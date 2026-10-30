@@ -25,7 +25,6 @@ export default function AuthLayout({
         {children}
       </div>
       {footer && <div className="text-sm text-gray-500 text-center">{footer}</div>}
-      <p className="eyebrow text-gray-400 mt-2">Kalman Ltd · Tauranga, New Zealand</p>
     </div>
   );
 }

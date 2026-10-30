@@ -4,8 +4,7 @@
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
-/* R2 by Kalman. Colours and type from the Kalman brand guidelines (v1.0):
-   Carbon/Graphite carry the dark surfaces, Paper is the page, Signal Orange
+/* R2's colours and type. Carbon/Graphite carry the dark surfaces, Paper is the page, Signal Orange
    is a signal, not a fill. Orange on white is only 3.1:1, so small orange
    text uses signal-ink (5.2:1). Grays are retuned to sit between Carbon and
    Paper; gray-500 is the lightest that's still readable as text. */
@@ -45,7 +44,7 @@ body {
   @apply text-gray-900 bg-paper font-sans antialiased;
 }
 
-/* Headings in Archivo SemiExpanded Bold, like the guide. */
+/* Headings in Archivo SemiExpanded Bold. */
 h1 {
   font-stretch: 112.5%;
   font-weight: 700;
@@ -81,7 +80,7 @@ h1 {
   .tab-underline-inactive {
     @apply px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300;
   }
-  /* Kalman data/label style: IBM Plex Mono caps, +12% tracking. */
+  /* Data/label style: IBM Plex Mono caps, +12% tracking. */
   .eyebrow {
     @apply font-mono text-[11px] font-medium uppercase tracking-[0.12em];
   }
