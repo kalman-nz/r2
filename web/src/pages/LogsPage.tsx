@@ -22,12 +22,12 @@ function exportLogs(logs: LogEntry[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `activity-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+  a.download = `audit-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-// Settings → Activity log: who did what, with a usage summary on top.
+// Settings → Audit log: who did what, with a usage summary on top.
 export default function LogsPage() {
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ["stats"],
@@ -83,7 +83,7 @@ export default function LogsPage() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Activity log</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Audit log</h2>
             <p className="text-xs text-gray-500">
               {logs ? `${filteredLogs.length.toLocaleString()} of ${logs.length.toLocaleString()} events` : "Every change, scan and print in this organisation."}
             </p>
@@ -114,7 +114,7 @@ export default function LogsPage() {
         </div>
 
         {logsLoading && <p className="text-gray-500 text-sm">Loading…</p>}
-        {logsError && <p className="text-red-600 text-sm">Couldn't load the activity log: {(logsError as Error).message}</p>}
+        {logsError && <p className="text-red-600 text-sm">Couldn't load the audit log: {(logsError as Error).message}</p>}
 
         {logs && (
           <div className="card overflow-hidden">

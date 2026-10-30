@@ -96,7 +96,7 @@ const GROUPS = [
       ["calendar.manage", "See and reset the calendar feed address"],
       ["team.manage", "Invite and remove people, and give them roles"],
       ["roles.manage", "Create and edit roles"],
-      ["logs.view", "See the activity log and stats"],
+      ["logs.view", "See the audit log and stats"],
       ["views.publish", "Share dashboards and views with everyone"],
     ],
   },

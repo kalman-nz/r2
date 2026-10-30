@@ -268,7 +268,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "activity",
-    label: "Activity log",
+    label: "Audit log",
     group: "Organisation",
     permissions: ["logs.view"],
     wide: true,
