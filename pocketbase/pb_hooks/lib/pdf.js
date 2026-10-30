@@ -25,13 +25,20 @@ function renderPdf(kind, data) {
     try {
       $os.cmd(pythonBin(), printDir() + "/r2_pdf.py", kind, input, output).run();
     } catch (err) {
+      // When r2_pdf.py runs and fails it writes the real reason to errorFile;
+      // only when it never ran (no errorFile) and the OS couldn't find the
+      // interpreter is this a "not set up" problem. Don't run the regex over
+      // a genuine script error, or one whose text happens to say "not found"
+      // (a blocked remote fetch, say) gets mislabelled as a setup problem.
       let reason = "";
+      let scriptFailed = false;
       try {
         reason = toString($os.readFile(errorFile));
+        scriptFailed = true;
       } catch (_) {
         reason = String((err && err.message) || err);
       }
-      if (/no such file|not found|executable file/i.test(reason)) {
+      if (!scriptFailed && /no such file|not found|executable file|exec/i.test(reason)) {
         reason = "PDF generation isn't set up on this server (no Python at " + pythonBin() + ")";
       }
       throw new BadRequestError("Couldn't make the PDF: " + reason);

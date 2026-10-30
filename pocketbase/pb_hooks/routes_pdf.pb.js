@@ -55,35 +55,46 @@ routerAdd(
 
 // Labels the browser has already rendered (the same images the Brother
 // printer gets), one PDF page per label at the label's own size, for any
-// printer with a driver — Zebra, Dymo, or Brother over USB. No
-// organisation data is read, so any signed-in person can use it.
+// printer with a driver — Zebra, Dymo, or Brother over USB. Printing labels
+// one way or another, so it needs the organisation's "Print labels"
+// permission and the labels feature, like the Brother route; the images
+// have to be PNG (each page's bytes are checked again in r2_pdf.py), so no
+// other format can reach the renderer.
 // body: { labels: [{ imageDataUrl, widthMm, heightMm, copies }] }
 routerAdd(
   "POST",
   "/api/labels/pdf",
   (e) => {
+    const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { requireFeature } = require(`${__hooks}/lib/features.js`);
     const { renderPdf, sendPdf } = require(`${__hooks}/lib/pdf.js`);
     const { PNG_PREFIX } = require(`${__hooks}/lib/print.js`);
+    const ctx = requireOrg(e, "labels.print");
+    requireFeature(ctx.org, "labels");
     const body = e.requestInfo().body || {};
     const labels = Array.isArray(body.labels) ? body.labels : [];
     if (labels.length === 0) throw new BadRequestError("No labels to put in the PDF");
     if (labels.length > 500) throw new BadRequestError("Make PDFs of 500 labels or fewer at a time");
+    let totalPages = 0;
     const pages = labels.map((l, i) => {
       if (!l || typeof l.imageDataUrl !== "string" || l.imageDataUrl.indexOf(PNG_PREFIX) !== 0) {
         throw new BadRequestError("Label " + (i + 1) + " has no PNG image");
       }
+      const png = l.imageDataUrl.slice(PNG_PREFIX.length);
+      // A PNG's base64 always starts with the 8-byte signature, so anything
+      // that isn't one (an SVG, which fpdf2 would follow to local files and
+      // URLs; another image format) is turned away here, not just by its
+      // data-URL label.
+      if (png.slice(0, 11) !== "iVBORw0KGgo") throw new BadRequestError("Label " + (i + 1) + " isn't a PNG image");
       const widthMm = Number(l.widthMm);
       const heightMm = Number(l.heightMm);
       if (!(widthMm > 0 && widthMm <= 300 && heightMm > 0 && heightMm <= 300)) {
         throw new BadRequestError("Label " + (i + 1) + " has an impossible size");
       }
-      const copies = Number(l.copies) || 1;
-      return {
-        png: l.imageDataUrl.slice(PNG_PREFIX.length),
-        widthMm: widthMm,
-        heightMm: heightMm,
-        copies: Math.max(1, Math.min(100, Math.round(copies))),
-      };
+      const copies = Math.max(1, Math.min(100, Math.round(Number(l.copies) || 1)));
+      totalPages += copies;
+      if (totalPages > 2000) throw new BadRequestError("That's over 2000 pages: split it into smaller PDFs");
+      return { png: png, widthMm: widthMm, heightMm: heightMm, copies: copies };
     });
     return sendPdf(e, renderPdf("labels", { labels: pages }), "labels.pdf");
   },

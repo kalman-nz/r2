@@ -24,8 +24,13 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// Page views etc. from the web app. Filed under the current organisation
-// when the person belongs to it, otherwise as a platform-wide event.
+// Page views from the web app, filed under the current organisation. Only
+// genuine client-side events come through here, and only for an
+// organisation the person is in: everything the audit log counts as
+// evidence (logins, prints, member and role changes, repairs…) is written
+// by the server itself (lib/log.js), never from the browser. So the client
+// can't forge one of those by sending its type, write a platform-wide
+// (org "") entry, or spam large rows.
 routerAdd(
   "POST",
   "/api/activity",
@@ -33,11 +38,17 @@ routerAdd(
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const { summarizeLogs } = require(`${__hooks}/lib/logSummary.js`);
     const { requestOrg, membershipOf } = require(`${__hooks}/lib/orgs.js`);
+    // The events the browser is allowed to file. Declared in the handler:
+    // the JSVM doesn't keep this file's outer scope when a request runs.
+    const CLIENT_EVENTS = ["page_view"];
     const data = e.requestInfo().body || {};
-    if (typeof data.type !== "string" || !data.type) throw new BadRequestError("type is required");
+    if (CLIENT_EVENTS.indexOf(data.type) === -1) throw new BadRequestError("Unknown event");
     const org = requestOrg(e);
+    if (!org || !membershipOf($app, e.auth.id, org)) throw new ForbiddenError("You're not a member of this organisation");
+    const details = data.details && typeof data.details === "object" && !Array.isArray(data.details) ? data.details : {};
+    if (JSON.stringify(details).length > 2048) throw new BadRequestError("Too much detail on that event");
     const who = e.auth.get("name") || e.auth.get("email");
-    const record = logEvent(membershipOf($app, e.auth.id, org) ? org : "", data.type, who, data.details || {});
+    const record = logEvent(org, data.type, who, details);
     const row = {
       id: record.id,
       type: record.get("type"),

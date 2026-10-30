@@ -557,6 +557,11 @@ def render_labels(data, _tz):
     for label in data.get("labels", []):
         width, height = float(label["widthMm"]), float(label["heightMm"])
         png = base64.b64decode(label["png"])
+        # Only real PNGs. fpdf2 follows an SVG's <image href> to local files
+        # and remote URLs, so anything without the PNG signature is refused
+        # before it reaches the renderer (the route checks this too).
+        if png[:8] != b"\x89PNG\r\n\x1a\n":
+            raise ValueError("label image must be a PNG")
         for _ in range(max(1, min(int(label.get("copies", 1)), 100))):
             doc.add_page(format=(width, height))
             doc.image(io.BytesIO(png), x=0, y=0, w=width, h=height)
