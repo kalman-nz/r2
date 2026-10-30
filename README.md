@@ -180,7 +180,7 @@ Every bit of equipment on a project has its own status, so the audio can be load
 - The scan ledger (`scans`) keeps the step each scan took kit to and from. Its direction is "out" when kit leaves stock, "move" between steps on the same project, "in" when it comes back. Getting ready and gone steps need "Track kit going out"; back steps need "Track kit coming back".
 - A step kit's been tracked to keeps its stage. Removing one moves its kit to the next step on the same stage (or, for the last getting-ready step, the first gone one).
 
-The scan page takes a Bluetooth/USB barcode scanner (it types the code and presses Enter) or the phone camera. The camera uses the browser's own barcode reader where there is one (Chrome on Android), and otherwise loads the ZXing decoder on demand (iPhone, iPad, Firefox). Every scan rule is checked on the server.
+The header's search box opens whatever a tag is on: type or scan its code, or tap the camera in the box to scan it with the phone (any feature set, `components/CameraScanner.tsx`). The scan page takes a Bluetooth/USB barcode scanner (it types the code and presses Enter) or the phone camera. The camera uses the browser's own barcode reader where there is one (Chrome on Android), and otherwise loads the ZXing decoder on demand (iPhone, iPad, Firefox). Every scan rule is checked on the server.
 
 When kit comes back damaged, **Report fault** next to a scanned-in unit opens a repair for it on the spot, linked to the project it came back from.
 

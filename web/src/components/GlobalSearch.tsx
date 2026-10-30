@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type SearchResultItem, type SearchResults } from "../lib/api";
+import CameraScanner from "./CameraScanner";
+import Modal from "./Modal";
 import { useToast } from "./ToastProvider";
 
 const EMPTY: SearchResults = { items: [], assets: [], jobs: [], contacts: [], labels: [] };
@@ -47,6 +49,8 @@ export default function GlobalSearch() {
   const [results, setResults] = useState<SearchResults>(EMPTY);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  // The phone's camera, to scan a tag and open what it's on.
+  const [camera, setCamera] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -104,8 +108,13 @@ export default function GlobalSearch() {
     } catch {
       showToast("error", `Nothing has the code "${q}"`);
     } finally {
-      inputRef.current?.focus();
+      if (!camera) inputRef.current?.focus();
     }
+  }
+
+  function scanned(code: string) {
+    setCamera(false);
+    scanFallback(code.trim());
   }
 
   const flat = flatten(results);
@@ -146,8 +155,25 @@ export default function GlobalSearch() {
         onKeyDown={handleKeyDown}
         onFocus={() => flat.length > 0 && setOpen(true)}
         placeholder="Search or scan…"
-        className="input w-40 sm:w-64 lg:w-80"
+        className="input w-40 sm:w-64 lg:w-80 pr-9"
       />
+      <button
+        type="button"
+        onClick={() => setCamera(true)}
+        className="absolute inset-y-0 right-0 w-9 flex items-center justify-center text-gray-400 hover:text-gray-900"
+        aria-label="Scan with the camera"
+        title="Scan with the camera"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+          <path d="M3 8a2 2 0 0 1 2-2h2.2l1.4-2h6.8l1.4 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z" />
+          <circle cx="12" cy="13" r="3.5" />
+        </svg>
+      </button>
+      {camera && (
+        <Modal title="Scan a tag" onClose={() => setCamera(false)}>
+          <CameraScanner onCode={scanned} />
+        </Modal>
+      )}
       {open && (
         <div className="absolute top-full left-0 mt-1 w-full sm:w-96 card shadow-lg z-30 py-1 max-h-96 overflow-y-auto">
           {flat.length === 0 && <p className="px-3 py-2 text-sm text-gray-400">No matches for "{value.trim()}"</p>}
