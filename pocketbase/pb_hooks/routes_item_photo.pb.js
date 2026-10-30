@@ -12,7 +12,8 @@ routerAdd(
     const { findItemPhoto } = require(`${__hooks}/lib/photoSearch.js`);
     const item = findOrNull($app, "items", e.request.pathValue("id"));
     if (!item) throw new NotFoundError("Item not found");
-    requireRecordOrg(e, item, "items.edit");
+    const ctx = requireRecordOrg(e, item, "items.edit");
+    require(`${__hooks}/lib/features.js`).requireFeature(ctx.org, "ai");
     const found = findItemPhoto($app, item);
     return e.json(200, { item: item, found: found });
   },

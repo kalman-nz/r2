@@ -89,6 +89,13 @@ export const FEATURES: { key: FeatureKey; label: string; hint: string; off: stri
     off: "The Xero export is hidden.",
     needs: "pricing",
   },
+  {
+    key: "ai",
+    permissions: [],
+    label: "AI features",
+    hint: "Find photo on items, using the server's own vision model.",
+    off: "Find photo is hidden and the server won't run it.",
+  },
 ];
 
 // Starting points: what's on for a kind of business. Each feature can still
@@ -105,7 +112,7 @@ export const PRESETS: { key: PresetKey; label: string; hint: string; on: Feature
     key: "venue",
     label: "Venue with its own shows",
     hint: "Projects for your own shows and events, with equipment tracking, crew, repairs and maintenance. No prices or quotes.",
-    on: ["projects", "scanning", "repairs", "maintenance", "labels", "crew"],
+    on: ["projects", "scanning", "repairs", "maintenance", "labels", "crew", "ai"],
   },
   {
     key: "inventory",

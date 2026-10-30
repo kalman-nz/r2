@@ -85,6 +85,12 @@ const FEATURES = [
     permissions: ["export.xero"],
     needs: "pricing",
   },
+  {
+    key: "ai",
+    label: "AI features",
+    hint: "Find photo on items, using the server's own vision model (needs R2_OLLAMA_URL)",
+    permissions: [],
+  },
 ];
 
 const BY_KEY = {};
@@ -95,7 +101,7 @@ for (const f of FEATURES) BY_KEY[f.key] = f;
 // changed on its own afterwards. Must match PRESETS in web/src/lib/workflow.ts.
 const PRESETS = [
   { key: "hire", label: "Hire and production company", on: FEATURES.map((f) => f.key) },
-  { key: "venue", label: "Venue with its own shows", on: ["projects", "scanning", "repairs", "maintenance", "labels", "crew"] },
+  { key: "venue", label: "Venue with its own shows", on: ["projects", "scanning", "repairs", "maintenance", "labels", "crew", "ai"] },
   { key: "inventory", label: "Inventory and maintenance", on: ["repairs", "maintenance", "labels"] },
 ];
 

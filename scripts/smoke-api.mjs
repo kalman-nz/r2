@@ -927,7 +927,9 @@ await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { pr
 assert.equal((await admin.ok("GET", `/api/jobs/${jobA.id}/summary`)).includesPrices, false, "no prices anywhere, admins included");
 await admin.fails("POST", `/api/jobs/${jobA.id}/quotes`, null, 403, /Prices and quotes is turned off/);
 await admin.fails("GET", "/api/exports/xero/jobs?from=2030-03-01&to=2030-03-31", null, 403);
-feats = await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { scanning: true, repairs: true, pricing: true } });
+await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { ai: false } });
+await admin.fails("POST", `/api/items/${stand.id}/find-photo`, null, 403, /AI features is turned off/);
+feats = await ok(platform, "PATCH", `/api/admin/orgs/${orgA}/features`, { features: { scanning: true, repairs: true, pricing: true, ai: true } });
 assert.ok(Object.values(feats).every(Boolean), "and back on");
 assert.ok((await admin.ok("GET", "/api/activity")).some((a) => a.type === "features_changed" && a.summary === "Turned off Equipment tracking, Repairs"));
 
@@ -953,7 +955,7 @@ assert.ok(Object.values(feats).every(Boolean), "and everything back with it");
 // New organisations can start from a preset.
 const venueOrg = await ok(platform, "POST", "/api/admin/orgs", { name: `Smoke venue ${run}`, preset: "inventory" });
 const venueRecord = await ok(su, "GET", `/api/collections/organisations/records/${venueOrg.id}`);
-assert.deepEqual(venueRecord.features, { projects: false, scanning: false, pricing: false, crew: false, integrations: false, xero: false }, "the inventory preset leaves projects off");
+assert.deepEqual(venueRecord.features, { projects: false, scanning: false, pricing: false, crew: false, integrations: false, xero: false, ai: false }, "the inventory preset leaves projects and AI off");
 await fails(platform, "POST", "/api/admin/orgs", { name: `Smoke bad ${run}`, preset: "nonsense" }, 400, /Unknown starting point/);
 log("each organisation's own project statuses on fixed stages, and features it can turn off, projects included");
 

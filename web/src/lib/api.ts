@@ -246,7 +246,7 @@ export type TrackedAt = Record<string, number>;
 // What an organisation uses (Settings → Features, pb_hooks/lib/features.js).
 // Starting points for an organisation (lib/workflow.ts PRESETS).
 export type PresetKey = "hire" | "venue" | "inventory";
-export type FeatureKey = "projects" | "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "crew" | "integrations" | "xero";
+export type FeatureKey = "projects" | "scanning" | "repairs" | "maintenance" | "labels" | "pricing" | "crew" | "integrations" | "xero" | "ai";
 export type Features = Record<FeatureKey, boolean>;
 
 // Files on a repair or maintenance job (pb_hooks/lib/files.js): the stored

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import { api, type Item } from "../../lib/api";
 import { errorText } from "../../lib/errors";
+import { useOrg } from "../../lib/org";
 import { useConfirm } from "../ConfirmProvider";
 import { useToast } from "../ToastProvider";
 
@@ -17,7 +18,8 @@ export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canE
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const canFind = canEdit && settings?.photoSearch !== false;
+  const { feature } = useOrg();
+  const canFind = canEdit && feature("ai") && settings?.photoSearch !== false;
 
   async function upload(file: File | null | undefined) {
     if (!file) return;
