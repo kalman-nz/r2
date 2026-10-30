@@ -57,6 +57,11 @@ export R2_PRINT_DIR="$PWD/print"
 export R2_DEV_TRUST_EMAILS=1
 # Links in emails point at the Vite dev server, which proxies to this one.
 export R2_APP_URL="${R2_APP_URL:-http://localhost:5173}"
+# "Find photo" uses Ollama on this machine (the app hides it without one set).
+export R2_OLLAMA_URL="${R2_OLLAMA_URL:-http://localhost:11434}"
+# Labels go straight to printers on this network, as well as through print
+# agents (a cloud server has this off).
+export R2_DIRECT_PRINTING="${R2_DIRECT_PRINTING:-1}"
 
 FLAGS="--dir .pb/pb_data --hooksDir pocketbase/pb_hooks --migrationsDir pocketbase/pb_migrations"
 if [ $# -gt 0 ]; then

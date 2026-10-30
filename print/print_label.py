@@ -27,11 +27,17 @@ def main() -> int:
     image_source = parser.add_mutually_exclusive_group()
     image_source.add_argument("--image", help="Path to the label PNG to print")
     # PocketBase's JSVM has no native base64 decoder (no atob/Buffer), so its
-    # pb_hooks caller passes the PNG straight through as base64 and lets
-    # Python — which has a stdlib decoder — do the decoding instead of first
-    # writing a binary file from JS.
+    # pb_hooks caller writes the PNG's base64 text to a file and lets Python —
+    # which has a stdlib decoder — do the decoding. A file, not an argument:
+    # Linux refuses any single argument over 128 KB, and a big label's
+    # base64 is more than that.
     image_source.add_argument("--image-base64", help="Base64-encoded label PNG to print")
-    parser.add_argument("--host", required=True, help="Printer LAN IP (e.g. 10.20.27.79)")
+    image_source.add_argument("--image-base64-file", help="Path to a file holding the label PNG as base64")
+    parser.add_argument("--host", help="Printer LAN IP (e.g. 10.20.27.79)")
+    # For printers reached through a print agent (print/r2_print_agent.py):
+    # make the printer's raster commands and write them, base64, to a file
+    # instead of sending them anywhere. The agent sends them on.
+    parser.add_argument("--raster-out", help="Write the printer commands (base64) to this file instead of printing")
     parser.add_argument("--model", default="QL-810W")
     parser.add_argument("--label", default="62", help="brother_ql label identifier, e.g. 62 for 62mm continuous")
     parser.add_argument("--no-cut", action="store_true", help="Skip the auto-cut after printing")
@@ -40,8 +46,10 @@ def main() -> int:
     # "message"}, since the JSVM can't read the output of a failed command.
     parser.add_argument("--json", action="store_true", help="Report the result as JSON on stdout")
     args = parser.parse_args()
-    if not args.check and not (args.image or args.image_base64):
-        parser.error("--image or --image-base64 is required")
+    if not args.check and not (args.image or args.image_base64 or args.image_base64_file):
+        parser.error("--image, --image-base64 or --image-base64-file is required")
+    if not args.raster_out and not args.host:
+        parser.error("--host is required (or --raster-out)")
 
     try:
         ok, unreachable, message = run(args)
@@ -81,13 +89,22 @@ def run(args):
 
     qlr = BrotherQLRaster(args.model)
     qlr.exception_on_warning = True
-    if args.image_base64:
+    encoded = args.image_base64
+    if args.image_base64_file:
+        with open(args.image_base64_file, "r", encoding="ascii") as f:
+            encoded = f.read()
+    if encoded:
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-            tmp.write(base64.b64decode(args.image_base64))
+            tmp.write(base64.b64decode(encoded))
             tmp.flush()
             instructions = convert(qlr=qlr, images=[tmp.name], label=args.label, cut=not args.no_cut)
     else:
         instructions = convert(qlr=qlr, images=[args.image], label=args.label, cut=not args.no_cut)
+
+    if args.raster_out:
+        with open(args.raster_out, "w", encoding="ascii") as f:
+            f.write(base64.b64encode(bytes(instructions)).decode("ascii"))
+        return True, False, "Converted"
 
     try:
         result = send(instructions=instructions, printer_identifier=f"tcp://{args.host}", backend_identifier="network")

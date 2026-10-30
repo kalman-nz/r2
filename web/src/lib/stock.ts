@@ -66,7 +66,8 @@ export function unitPlaces(units: Pick<Serial, "location" | "bin" | "status">[])
 // packing lists (lib/stock.js placesOf).
 export function placesText(places: Place[], locationName: (id: string) => string): string {
   const parts = places.filter((p) => p.qty > 0).map((p) => ({ text: [locationName(p.location), p.bin].filter(Boolean).join(", "), qty: p.qty }));
-  const shown = parts.filter((p) => p.text);
+  // By name, like the lists of locations (and the server's packing lists).
+  const shown = parts.filter((p) => p.text).sort((a, b) => a.text.localeCompare(b.text));
   if (shown.length === 0) return "";
   if (shown.length === 1) return shown[0].text;
   return shown.map((p) => `${p.text} ×${p.qty}`).join(" · ");

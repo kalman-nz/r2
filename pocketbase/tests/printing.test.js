@@ -34,3 +34,11 @@ test("a job goes to the printer asked for, else the default, never one that's of
   assert.equal(findPrinter(config, "").id, "b");
   assert.equal(findPrinter(config, "c"), null);
 });
+
+test("a printer can go through one of the organisation's print agents, and only theirs", () => {
+  const through = validatePrintingBody({ sizes: DEFAULT_SIZES, printers: [printer({ agentId: " a1 " })] }, ["a1", "a2"]);
+  assert.equal(through.printers[0].agentId, "a1");
+  const direct = validatePrintingBody({ sizes: DEFAULT_SIZES, printers: [printer()] }, ["a1"]);
+  assert.equal(direct.printers[0].agentId, "", "no agent: the server sends to it itself");
+  assert.throws(() => validatePrintingBody({ sizes: DEFAULT_SIZES, printers: [printer({ agentId: "someone-elses" })] }, ["a1"]), BadRequestError);
+});

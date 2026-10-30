@@ -35,6 +35,21 @@ function newRow(app, fields) {
   return row;
 }
 
+// Rows are saved without hooks, so a row's save doesn't send its item
+// round matchRows again. That skips PocketBase's created/updated stamps
+// too, so they're set here: a millisecond apart at least, so rows made
+// together keep their order (lists sort by created).
+let lastStamp = 0;
+function saveRow(app, row) {
+  let ms = Date.now();
+  if (ms <= lastStamp) ms = lastStamp + 1;
+  lastStamp = ms;
+  const now = new Date(ms).toISOString().replace("T", " ");
+  if (!row.getString("created")) row.setRaw("created", now);
+  row.setRaw("updated", now);
+  app.unsafeWithoutHooks().save(row);
+}
+
 const isBulk = (item) => item.getString("kind") === "item" && item.getString("tracking") === "bulk";
 
 // The item's stockQty from its rows. Written straight to the table: the
@@ -70,13 +85,13 @@ function matchRows(app, item) {
       qty: want,
       bin: item.getString("locationInWarehouse").trim(),
     });
-    quiet.save(row);
+    saveRow(app, row);
     return;
   }
   const largest = rows.slice().sort((a, b) => b.getInt("qty") - a.getInt("qty"));
   if (diff > 0) {
     largest[0].set("qty", largest[0].getInt("qty") + diff);
-    quiet.save(largest[0]);
+    saveRow(app, largest[0]);
     return;
   }
   for (const r of largest) {
@@ -84,7 +99,7 @@ function matchRows(app, item) {
     const take = Math.min(r.getInt("qty"), -diff);
     if (take === 0) continue;
     r.set("qty", r.getInt("qty") - take);
-    quiet.save(r);
+    saveRow(app, r);
     diff += take;
   }
 }
@@ -127,7 +142,7 @@ function replaceRows(app, item, wanted) {
       delete byLocation[w.location];
       row.set("qty", w.qty);
       row.set("bin", w.bin);
-      quiet.save(row);
+      saveRow(tx, row);
     }
     for (const id of Object.keys(byLocation)) quiet.delete(byLocation[id]);
     setTotal(tx, item.id);
@@ -199,9 +214,11 @@ function placesOf(app, items) {
         add(u.getString("location"), u.getString("bin"), 1);
       }
     }
+    // By name, like the app's lists of locations.
+    order.sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0));
     out[item.id] = order.length === 1 ? order[0] : order.map((t) => t + " ×" + counts[t]).join(" · ");
   }
   return out;
 }
 
-module.exports = { rowsOf, totalOf, setTotal, matchRows, replaceRows, validateRow, placesOf };
+module.exports = { rowsOf, totalOf, setTotal, saveRow, matchRows, replaceRows, validateRow, placesOf };

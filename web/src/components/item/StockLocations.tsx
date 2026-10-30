@@ -26,7 +26,12 @@ export default function StockLocations({ item, canEdit, onSaved }: { item: Item;
   const { showToast } = useToast();
   const { data: locations = [] } = useLocations();
   const locationName = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations]);
-  const { data: stock = [], isLoading: stockLoading } = useItemStock(item.id, !serialised);
+  const { data: stockRows = [], isLoading: stockLoading } = useItemStock(item.id, !serialised);
+  // By location name, like the location lists.
+  const stock = useMemo(
+    () => [...stockRows].sort((a, b) => (locationName.get(a.location) ?? "").localeCompare(locationName.get(b.location) ?? "") || a.bin.localeCompare(b.bin)),
+    [stockRows, locationName],
+  );
   // The same query as the Units tab (SerialsSection), so they share it.
   const { data: units = [], isLoading: unitsLoading } = useQuery({
     queryKey: ["serials", item.id],
@@ -38,7 +43,9 @@ export default function StockLocations({ item, canEdit, onSaved }: { item: Item;
   const [saving, setSaving] = useState(false);
   const [nextKey, setNextKey] = useState(0);
 
-  const places = serialised ? unitPlaces(units) : stock.map((s) => ({ location: s.location, bin: s.bin, qty: s.qty }));
+  const places = serialised
+    ? unitPlaces(units).sort((a, b) => (locationName.get(a.location) ?? "").localeCompare(locationName.get(b.location) ?? "") || a.bin.localeCompare(b.bin))
+    : stock.map((s) => ({ location: s.location, bin: s.bin, qty: s.qty }));
   const total = places.reduce((n, p) => n + p.qty, 0);
   const loading = serialised ? unitsLoading : stockLoading;
 

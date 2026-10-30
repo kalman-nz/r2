@@ -1192,6 +1192,58 @@ const stockSummary = await planner.ok("GET", `/api/jobs/${stockJob.id}/summary`)
 assert.equal(stockSummary.lines.find((l) => l.item?.id === mics.id).item.where, `${mainStore.name}, Bay 3 ×1 · Theatre ${run} ×4`);
 log("stock by location: per-location quantities and bins, the item's total kept in step both ways");
 
+// --- print agents ---
+// R2 in the cloud can't reach a venue's printers, so a print agent there
+// (print/r2_print_agent.py) collects the labels and sends them on. Here the
+// test plays the agent.
+const madeAgent = await admin.ok("POST", "/api/print-agents", { name: `Pi ${run}` });
+assert.match(madeAgent.token, /^r2pa_[a-z0-9]{32}$/);
+assert.equal(madeAgent.agent.online, false);
+await tech.fails("GET", "/api/print-agents", null, 403);
+const agentCall = (method, path, body, token = madeAgent.token) => call(`Bearer ${token}`, method, path, body);
+const printingNow = await admin.ok("GET", "/api/printing");
+const viaAgent = { id: `agent-printer-${run}`, name: "Workshop QL", host: "192.0.2.10", model: "QL-810W", sizeId: "tape-62", locationId: "", agentId: madeAgent.agent.id, isDefault: true, enabled: true };
+const otherAgent = await bossB.ok("POST", "/api/print-agents", { name: `B's Pi ${run}` });
+await admin.fails("PUT", "/api/printing", { sizes: printingNow.sizes, printers: [{ ...viaAgent, agentId: otherAgent.agent.id }] }, 400, /print agent/);
+await admin.ok("PUT", "/api/printing", { sizes: printingNow.sizes, printers: [viaAgent] });
+assert.match((await tech.ok("POST", "/api/printing/check", {}))[viaAgent.id].message, /offline/, "not heard from yet");
+assert.equal((await tech.call("POST", "/api/print", { customText: "Early", imageDataUrl: "data:image/png;base64," + whitePng(696, 60).toString("base64"), label: "62" })).status, 502);
+assert.equal((await agentCall("GET", "/api/print-agent/jobs?wait=0", null, "r2pa_" + "x".repeat(32))).status, 401);
+const firstAsk = await agentCall("GET", "/api/print-agent/jobs?wait=0");
+assert.deepEqual(firstAsk.json, { jobs: [], printers: [{ id: viaAgent.id, name: "Workshop QL", host: "192.0.2.10" }] });
+assert.deepEqual((await agentCall("GET", "/api/print-agent/jobs?wait=0", null, otherAgent.token)).json.printers, [], "each agent sees its own organisation's printers");
+await agentCall("POST", "/api/print-agent/status", { printers: { [viaAgent.id]: { ok: true, message: "Online", host: "192.0.2.10" } }, version: "1", hostname: "pi" });
+assert.deepEqual((await tech.ok("POST", "/api/printing/check", {}))[viaAgent.id], { ok: true, message: "Online" });
+// A label: the server makes the printer's commands, the agent takes them.
+const labelPng = "data:image/png;base64," + whitePng(696, 60).toString("base64");
+const printing1 = tech.call("POST", "/api/print", { customText: `Agent ${run}`, imageDataUrl: labelPng, label: "62" });
+const taken = (await agentCall("GET", "/api/print-agent/jobs?wait=10")).json.jobs;
+assert.equal(taken.length, 1);
+assert.equal(taken[0].host, "192.0.2.10");
+const commands = Buffer.from(taken[0].data, "base64");
+assert.ok(commands.length > 500 && commands.includes(Buffer.from([0x1b, 0x40])), "Brother raster commands, with the initialise");
+await agentCall("POST", `/api/print-agent/jobs/${taken[0].id}`, { ok: true, message: "Printed" });
+const printed1 = await printing1;
+assert.equal(printed1.status, 200, JSON.stringify(printed1.json));
+assert.equal(printed1.json.printer, "Workshop QL");
+// One the agent can't get to its printer is "unreachable", so the app tries another.
+const printing2 = tech.call("POST", "/api/print", { customText: `Agent ${run}`, imageDataUrl: labelPng, label: "62" });
+const taken2 = (await agentCall("GET", "/api/print-agent/jobs?wait=10")).json.jobs;
+await agentCall("POST", `/api/print-agent/jobs/${taken2[0].id}`, { ok: false, unreachable: true, message: "Couldn't reach the printer" });
+const printed2 = await printing2;
+assert.equal(printed2.status, 502);
+assert.match(printed2.json.message, /Couldn't reach/);
+// Removing: not while a printer uses it; a new token retires the old one.
+await admin.fails("DELETE", `/api/print-agents/${madeAgent.agent.id}`, null, 400, /Workshop QL/);
+const rotated = await admin.ok("POST", `/api/print-agents/${madeAgent.agent.id}/token`);
+assert.equal((await agentCall("GET", "/api/print-agent/jobs?wait=0")).status, 401);
+assert.equal((await agentCall("GET", "/api/print-agent/jobs?wait=0", null, rotated.token)).status, 200);
+await admin.ok("PUT", "/api/printing", { sizes: printingNow.sizes, printers: printingNow.printers });
+await admin.ok("DELETE", `/api/print-agents/${madeAgent.agent.id}`);
+assert.equal((await agentCall("GET", "/api/print-agent/jobs?wait=0", null, rotated.token)).status, 401);
+assert.match((await call(null, "GET", "/api/print-agent/script")).json || "", /R2 print agent/);
+log("print agents: labels from the cloud to a venue's printer through its agent, each agent its own organisation's");
+
 // --- platform admin ---
 const orgs = await ok(platform, "GET", "/api/admin/orgs");
 const rowA = orgs.find((o) => o.id === orgA);
@@ -1227,11 +1279,19 @@ assert.equal((await upload(adminC, repairC.id, "photo.png", whitePng(4, 4), "ima
 const planC = await adminC.ok("POST", "/api/maintenance/plans", { name: "Doomed plan", kind: "service", every: 1, unit: "week", items: [itemC.id] });
 const [jobOfC] = (await adminC.ok("GET", `/api/collections/maintenance_jobs/records?filter=${encodeURIComponent(`plan = "${planC.id}"`)}`)).items;
 await adminC.ok("POST", `/api/maintenance/jobs/${jobOfC.id}/done`, { result: "pass" });
+// A unit with a file and a repair, and a print agent, go too.
+const serialItemC = await adminC.create("items", { name: "Doomed serial", kind: "item", tracking: "serial" });
+const unitC = await adminC.create("serials", { item: serialItemC.id, status: "active" });
+assert.equal((await uploadUnit(adminC, unitC.id, "manual.pdf")).status, 200);
+await adminC.ok("POST", "/api/repairs", { item: serialItemC.id, serials: [unitC.id], fault: "Doomed unit" });
+const agentC = await adminC.ok("POST", "/api/print-agents", { name: "Doomed agent" });
 await fails(platform, "DELETE", `/api/admin/orgs/${orgC}`, { confirm: "wrong" }, 400, /exactly/);
 await ok(platform, "DELETE", `/api/admin/orgs/${orgC}`, { confirm: `Smoke C ${run}` });
 await fails(su, "GET", `/api/collections/items/records/${itemC.id}`, null, 404);
 await fails(su, "GET", `/api/collections/jobs/records/${jobC.id}`, null, 404);
 await fails(su, "GET", `/api/collections/repairs/records/${repairC.id}`, null, 404);
+await fails(su, "GET", `/api/collections/serials/records/${unitC.id}`, null, 404);
+assert.equal((await call(`Bearer ${agentC.token}`, "GET", "/api/print-agent/jobs?wait=0")).status, 401);
 assert.equal((await ok(adminUser.token, "GET", "/api/me")).memberships.some((m) => m.org.id === orgC), false);
 log("platform admin: organisation and account overview, suspension, deletion, and guard rails");
 

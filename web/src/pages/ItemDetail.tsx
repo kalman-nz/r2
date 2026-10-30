@@ -214,13 +214,16 @@ export default function ItemDetail() {
               Create repair
             </button>
           )}
-          <PrintButton context={buildItemLabelContext(item, categoryPath, bins.length === 1 ? bins[0] : "")} label="Print bulk label" />
+          <PrintButton
+            context={buildItemLabelContext(item, categoryPath, bins.length === 1 ? bins[0] : "")}
+            label={item.kind === "item" && item.tracking === "bulk" ? "Print label" : "Print item label"}
+          />
         </div>
       </div>
 
       {item.archived && (
         <div className="card bg-gray-50 px-4 py-2.5 text-sm text-gray-700 flex items-center justify-between gap-3 flex-wrap">
-          <span>Archived: hidden from lists and can't be added to projects.</span>
+          <span>{feature("projects") ? "Archived: hidden from lists and can't be added to projects." : "Archived: hidden from lists."}</span>
           {can("items.edit") && (
             <button onClick={() => setArchived(false)} disabled={archiving} className="btn-secondary py-1">
               Restore

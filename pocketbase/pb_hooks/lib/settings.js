@@ -78,6 +78,8 @@ function publicSettings(org) {
     if (all[key] !== undefined) result[key] = all[key];
   }
   result.rentmanApiTokenSet = !!all.rentmanApiToken;
+  // "Find photo" needs a vision model this server can reach (lib/photoSearch.js).
+  result.photoSearch = !!$os.getenv("R2_OLLAMA_URL");
   return result;
 }
 

@@ -16,12 +16,15 @@ import {
   type PrintingConfig,
 } from "../lib/printing";
 import NumberInput from "./NumberInput";
+import PrintAgentsSection, { usePrintAgents } from "./PrintAgentsSection";
 import Switch from "./Switch";
 import { useToast } from "./ToastProvider";
 
-// Settings → Printer setup: the label stock the business uses, and each
-// Brother printer with what's loaded in it and where it is. Edited as a
-// draft, saved together.
+// Settings → Printer setup: the label stock the business uses, each
+// Brother printer with what's loaded in it and where it is, and the print
+// agents at the venues that printers go through (PrintAgentsSection, saved
+// as they're changed). Printers and sizes are edited as a draft, saved
+// together.
 export default function PrinterSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -76,6 +79,7 @@ export default function PrinterSettings() {
         setEditing={setEditing}
         onChange={(printers) => update({ printers })}
       />
+      <PrintAgentsSection />
       <SizesSection draft={draft} editing={editing} setEditing={setEditing} onChange={(sizes) => update({ sizes })} />
 
       {dirty && (
@@ -136,9 +140,13 @@ function PrintersSection({
     retry: false,
   });
   const [testing, setTesting] = useState<string | null>(null);
+  const { data: agents = [] } = usePrintAgents();
+  // Off on a cloud server: every printer goes through an agent at its venue.
+  const direct = draft.direct !== false;
   const brotherSizes = draft.sizes.filter((s) => s.brother);
   const sizeName = (id: string) => draft.sizes.find((s) => s.id === id)?.name;
   const locationName = (id: string) => locations.find((l) => l.id === id)?.name;
+  const agentName = (id: string) => agents.find((a) => a.id === id)?.name;
 
   function add() {
     const printer: Printer = {
@@ -148,6 +156,7 @@ function PrintersSection({
       model: "QL-810W",
       sizeId: brotherSizes[0]?.id ?? "",
       locationId: "",
+      agentId: direct ? "" : (agents[0]?.id ?? ""),
       isDefault: draft.printers.length === 0,
       enabled: true,
     };
@@ -219,6 +228,11 @@ function PrintersSection({
                       <span>{p.model}</span>
                       <span>{sizeName(p.sizeId) ? `${sizeName(p.sizeId)} loaded` : "Nothing loaded"}</span>
                       {locationName(p.locationId) && <span>{locationName(p.locationId)}</span>}
+                      {p.agentId ? (
+                        <span>via {agentName(p.agentId) ?? "a removed agent"}</span>
+                      ) : (
+                        !direct && <span className="text-amber-700">Needs a print agent</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -264,6 +278,16 @@ function PrintersSection({
                         {brotherSizes.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Labelled>
+                    <Labelled label="Prints through">
+                      <select value={p.agentId ?? ""} onChange={(e) => patch(p.id, { agentId: e.target.value })} className="input py-1.5">
+                        {(direct || !p.agentId) && <option value="">{direct ? "This server" : agents.length === 0 ? "Add a print agent first" : "Pick a print agent"}</option>}
+                        {agents.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
                           </option>
                         ))}
                       </select>

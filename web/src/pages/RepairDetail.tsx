@@ -145,13 +145,13 @@ export default function RepairDetail() {
         {canEdit && (
           // The organisation's statuses in their order, with a line where
           // they go from holding the kit to ending the repair.
-          <div className="flex items-center gap-1 flex-wrap" role="radiogroup" aria-label="Status">
+          <div className="inline-flex items-center flex-wrap rounded-md border border-gray-300 bg-gray-50 p-0.5" role="radiogroup" aria-label="Status">
             {statuses.map((s, i) => {
               const on = s.id === repair.status;
               const ends = s.stage !== "open";
               return (
-                <span key={s.id} className="flex items-center gap-1">
-                  {i > 0 && ends !== (statuses[i - 1].stage !== "open") && <span className="w-px h-5 bg-gray-300 mx-1" aria-hidden />}
+                <span key={s.id} className="flex items-center">
+                  {i > 0 && ends !== (statuses[i - 1].stage !== "open") && <span className="hidden sm:block w-px h-5 bg-gray-300 mx-1" aria-hidden />}
                   <button
                     type="button"
                     role="radio"
@@ -159,8 +159,8 @@ export default function RepairDetail() {
                     title={s.stage === "open" ? "Out of service while it's here" : s.stage === "repaired" ? "Ends it: back in service" : "Ends it: retired"}
                     disabled={saving}
                     onClick={() => setStatus(s.id)}
-                    className={`flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-[13px] font-medium border transition-colors disabled:opacity-60 ${
-                      on ? "bg-carbon border-carbon text-white" : "bg-white border-gray-300 text-gray-600 hover:border-gray-400 hover:text-gray-900"
+                    className={`flex items-center gap-1.5 px-3 py-1 text-sm rounded transition-colors disabled:opacity-60 ${
+                      on ? "bg-white text-gray-900 font-medium shadow-sm ring-1 ring-gray-200" : "text-gray-600 hover:text-gray-900"
                     }`}
                   >
                     <span className={`w-2 h-2 rounded-full ${STATUS_COLOURS[s.colour || "gray"].dot}`} aria-hidden />
@@ -175,11 +175,17 @@ export default function RepairDetail() {
 
       {open && (
         <div className="card bg-amber-50/60 px-4 py-2.5 text-sm text-gray-700">
-          Out of service:{" "}
-          {units.length > 0
-            ? `${units.length === 1 ? "this unit isn't" : "these units aren't"}`
-            : `${repair.quantity} ${repair.quantity === 1 ? "isn't" : "aren't"}`}{" "}
-          available for projects until it's repaired.
+          {feature("projects") ? (
+            <>
+              Out of service:{" "}
+              {units.length > 0
+                ? `${units.length === 1 ? "this unit isn't" : "these units aren't"}`
+                : `${repair.quantity} ${repair.quantity === 1 ? "isn't" : "aren't"}`}{" "}
+              available for projects until it's repaired.
+            </>
+          ) : (
+            `Out of service until it's repaired${units.length === 0 ? ` (${repair.quantity})` : ""}.`
+          )}
         </div>
       )}
 

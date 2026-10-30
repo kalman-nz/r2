@@ -16,8 +16,14 @@ services:
       # Optional: only used by Settings > Import when no token is saved there.
       RENTMAN_API_TOKEN: ${RENTMAN_API_TOKEN:-}
       PRINTER_HOST: ${PRINTER_HOST:-}
-      # "Find photo" on items: Ollama with a vision model, on the host by default.
-      R2_OLLAMA_URL: ${R2_OLLAMA_URL:-http://host.docker.internal:11434}
+      # 0: labels only go to printers through a print agent at each venue
+      # (a cloud server can't reach their networks). 1 when R2 runs on the
+      # same network as the printers and sends to them itself.
+      R2_DIRECT_PRINTING: ${R2_DIRECT_PRINTING:-0}
+      # "Find photo" on items: Ollama with a vision model, e.g.
+      # http://host.docker.internal:11434 for one on the host. Unset, the
+      # app doesn't offer it.
+      R2_OLLAMA_URL: ${R2_OLLAMA_URL:-}
       R2_VISION_MODEL: ${R2_VISION_MODEL:-gemma4:12b-it-qat}
     extra_hosts:
       - "host.docker.internal:host-gateway"

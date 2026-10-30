@@ -20,7 +20,7 @@ export default function FilesCard<T extends WithFiles>({
   upload,
   remove,
   onChanged,
-  hint = "Photos, reports, quotes, invoices, POs: any file up to 25 MB.",
+  hint = "",
 }: {
   record: T;
   canEdit: boolean;

@@ -137,6 +137,8 @@ routerAdd(
     $app.runInTransaction((tx) => {
       // Children before parents, so no required reference is left dangling.
       for (const table of [
+        "print_jobs",
+        "print_agents",
         "scans",
         "quotes",
         "job_lines",
@@ -150,7 +152,6 @@ routerAdd(
         "tracking_steps",
         "job_statuses",
         "repair_statuses",
-        "serials",
         "item_stock",
         "item_components",
         "custom_fields",
@@ -170,13 +171,16 @@ routerAdd(
       ]) {
         tx.db().newQuery("DELETE FROM " + table + " WHERE org = {:org}").bind({ org: org.id }).execute();
       }
-      // Maintenance jobs, repairs and items with files one by one, so the
-      // files are deleted from storage too. Items last: the others hold on
-      // to them.
+      // Maintenance jobs, repairs, units and items with files one by one, so
+      // the files are deleted from storage too. Units after the repairs and
+      // maintenance they're part of (a unit with history can't be deleted
+      // on its own), items last: the others hold on to them.
       tx.db().newQuery("DELETE FROM maintenance_jobs WHERE org = {:org} AND (files = '' OR files = '[]')").bind({ org: org.id }).execute();
       for (const job of tx.findRecordsByFilter("maintenance_jobs", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(job);
       tx.db().newQuery("DELETE FROM maintenance_plans WHERE org = {:org}").bind({ org: org.id }).execute();
       for (const repair of tx.findRecordsByFilter("repairs", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(repair);
+      tx.db().newQuery("DELETE FROM serials WHERE org = {:org} AND (files = '' OR files = '[]' OR files IS NULL)").bind({ org: org.id }).execute();
+      for (const unit of tx.findRecordsByFilter("serials", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(unit);
       for (const item of tx.findRecordsByFilter("items", "org = {:org}", "", 0, 0, { org: org.id })) tx.delete(item);
       tx.delete(org);
     });

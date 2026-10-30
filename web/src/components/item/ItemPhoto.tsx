@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import { api, type Item } from "../../lib/api";
 import { errorText } from "../../lib/errors";
@@ -7,13 +8,16 @@ import { useToast } from "../ToastProvider";
 
 // The item's photo at the top of its page. Click to add or change it;
 // remove it from the corner; "Find photo" searches online and has the
-// server's local AI model pick the best match. Saves straight away.
+// server's local AI model pick the best match (only where the server has
+// one). Saves straight away.
 export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canEdit: boolean; onSaved: (item: Item) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [finding, setFinding] = useState(false);
   const { showToast } = useToast();
   const confirm = useConfirm();
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const canFind = canEdit && settings?.photoSearch !== false;
 
   async function upload(file: File | null | undefined) {
     if (!file) return;
@@ -100,7 +104,7 @@ export default function ItemPhoto({ item, canEdit, onSaved }: { item: Item; canE
           ×
         </button>
       )}
-      {canEdit && (
+      {canFind && (
         <button
           onClick={find}
           disabled={busy}

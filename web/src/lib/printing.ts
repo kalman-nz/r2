@@ -28,6 +28,7 @@ export interface Printer {
   model: string;
   sizeId: string; // the label size loaded in it now
   locationId: string; // "" = not at any one location
+  agentId?: string; // the print agent at the venue it goes through; "" = straight from the server
   isDefault: boolean;
   enabled: boolean;
 }
@@ -35,6 +36,18 @@ export interface Printer {
 export interface PrintingConfig {
   sizes: LabelSize[];
   printers: Printer[];
+  direct?: boolean; // the server can send to printers itself (self-hosted); off, every printer needs an agent
+}
+
+// A small program at a venue that takes labels to its printers
+// (print/r2_print_agent.py, pocketbase/pb_hooks/lib/printAgents.js).
+export interface PrintAgent {
+  id: string;
+  name: string;
+  online: boolean;
+  lastSeen: string;
+  hostname: string;
+  version: string;
 }
 
 export function usePrinting() {

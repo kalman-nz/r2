@@ -43,7 +43,7 @@ function printingConfig(org) {
   if (!printers) {
     const host = all.printerHost || $os.getenv("PRINTER_HOST") || "";
     printers = host
-      ? [{ id: "printer-1", name: "Label printer", host: host, model: "QL-810W", sizeId: "tape-62", locationId: "", isDefault: true, enabled: true }]
+      ? [{ id: "printer-1", name: "Label printer", host: host, model: "QL-810W", sizeId: "tape-62", locationId: "", agentId: "", isDefault: true, enabled: true }]
       : [];
   }
   return { sizes: sizes, printers: printers };
@@ -53,7 +53,9 @@ const str = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const positive = (v) => typeof v === "number" && isFinite(v) && v > 0 && v <= 1000;
 
 // Throws BadRequestError on anything unusable; returns cleaned lists.
-function validatePrintingBody(data) {
+// agentIds: the organisation's print agents (lib/printAgents.js), when a
+// printer may go through one; left out, any id is taken.
+function validatePrintingBody(data, agentIds) {
   if (!data || typeof data !== "object") throw new BadRequestError("Invalid body");
   if (!Array.isArray(data.sizes) || !Array.isArray(data.printers)) throw new BadRequestError("sizes and printers must be lists");
   if (data.sizes.length > 100) throw new BadRequestError("Too many label sizes");
@@ -87,6 +89,8 @@ function validatePrintingBody(data) {
     if (BROTHER_MODELS.indexOf(model) === -1) throw new BadRequestError(name + ": unsupported model " + model);
     const sizeId = str(p.sizeId, 60);
     if (sizeId && !sizeIds[sizeId]) throw new BadRequestError(name + ": the loaded label size doesn't exist");
+    const agentId = str(p.agentId, 30);
+    if (agentId && agentIds && agentIds.indexOf(agentId) === -1) throw new BadRequestError(name + ": that print agent doesn't exist");
     if (p.isDefault) defaults++;
     printerIds[id] = true;
     return {
@@ -96,6 +100,8 @@ function validatePrintingBody(data) {
       model: model,
       sizeId: sizeId,
       locationId: str(p.locationId, 30),
+      // "" = the server sends to it itself (self-hosted, on its network).
+      agentId: agentId,
       isDefault: !!p.isDefault,
       enabled: p.enabled !== false,
     };

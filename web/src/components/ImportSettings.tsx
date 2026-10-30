@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, type CsvImportResult } from "../lib/api";
+import { api, type CsvImportResult, type FeatureKey } from "../lib/api";
 import { normaliseHeader, parseCsv } from "../lib/csv";
 import { errorText } from "../lib/errors";
 import { useFeature, useRole } from "../lib/roles";
@@ -9,8 +9,9 @@ import { useToast } from "./ToastProvider";
 type CsvKind = "items" | "contacts";
 
 // R2 field, its label, and header names it's matched to automatically.
-// hint shows on hover where the format isn't obvious.
-const TARGETS: Record<CsvKind, { key: string; label: string; hint?: string; required?: boolean; aliases: string[] }[]> = {
+// hint shows on hover where the format isn't obvious; feature hides it
+// while the organisation has that turned off.
+const TARGETS: Record<CsvKind, { key: string; label: string; hint?: string; required?: boolean; feature?: FeatureKey; aliases: string[] }[]> = {
   items: [
     { key: "name", label: "Name", required: true, aliases: ["name", "item", "itemname", "equipment", "product"] },
     { key: "code", label: "Code", aliases: ["code", "sku", "itemcode", "partnumber"] },
@@ -18,12 +19,13 @@ const TARGETS: Record<CsvKind, { key: string; label: string; hint?: string; requ
     { key: "quantity", label: "Quantity", hint: "For bulk items", aliases: ["quantity", "qty", "stock", "count", "onhand", "owned"] },
     { key: "serials", label: "Unit barcodes", hint: "Separate with ;", aliases: ["serials", "serialnumbers", "barcodes", "assettags", "units"] },
     { key: "barcode", label: "Item barcode", aliases: ["barcode", "qr", "qrcode"] },
-    { key: "price", label: "Price", aliases: ["price", "dayrate", "rate", "rentalprice", "dailyrate", "hireprice", "saleprice"] },
-    { key: "priceUnit", label: "Price per", hint: "hour, day, week or each", aliases: ["priceunit", "per", "priceper", "unit", "uom", "rateunit"] },
+    { key: "price", label: "Price", feature: "pricing", aliases: ["price", "dayrate", "rate", "rentalprice", "dailyrate", "hireprice", "saleprice"] },
+    { key: "priceUnit", label: "Price per", hint: "hour, day, week or each", feature: "pricing", aliases: ["priceunit", "per", "priceper", "unit", "uom", "rateunit"] },
     { key: "replacementValue", label: "Replacement cost", aliases: ["replacementvalue", "value", "replacementcost", "replacement"] },
     { key: "weightKg", label: "Weight (kg)", aliases: ["weight", "weightkg", "kg"] },
     { key: "powerW", label: "Power (W)", aliases: ["power", "powerw", "watts", "wattage"] },
-    { key: "locationInWarehouse", label: "Shelf / bin", aliases: ["location", "shelf", "bin", "bay", "warehouselocation", "locationinwarehouse"] },
+    { key: "location", label: "Storage location", hint: "Made if it's new", aliases: ["storagelocation", "stocklocation", "location", "store", "storeroom", "room", "space"] },
+    { key: "locationInWarehouse", label: "Shelf / bin", aliases: ["shelf", "bin", "bay", "shelfbin", "warehouselocation", "locationinwarehouse"] },
     { key: "description", label: "Description", hint: "Shown on quotes", aliases: ["description", "externalnote", "externalremark"] },
     { key: "notes", label: "Internal notes", aliases: ["notes", "note", "comments", "internalnote", "internalremark"] },
   ],
@@ -40,6 +42,20 @@ const TARGETS: Record<CsvKind, { key: string; label: string; hint?: string; requ
 
 const KIND_LABELS: Record<CsvKind, string> = { items: "Inventory items", contacts: "Contacts" };
 
+// "4 items, 6 units, 1 new storage location"
+const COUNT_LABELS: Record<string, [string, string]> = {
+  items: ["item", "items"],
+  serials: ["unit", "units"],
+  contacts: ["contact", "contacts"],
+  locations: ["new storage location", "new storage locations"],
+};
+function countsText(counts: Record<string, number>): string {
+  return Object.keys(COUNT_LABELS)
+    .filter((k) => counts[k] !== undefined && (counts[k] > 0 || k !== "locations"))
+    .map((k) => `${counts[k]} ${COUNT_LABELS[k][counts[k] === 1 ? 0 : 1]}`)
+    .join(", ");
+}
+
 export default function ImportSettings() {
   const { can } = useRole();
   return <div className="flex flex-col gap-8">{can("import.csv") && <CsvImport />}</div>;
@@ -47,7 +63,8 @@ export default function ImportSettings() {
 
 function CsvImport() {
   const queryClient = useQueryClient();
-  const projectsOn = useFeature()("projects");
+  const feature = useFeature();
+  const projectsOn = feature("projects");
   const { showToast } = useToast();
   const [kind, setKind] = useState<CsvKind>("items");
   const [fileName, setFileName] = useState("");
@@ -58,13 +75,14 @@ function CsvImport() {
 
   const kinds: CsvKind[] = projectsOn ? ["items", "contacts"] : ["items"];
   const headers = table[0] ?? [];
-  const targets = TARGETS[kind];
+  const targetsFor = (k: CsvKind) => TARGETS[k].filter((t) => !t.feature || feature(t.feature));
+  const targets = targetsFor(kind);
   const mapped = targets.filter((t) => mapping[t.key] !== undefined);
 
   function autoMap(nextHeaders: string[], nextKind: CsvKind) {
     const normalised = nextHeaders.map(normaliseHeader);
     const next: Record<string, number> = {};
-    for (const t of TARGETS[nextKind]) {
+    for (const t of targetsFor(nextKind)) {
       const index = normalised.findIndex((h) => t.aliases.includes(h));
       if (index !== -1 && !Object.values(next).includes(index)) next[t.key] = index;
     }
@@ -102,8 +120,8 @@ function CsvImport() {
       const r = await api.importCsv(kind, rows, dryRun);
       setResult(r);
       if (r.committed) {
-        await Promise.all(["items", "categories", "contacts", "availability", "import-runs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
-        showToast("success", `Imported ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(", ")}`);
+        await Promise.all(["items", "categories", "contacts", "locations", "availability", "import-runs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+        showToast("success", `Imported ${countsText(r.counts)}`);
       }
     } catch (err) {
       showToast("error", errorText(err));
@@ -235,7 +253,7 @@ function CsvImport() {
             <div className={`rounded-md border p-3 text-sm ${result.errors.length ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-emerald-50 border-emerald-200 text-emerald-800"}`}>
               {result.errors.length === 0 ? (
                 <p>
-                  {imported ? "Imported" : "Ready to import"}: {Object.entries(result.counts).map(([k, v]) => `${v} ${k}`).join(", ")}.
+                  {imported ? "Imported" : "Ready to import"}: {countsText(result.counts)}.
                 </p>
               ) : (
                 <>

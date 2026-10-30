@@ -228,9 +228,13 @@ const DEFAULT_VIEW: ViewConfig = {
 export default function ItemsList() {
   const navigate = useNavigate();
   const { can } = useRole();
-  // Price columns only with prices and quotes.
+  // Price columns only with prices and quotes. Without projects nothing's
+  // booked, so what's free is what's in service (as on the item's page).
   const feature = useFeature();
-  const offered = feature("pricing") ? COLUMNS : COLUMNS.filter((c) => c.key !== "dayRate" && c.key !== "replacementValue");
+  const projectsOn = feature("projects");
+  const offered = (feature("pricing") ? COLUMNS : COLUMNS.filter((c) => c.key !== "dayRate" && c.key !== "replacementValue")).map((c) =>
+    c.key === "freeNow" && !projectsOn ? { ...c, label: "In service" } : c,
+  );
   const [search, setSearch] = useState("");
   // The folder being looked at ("" is the top, Inventory), in the URL so
   // Back and links work like a file browser.
@@ -538,7 +542,7 @@ export default function ItemsList() {
                 </FilterField>
               )}
               <FilterCheck checked={unavailableOnly} onChange={setUnavailableOnly}>
-                Only items with none free now
+                {projectsOn ? "Only items with none free now" : "Only items with none in service"}
               </FilterCheck>
               <FilterCheck checked={showArchived} onChange={setShowArchived}>
                 Show archived items

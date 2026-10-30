@@ -61,11 +61,11 @@ export default function ShareModal({
       <div className="flex flex-col gap-2 text-sm">
         <span className="text-gray-500">People</span>
         {people.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
             {people.map((id) => (
-              <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-gray-100 text-xs text-gray-700">
+              <span key={id} className="inline-flex items-center gap-0.5 text-sm text-gray-800">
                 {nameOf.get(id) || "Someone"}
-                <button onClick={() => setPeople((p) => p.filter((x) => x !== id))} className="w-4 h-4 rounded-full hover:bg-gray-300 leading-none" aria-label={`Stop sharing with ${nameOf.get(id)}`}>
+                <button onClick={() => setPeople((p) => p.filter((x) => x !== id))} className="px-1 text-gray-400 hover:text-gray-900 leading-none" aria-label={`Stop sharing with ${nameOf.get(id)}`}>
                   ×
                 </button>
               </span>

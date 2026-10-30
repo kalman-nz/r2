@@ -639,6 +639,25 @@ function categoryForPath(app, org, path, cache) {
   return parentId;
 }
 
+// A storage location by name, any case, made if it's new; blank is the
+// organisation's first, where stock and units go to start with ("" if it
+// has none). Counts the ones it makes in counts.locations.
+function locationForName(app, org, name, cache, counts) {
+  const wanted = String(name || "").trim();
+  const key = "location:" + wanted.toLowerCase();
+  if (cache[key] === undefined) {
+    const all = app.findRecordsByFilter("locations", "org = {:org}", "created", 0, 0, { org: org });
+    let found = wanted ? all.find((l) => l.getString("name").toLowerCase() === wanted.toLowerCase()) : all[0];
+    if (!found && wanted) {
+      found = new Record(app.findCollectionByNameOrId("locations"), { org: org, name: wanted.slice(0, 200) });
+      app.save(found);
+      counts.locations = (counts.locations || 0) + 1;
+    }
+    cache[key] = found ? found.id : "";
+  }
+  return cache[key];
+}
+
 // "per hour", "hr", "/day", "weekly", "ea", "each"… → hour | day | week |
 // each. Blank is day, like every item before prices had a unit.
 function csvPriceUnit(value) {
@@ -663,6 +682,10 @@ function importItemRow(app, org, row, counts, cache) {
     .map((b) => b.trim())
     .filter((b) => b);
   const serialised = barcodes.length > 0;
+  // Where it's kept: units and bulk stock both go to this location and
+  // shelf, like units added by hand.
+  const bin = String(row.locationInWarehouse || "").trim();
+  const location = locationForName(app, org, row.location, cache, counts);
   const item = new Record(app.findCollectionByNameOrId("items"), {
     org: org,
     name: name,
@@ -677,15 +700,25 @@ function importItemRow(app, org, row, counts, cache) {
     weightKg: csvNumber(row.weightKg, "weight") || 0,
     powerW: csvNumber(row.powerW, "power") || 0,
     barcode: String(row.barcode || "").trim(),
-    locationInWarehouse: String(row.locationInWarehouse || "").trim(),
+    locationInWarehouse: bin,
     description: String(row.description || "").trim(),
     notes: String(row.notes || "").trim(),
   });
   app.save(item);
   counts.items++;
+  // Saving the item put its stock in the first location (lib/stock.js
+  // matchRows): move it to the one the row names.
+  if (!serialised && location) {
+    const { rowsOf, saveRow } = require("./stock.js");
+    for (const r of rowsOf(app, item.id)) {
+      if (r.getString("location") === location) continue;
+      r.set("location", location);
+      saveRow(app, r);
+    }
+  }
   const serials = app.findCollectionByNameOrId("serials");
   for (const barcode of barcodes) {
-    app.save(new Record(serials, { org: org, item: item.id, barcode: barcode, status: "active" }));
+    app.save(new Record(serials, { org: org, item: item.id, barcode: barcode, status: "active", location: location, bin: bin }));
     counts.serials++;
   }
 }

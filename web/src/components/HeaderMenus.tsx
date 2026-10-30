@@ -71,7 +71,7 @@ export function OrgSwitcher() {
           <MenuLink to="/orgs" onClick={() => setOpen(false)}>
             <span>All organisations</span>
             {invitations.length > 0 && (
-              <span className="text-xs font-semibold text-white bg-signal-ink rounded-full px-2 py-0.5">
+              <span className="text-xs font-medium text-signal-ink">
                 {invitations.length} invitation{invitations.length === 1 ? "" : "s"}
               </span>
             )}

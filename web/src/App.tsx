@@ -285,9 +285,10 @@ function AppShell() {
             {memberships.length > 0 ? <OrgSwitcher /> : <span className="text-sm font-medium text-gray-700">R2</span>}
             {!online && (
               <span
-                className="eyebrow px-2 py-0.5 rounded-full bg-warn/20 text-[#7a4f00] whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 eyebrow text-[#7a4f00] whitespace-nowrap"
                 title="Showing what was last loaded. Changes and scans need a connection."
               >
+                <span className="w-2 h-2 rounded-full bg-warn shrink-0" aria-hidden />
                 Offline
               </span>
             )}

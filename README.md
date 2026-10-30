@@ -36,7 +36,7 @@ For a hosted, multi-organisation install:
 
 - Set `R2_APP_URL` to the public address (e.g. `https://app.example.com`). Links in emails use it, and it overrides the dashboard's Application URL on every start.
 - Set up SMTP in the PocketBase dashboard (Settings → Mail settings), with a sender name and address. Without it, sign-up verification and password-reset emails can't go out, and invitations show a link for the inviter to pass on. People can't accept an invitation until their email is verified, so mail is effectively required. A platform admin can mark someone verified by hand in the admin panel.
-- Brother label printing over the LAN only works when R2 runs on the same network as the printer. Hosted organisations print labels as PDFs.
+- Labels reach each venue's Brother printers through a **print agent** there (below), since a cloud server can't reach their networks. `docker-compose.yml` sets `R2_DIRECT_PRINTING=0`, so the server never connects to printer addresses itself; set it to 1 only when R2 runs on the same network as the printers.
 
 ## Tests
 
@@ -140,7 +140,7 @@ Contacts' billing addresses and locations' addresses look themselves up as you t
 
 ### Item photos
 
-"Find photo" under an item's photo searches the web (Bing images, no API key) and saves the best match. A local vision model in Ollama does the thinking: it turns the item's name, folder, description and custom fields into a search query, then looks at the top results and picks the one showing exactly that item. `print/r2_find_photo.py` does the work; set `R2_OLLAMA_URL` and `R2_VISION_MODEL` (default `gemma4:12b-it-qat`, any Ollama model with vision works). It takes 5–20 seconds.
+"Find photo" under an item's photo searches the web (Bing images, no API key) and saves the best match. A local vision model in Ollama does the thinking: it turns the item's name, folder, description and custom fields into a search query, then looks at the top results and picks the one showing exactly that item. `print/r2_find_photo.py` does the work; set `R2_OLLAMA_URL` and `R2_VISION_MODEL` (default `gemma4:12b-it-qat`, any Ollama model with vision works). It takes 5–20 seconds. A server without `R2_OLLAMA_URL` doesn't offer it (`pnpm dev:pb` sets it to Ollama on your machine).
 
 ### Repairs and maintenance
 
@@ -159,6 +159,14 @@ Everything that keeps the kit working lives under Maintenance: what's due, repai
 ### Labels
 
 The label designer's templates can be any size. Brother QL tape widths (12/29/62mm) print straight to the networked printer. Every size, including the Zebra presets, can be downloaded as a PDF: one page per label at its real size, for any printer with a driver.
+
+**Print agents.** R2 in the cloud can't reach a venue's printers, and a web page can't send to them either (browsers don't allow the raw network connection a Brother takes). So a small program runs on a computer at the venue that stays on: `print/r2_print_agent.py`, Python 3.8+ with nothing to install, on a Raspberry Pi, the venue's server or anything else that's on its network (`lib/printAgents.js`, `pb_migrations/0048_print_agents.js`).
+
+- Settings → Printer setup → Print agents makes one and shows its token once, in the commands that set it up: on Linux `sudo python3 r2_print_agent.py --install --url … --token …` makes it a service that starts with the machine (logs: `journalctl -u r2-print-agent -f`), or one `docker run` line, or plain `python3 r2_print_agent.py --url … --token …` anywhere else (Task Scheduler on Windows, with `py`). The script downloads from the server (`GET /api/print-agent/script`).
+- Each printer says what it prints through: an agent, or (self-hosted) this server. A printer behind an agent keeps its network address; the agent uses it.
+- The agent only connects out to R2, so nothing needs opening at the venue. It asks for labels with a long poll (`GET /api/print-agent/jobs?wait=20`, `Authorization: Bearer r2pa_…`), sends each one to its printer on port 9100, reports how it went, and every 30 seconds says which of its printers answer (the dots in Printer setup and the print dialog).
+- Printing to a printer behind an agent works like printing to one the server reaches itself: the server turns the label into the printer's raster commands (`print_label.py --raster-out`), queues them (`print_jobs`) and waits up to 15 seconds for the agent's answer. Printed, couldn't reach it (the app tries the next printer with the same stock) or failed. An agent not heard from in a minute counts as offline, so printing fails straight away and the app moves on.
+- Tokens are stored hashed. A new token retires the old one; an agent a printer still uses can't be removed. Queued labels are gone within the hour.
 
 ### Equipment tracking
 
@@ -209,7 +217,7 @@ Settings → Integrations keeps R2 in step with Rentman (two-way) or with event 
 The brief's MVP is built:
 
 - **Inventory:** items, categories, bulk and serialised stock, photos, day rates, units with barcodes, custom fields, bulk edits.
-- **Labels:** QR/barcode labels to a Brother QL, or as PDFs with Brother and Zebra size presets.
+- **Labels:** QR/barcode labels to a Brother QL (from the cloud through a print agent at the venue), or as PDFs with Brother and Zebra size presets.
 - **Availability:** with turnaround buffers, shortage warnings per job line, and a 60-day timeline per item.
 - **Projects:** schedules with usage and billing periods, subprojects, equipment headings, clients, venues and statuses.
 - **Quotes:** GST, day factors and discounts, as frozen snapshots and server-side PDFs.

@@ -1,6 +1,6 @@
 import type { RecordModel } from "pocketbase";
 import type { LabelTemplateData } from "./labelSpec";
-import type { PrintingConfig } from "./printing";
+import type { PrintAgent, PrintingConfig } from "./printing";
 
 export interface PrintResult {
   ok: boolean;
@@ -735,9 +735,10 @@ export interface Settings {
   xeroDueDays: string;
   invoicePrefix: string;
   rentmanApiTokenSet: boolean;
+  photoSearch: boolean; // the server has a vision model for "Find photo" (R2_OLLAMA_URL)
 }
 
-export type SettingsUpdate = Partial<Omit<Settings, "rentmanApiTokenSet">> & { rentmanApiToken?: string };
+export type SettingsUpdate = Partial<Omit<Settings, "rentmanApiTokenSet" | "photoSearch">> & { rentmanApiToken?: string };
 
 export interface Stats {
   items: number;
@@ -1330,6 +1331,11 @@ export const api = {
     }
   },
   getPrinting: () => request<PrintingConfig>("/api/printing"),
+  listPrintAgents: () => request<PrintAgent[]>("/api/print-agents"),
+  createPrintAgent: (name: string) => request<{ agent: PrintAgent; token: string }>("/api/print-agents", json("POST", { name })),
+  renamePrintAgent: (id: string, name: string) => request<PrintAgent>(`/api/print-agents/${id}`, json("PATCH", { name })),
+  newPrintAgentToken: (id: string) => request<{ agent: PrintAgent; token: string }>(`/api/print-agents/${id}/token`, json("POST")),
+  deletePrintAgent: (id: string) => request<{ ok: true }>(`/api/print-agents/${id}`, json("DELETE")),
   updatePrinting: (config: PrintingConfig) => request<PrintingConfig>("/api/printing", json("PUT", config)),
   checkPrinters: (ids?: string[]) =>
     request<Record<string, { ok: boolean; message: string }>>("/api/printing/check", json("POST", ids ? { ids } : {})),

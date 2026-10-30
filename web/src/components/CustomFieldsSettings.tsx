@@ -116,7 +116,7 @@ export default function CustomFieldsSettings() {
               onCommit={(v) => v && run(() => pb.collection("custom_fields").update(f.id, { label: v }))}
               className="w-48"
             />
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{typeLabel(f.type)}</span>
+            <span className="text-xs text-gray-500">{typeLabel(f.type)}</span>
             {f.type === "select" ? (
               <InlineText
                 value={(f.options ?? []).join(", ")}

@@ -46,7 +46,9 @@ COPY --from=web-builder /app/web/dist /pb/pb_public
 
 # One venv for both Python helpers: print_label.py (Brother QL printing) and
 # r2_pdf.py (quote, packing list and label PDFs, with the bundled fonts).
-COPY print/print_label.py print/r2_pdf.py print/r2_find_photo.py print/requirements.txt print/requirements-pdf.txt /pb/print/
+# r2_print_agent.py isn't run here: venues download it from the server
+# (GET /api/print-agent/script) to run next to their printers.
+COPY print/print_label.py print/r2_pdf.py print/r2_find_photo.py print/r2_print_agent.py print/requirements.txt print/requirements-pdf.txt /pb/print/
 COPY print/fonts /pb/print/fonts
 RUN python3 -m venv /pb/print/venv \
     && /pb/print/venv/bin/pip install --no-cache-dir -r /pb/print/requirements.txt -r /pb/print/requirements-pdf.txt

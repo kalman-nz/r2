@@ -341,9 +341,9 @@ export default function NewRepairModal({
             {files.length > 0 ? "Add more" : "Add photos or files"}
           </button>
           {files.map((f, i) => (
-            <span key={`${f.name}-${i}`} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-gray-100 text-xs text-gray-700 max-w-48">
+            <span key={`${f.name}-${i}`} className="inline-flex items-center gap-0.5 text-xs text-gray-700 max-w-48">
               <span className="truncate">{f.name}</span>
-              <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="w-4 h-4 rounded-full hover:bg-gray-300 leading-none" aria-label={`Remove ${f.name}`}>
+              <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="px-1 text-gray-400 hover:text-gray-900 leading-none" aria-label={`Remove ${f.name}`}>
                 ×
               </button>
             </span>
