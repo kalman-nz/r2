@@ -7,6 +7,7 @@ import { priceLabel } from "../lib/format";
 import { errorText } from "../lib/errors";
 import Modal from "./Modal";
 import NumberInput from "./NumberInput";
+import { numberProblem } from "../lib/numbers";
 import { useToast } from "./ToastProvider";
 import { orgFilter } from "../lib/currentOrg";
 
@@ -141,10 +142,12 @@ export default function ItemPicker({
               <NumberInput
                 value={qty}
                 min={1}
+                integer
                 onChange={(n) => setQuantities((prev) => ({ ...prev, [item.id]: n }))}
                 className="input w-16 py-1 text-right"
+                ariaLabel={`How many ${item.name}`}
               />
-              <button onClick={() => add(item)} disabled={busyId !== null} className="btn-secondary py-1 shrink-0">
+              <button onClick={() => add(item)} disabled={busyId !== null || !!numberProblem(qty, { min: 1, integer: true })} className="btn-secondary py-1 shrink-0">
                 {busyId === item.id ? "Adding…" : "Add"}
               </button>
             </div>

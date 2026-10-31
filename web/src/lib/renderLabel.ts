@@ -133,6 +133,37 @@ export function wrapText(
   return lines;
 }
 
+// "Shrink to fit": the largest size up to maxPx at which the text fits its
+// box, every line within the width and, wrapped, as many lines as the
+// height takes at that size (the same count drawing allows, so none are
+// cut off). Never below half a millimetre.
+function fitTextPx(
+  ctx: CanvasRenderingContext2D,
+  el: LabelElement,
+  value: string,
+  innerW: number,
+  innerH: number,
+  maxPx: number,
+  scalePxPerMm: number,
+): number {
+  const lineHeight = el.lineHeight ?? 1.2;
+  const fits = (px: number) => {
+    ctx.font = fontFor(el, px);
+    if (!el.wrap) return px <= innerH && ctx.measureText(value).width <= innerW;
+    const lines = wrapText(ctx, value, innerW, el.breakWords ?? true);
+    return lines.length <= Math.floor(innerH / (px * lineHeight)) && lines.every((l) => ctx.measureText(l).width <= innerW);
+  };
+  if (fits(maxPx)) return maxPx;
+  let lo = Math.min(maxPx, 0.5 * scalePxPerMm);
+  let hi = maxPx;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
 function valueFor(el: LabelElement, context: LabelDataContext): string {
   // Static text, or a barcode/QR on a one-off label, holds its own value.
   if (el.type === "staticText" || !el.dataField) return el.text ?? "";
@@ -266,17 +297,18 @@ async function drawElementContent(
     }
     const value = valueFor(el, context);
     if (!value) return;
-    const fontSizePx = (el.fontSize ?? 4) * scalePxPerMm;
-    ctx.font = fontFor(el, fontSizePx);
-    await ensureFont(ctx.font);
-    ctx.font = fontFor(el, fontSizePx);
-    ctx.fillStyle = INK[el.inverted ? "white" : (el.color ?? "black")];
-
     const paddingPx = (el.padding ?? 0) * scalePxPerMm;
     const innerX = x + paddingPx;
     const innerY = y + paddingPx;
     const innerW = Math.max(0, w - 2 * paddingPx);
     const innerH = Math.max(0, h - 2 * paddingPx);
+
+    let fontSizePx = (el.fontSize ?? 4) * scalePxPerMm;
+    ctx.font = fontFor(el, fontSizePx);
+    await ensureFont(ctx.font);
+    if (el.shrink) fontSizePx = fitTextPx(ctx, el, value, innerW, innerH, fontSizePx, scalePxPerMm);
+    ctx.font = fontFor(el, fontSizePx);
+    ctx.fillStyle = INK[el.inverted ? "white" : (el.color ?? "black")];
 
     const align = el.align ?? "left";
     ctx.textAlign = align;

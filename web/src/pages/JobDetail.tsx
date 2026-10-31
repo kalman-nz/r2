@@ -7,7 +7,7 @@ import { formatDate, formatDateTime, formatPeriod, nzd } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useFeature, useRole } from "../lib/roles";
 import JobFields from "../components/job/JobFields";
-import { draftFromJob, draftToPayload, draftToUpdate, newJobDraft, type JobDraft } from "../lib/jobDraft";
+import { draftFromJob, draftToPayload, draftToUpdate, jobFieldsProblem, newJobDraft, type JobDraft } from "../lib/jobDraft";
 import JobLines from "../components/job/JobLines";
 import JobSchedule from "../components/job/JobSchedule";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
@@ -58,7 +58,7 @@ function NewJob() {
       <section className="card p-4 flex flex-col gap-4">
         <JobFields draft={draft} onChange={setDraft} readOnly={false} withDates />
         <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
-          <button onClick={create} disabled={saving || !draft.name.trim()} className="btn-primary py-2">
+          <button onClick={create} disabled={saving || !draft.name.trim() || !!jobFieldsProblem(draft)} className="btn-primary py-2">
             {saving ? "Creating…" : "Create project"}
           </button>
           <span className="text-xs text-gray-500">Then build the schedule and add equipment on the project&apos;s tabs.</span>
@@ -313,7 +313,7 @@ function ExistingJob({ id }: { id: string }) {
                 {can("jobs.edit") && editing && (
                   <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-100">
                     <div className="flex items-center gap-2">
-                      <button onClick={save} disabled={saving || !dirty || !draft?.name.trim()} className="btn-primary py-2">
+                      <button onClick={save} disabled={saving || !dirty || !draft?.name.trim() || (!!draft && !!jobFieldsProblem(draft))} className="btn-primary py-2">
                         {saving ? "Saving…" : "Save changes"}
                       </button>
                       <button

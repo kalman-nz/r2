@@ -458,6 +458,7 @@ function completeJob(app, job, body, who) {
 module.exports = {
   KINDS,
   todayFor,
+  dayOf,
   syncPlan,
   syncAsset,
   plansCovering,

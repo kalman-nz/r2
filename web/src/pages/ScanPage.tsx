@@ -9,6 +9,7 @@ import { JobStatusBadge, TrackingStatus } from "../components/StatusBadge";
 import { STATUS_COLOURS } from "../lib/statuses";
 import { linesProgress, progressOf, useLayout, useTrackingSteps } from "../lib/tracking";
 import NumberInput from "../components/NumberInput";
+import { numberProblem } from "../lib/numbers";
 import NewRepairModal from "../components/repair/NewRepairModal";
 import TrackingSuggestion from "../components/job/TrackingSuggestion";
 import { useToast } from "../components/ToastProvider";
@@ -212,6 +213,16 @@ function ScanJob({ jobId }: { jobId: string }) {
   async function submit(raw: string) {
     const value = raw.trim();
     if (!value || busy || !step) return;
+    // A scanner presses Enter itself, so a wrong quantity is said in the
+    // feed (and beeps) rather than the scan quietly doing nothing.
+    const qtyProblem = numberProblem(quantity, { min: 1, integer: true });
+    if (qtyProblem) {
+      setFeed((prev) => [{ id: ++feedId.current, ok: false, text: `Not scanned: quantity ${qtyProblem.toLowerCase()}`, at: new Date() }, ...prev].slice(0, 50));
+      beep(false);
+      setCode("");
+      inputRef.current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const result = await api.scan(jobId, {
@@ -330,7 +341,7 @@ function ScanJob({ jobId }: { jobId: string }) {
         />
         <label className="flex items-center gap-1.5 text-sm text-gray-500" title="For bulk items (cables, consumables): how many this scan counts as">
           ×
-          <NumberInput value={quantity} min={1} onChange={(n) => setQuantity(Math.max(1, Math.round(n)))} className="input w-16 py-2" />
+          <NumberInput value={quantity} min={1} integer onChange={setQuantity} className="input w-16 py-2" ariaLabel="Quantity" />
         </label>
         <button type="submit" disabled={busy || !code.trim() || !step} className="btn-primary py-2.5">
           {busy ? "…" : "Enter"}

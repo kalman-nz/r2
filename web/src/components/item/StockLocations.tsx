@@ -7,6 +7,7 @@ import { useLocations } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import { unitPlaces, useItemStock } from "../../lib/stock";
 import NumberInput from "../NumberInput";
+import { COUNT, numberProblem } from "../../lib/numbers";
 import { useToast } from "../ToastProvider";
 
 // Where an item's stock is kept. Bulk stock is a quantity at each stock
@@ -86,6 +87,9 @@ export default function StockLocations({ item, canEdit, onSaved }: { item: Item;
   const editTotal = lines.reduce((n, l) => n + l.qty, 0);
   const duplicate = new Set(lines.map((l) => l.location)).size !== lines.length;
   const missing = lines.some((l) => !l.location);
+  // Negative or part quantities are refused, not rounded or zeroed.
+  const qtyProblem = (l: Line) => numberProblem(l.qty, COUNT);
+  const badQty = lines.some((l) => qtyProblem(l));
 
   return (
     <section className={`card flex flex-col ${editing ? "ring-2 ring-signal/30 border-signal/50" : ""}`}>
@@ -123,7 +127,7 @@ export default function StockLocations({ item, canEdit, onSaved }: { item: Item;
                 ))}
               </select>
               <input value={l.bin} onChange={(e) => update(l.key, { bin: e.target.value })} placeholder="e.g. Bay 3" className="input py-1.5 min-w-0" aria-label="Shelf or bin" />
-              <NumberInput value={l.qty} min={0} onChange={(n) => update(l.key, { qty: Math.max(0, Math.round(n)) })} className="input py-1.5 w-full text-right" />
+              <NumberInput value={l.qty} min={0} integer onChange={(n) => update(l.key, { qty: n })} className="input py-1.5 w-full text-right" ariaLabel="Quantity" />
               <button
                 type="button"
                 onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
@@ -133,6 +137,7 @@ export default function StockLocations({ item, canEdit, onSaved }: { item: Item;
               >
                 ×
               </button>
+              {qtyProblem(l) && <span className="col-span-full -mt-1 text-xs text-fault-ink text-right">{qtyProblem(l)}</span>}
             </div>
           ))}
           {lines.length < locations.length && (
@@ -147,7 +152,7 @@ export default function StockLocations({ item, canEdit, onSaved }: { item: Item;
           )}
           <div className="flex items-center justify-between gap-2 py-2.5 border-t border-gray-100 mt-1 flex-wrap">
             <div className="flex items-center gap-2">
-              <button type="submit" disabled={saving || duplicate || missing} className="btn-primary py-1.5">
+              <button type="submit" disabled={saving || duplicate || missing || badQty} className="btn-primary py-1.5">
                 {saving ? "Saving…" : "Save"}
               </button>
               <button type="button" onClick={() => setEditing(false)} className="btn-secondary py-1.5">

@@ -5,6 +5,8 @@ import { displayPath, useCategories, useCategoryPaths, useItemCustomFields } fro
 import { errorText } from "../../lib/errors";
 import { nzd, priceLabel } from "../../lib/format";
 import NumberInput from "../NumberInput";
+import { AMOUNT, numberProblem } from "../../lib/numbers";
+import { Problem } from "../Field";
 import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
 import { useFeature } from "../../lib/roles";
@@ -196,6 +198,15 @@ export default function ItemDetails({
     .sort((a, b) => a.path.localeCompare(b.path));
   const amount = (n: number, unit: string) => (n > 0 ? `${n.toLocaleString()} ${unit}` : null);
 
+  // Negative amounts are refused: said under the field, and Save waits.
+  const problem = {
+    price: numberProblem(draft.price, AMOUNT),
+    replacementValue: numberProblem(draft.replacementValue, AMOUNT),
+    bufferHours: projectsOn ? numberProblem(draft.bufferHours, AMOUNT) : null,
+    weightKg: numberProblem(draft.weightKg, AMOUNT),
+    powerW: numberProblem(draft.powerW, AMOUNT),
+  };
+
   // Props every card shares.
   const card = (section: Section) => ({
     editing: editing === section,
@@ -204,7 +215,10 @@ export default function ItemDetails({
     onEdit: () => start(section),
     onCancel: () => setEditing(null),
     onSave: save,
-    saveDisabled: section === "identification" && !draft.name.trim(),
+    saveDisabled:
+      (section === "identification" && !draft.name.trim()) ||
+      (section === "pricing" && !!(problem.price || problem.replacementValue)) ||
+      (section === "warehouse" && !!(problem.bufferHours || problem.weightKg || problem.powerW)),
   });
 
   return children({
@@ -247,9 +261,11 @@ export default function ItemDetails({
             <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} className="input py-1.5 w-24" />
             <Segmented compact label="Price per" value={draft.priceUnit} onChange={(v) => set("priceUnit", v)} options={PER_OPTIONS} />
           </div>
+          <Problem>{problem.price}</Problem>
         </Row>
         <Row label="Replacement cost" value={item.replacementValue > 0 ? nzd(item.replacementValue) : null}>
           <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} className="input py-1.5 w-full" />
+          <Problem>{problem.replacementValue}</Problem>
         </Row>
       </Card>
     ),
@@ -262,13 +278,16 @@ export default function ItemDetails({
               empty="None"
             >
               <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} className="input py-1.5 w-full" />
+              <Problem>{problem.bufferHours}</Problem>
             </Row>
           )}
           <Row label="Weight (kg)" value={amount(item.weightKg, "kg")}>
             <NumberInput value={draft.weightKg} min={0} onChange={(n) => set("weightKg", n)} className="input py-1.5 w-full" />
+            <Problem>{problem.weightKg}</Problem>
           </Row>
           <Row label="Power (W)" value={amount(item.powerW, "W")}>
             <NumberInput value={draft.powerW} min={0} onChange={(n) => set("powerW", n)} className="input py-1.5 w-full" />
+            <Problem>{problem.powerW}</Problem>
           </Row>
         </Card>
     ),

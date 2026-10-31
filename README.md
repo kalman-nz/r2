@@ -68,7 +68,7 @@ Plain records (items, units, contacts, venues, jobs) go straight through the Poc
 
 ### Organisations and people
 
-One database holds every organisation. Every business record has an `org`, and collection rules plus `requireOrg()` in the routes keep each organisation's data to its members (`pb_migrations/0022_organisations.js`, `pb_hooks/lib/orgs.js`). Barcodes, job numbers and settings are per organisation.
+One database holds every organisation. Every business record has an `org`, and collection rules plus `requireOrg()` in the routes keep each organisation's data to its members (`pb_migrations/0022_organisations.js`, `pb_hooks/lib/orgs.js`). Barcodes, job numbers and settings are per organisation, and a manufacturer's serial number can be on only one of an organisation's units (units imported sharing one keep it until they're edited; `lib/validation.js`).
 
 - **Accounts** belong to people, not organisations. Anyone can sign up; a new account sees nothing until an organisation invites its address.
 - **Invitations:** an organisation's admins invite an email with a role (Settings → Users & access). The person signs up (or signs in) with that address, verifies it, and accepts on their Organisations page. Someone can be in several organisations with a different role in each, and switches between them from the header.

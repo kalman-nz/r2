@@ -170,6 +170,9 @@ function validateRow(app, record) {
     throw new BadRequestError("That location doesn't exist");
   }
   if (loc.getString("org") !== org) throw new BadRequestError("That location belongs to another organisation");
+  const qty = record.getFloat("qty");
+  if (!(qty >= 0)) throw new BadRequestError("Quantities can't be negative");
+  if (Math.floor(qty) !== qty) throw new BadRequestError("Quantities have to be whole numbers");
   let others = 0;
   for (const r of rowsOf(app, item.id)) if (r.id !== record.id) others += r.getInt("qty");
   if (others + record.getInt("qty") < item.getInt("outOfServiceQty")) {

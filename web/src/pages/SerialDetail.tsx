@@ -3,13 +3,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type Item, type Job, type Location, type Scan, type Serial, type SerialStatus } from "../lib/api";
-import { useCategoryPaths, useLocations } from "../lib/catalog";
+import { unitTitle, useCategoryPaths, useLocations, useSerialNumberTaken } from "../lib/catalog";
 import { buildLabelContext, unitDisplayName } from "../lib/labelSpec";
 import { formatDateTime, fromDateInput, toDateInput } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useFeature, useRole } from "../lib/roles";
-import Field from "../components/Field";
+import Field, { Problem } from "../components/Field";
 import NumberInput from "../components/NumberInput";
+import { AMOUNT, numberProblem } from "../lib/numbers";
 import PrintButton from "../components/PrintButton";
 import { SerialStatusBadge } from "../components/StatusBadge";
 import { SERIAL_STATUS_LABELS } from "../lib/statuses";
@@ -262,6 +263,11 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
   const set = <K extends keyof ReturnType<typeof initial>>(key: K, value: ReturnType<typeof initial>[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
+  // Another unit with this serial number (a second is refused). Its own,
+  // unchanged, is fine even where an import left two the same.
+  const serialChanged = draft.serialNumber.trim().toLowerCase() !== serial.serialNumber.trim().toLowerCase();
+  const taken = useSerialNumberTaken(serialChanged ? draft.serialNumber : "", serial.id);
+  const costProblem = numberProblem(draft.purchaseCost, AMOUNT);
 
   async function save() {
     setSaving(true);
@@ -287,7 +293,21 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
           <input value={draft.barcode} onChange={(e) => set("barcode", e.target.value)} disabled={readOnly} className="input py-2 font-mono" />
         </Field>
         <Field label="Manufacturer serial">
-          <input value={draft.serialNumber} onChange={(e) => set("serialNumber", e.target.value)} disabled={readOnly} className="input py-2" />
+          <input
+            value={draft.serialNumber}
+            onChange={(e) => set("serialNumber", e.target.value)}
+            disabled={readOnly}
+            aria-invalid={taken ? true : undefined}
+            className="input py-2"
+          />
+          {taken && (
+            <Problem>
+              Already on{" "}
+              <Link to={`/assets/${taken.id}`} className="underline">
+                {unitTitle(taken)}
+              </Link>
+            </Problem>
+          )}
         </Field>
         <Field label="Name">
           <input value={draft.label} onChange={(e) => set("label", e.target.value)} disabled={readOnly} className="input py-2" />
@@ -308,7 +328,7 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
         <Field label="Purchase date">
           <input type="date" value={draft.purchaseDate} onChange={(e) => set("purchaseDate", e.target.value)} disabled={readOnly} className="input py-2" />
         </Field>
-        <Field label="Purchase cost">
+        <Field label="Purchase cost" error={costProblem}>
           <NumberInput value={draft.purchaseCost} min={0} onChange={(n) => set("purchaseCost", n)} disabled={readOnly} className="input py-2" />
         </Field>
         <Field label="Notes" className="sm:col-span-2">
@@ -317,7 +337,7 @@ function SerialForm({ serial, readOnly, onSaved }: { serial: Serial; readOnly: b
       </div>
       {!readOnly && (
         <div>
-          <button onClick={save} disabled={saving || !dirty} className="btn-primary py-2">
+          <button onClick={save} disabled={saving || !dirty || !!taken || !!costProblem} className="btn-primary py-2">
             {saving ? "Saving…" : "Save changes"}
           </button>
         </div>

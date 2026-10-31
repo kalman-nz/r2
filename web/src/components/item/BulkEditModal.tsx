@@ -4,6 +4,7 @@ import type { Item, PriceUnit } from "../../lib/api";
 import { useItemCustomFields } from "../../lib/catalog";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
+import { AMOUNT, numberProblem } from "../../lib/numbers";
 import Segmented from "../Segmented";
 import { CustomInput, PER_OPTIONS } from "./ItemDetails";
 import { useFeature } from "../../lib/roles";
@@ -178,7 +179,11 @@ export default function BulkEditModal({
         )}
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={apply} disabled={saving || on.size === 0} className="btn-primary">
+        <button
+          onClick={apply}
+          disabled={saving || on.size === 0 || (["price", "replacementValue", "bufferHours", "weightKg", "powerW"] as const).some((k) => on.has(k) && !!numberProblem(values[k], AMOUNT))}
+          className="btn-primary"
+        >
           {saving ? progress : `Update ${items.length} item${items.length === 1 ? "" : "s"}`}
         </button>
         <button onClick={onClose} disabled={saving} className="btn-secondary">

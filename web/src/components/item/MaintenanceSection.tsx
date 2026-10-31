@@ -4,8 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import { api, type Item, type Serial } from "../../lib/api";
 import { errorText } from "../../lib/errors";
-import { formatDate, nzd, parseDate } from "../../lib/format";
+import { formatDate, nzd } from "../../lib/format";
 import {
+  dayPassed,
   daysUntil,
   describePlan,
   dueLabel,
@@ -88,7 +89,6 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
   const openRepairs = repairs.filter((r) => isOpen(r.status));
   const overdue = scheduled.filter((j) => daysUntil(j.dueOn) < 0);
   const spent = repairs.reduce((sum, r) => sum + (r.cost || 0), 0) + done.reduce((sum, j) => sum + (j.cost || 0), 0);
-  const now = Date.now();
 
   const past = useMemo<Past[]>(
     () =>
@@ -234,7 +234,7 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
         <Section title="Open repairs" count={openRepairs.length}>
           <Rows>
             {openRepairs.map((r) => {
-              const late = (parseDate(r.dueAt)?.getTime() ?? Infinity) < now;
+              const late = dayPassed(r.dueAt);
               return (
                 <Row key={r.id} to={`/maintenance/repairs/${r.id}`}>
                   <span className="font-mono text-xs text-gray-400 w-12 shrink-0">R{r.number}</span>

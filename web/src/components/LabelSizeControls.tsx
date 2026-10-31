@@ -1,27 +1,53 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CUSTOM_SIZE, sizeForTemplate, usePrinting, type LabelSize } from "../lib/printing";
 import { useCan } from "../lib/roles";
 import NumberInput from "./NumberInput";
+import { numberProblem, type NumberLimits } from "../lib/numbers";
 
 const CUSTOM = "__custom";
+const LENGTH: NumberLimits = { min: 5, max: 1000 };
+const SIDE: NumberLimits = { min: 5, max: 300 };
+type Box = "length" | "width" | "height";
 
 // Label size: one of the business's label sizes (Settings → Printer setup)
 // or a custom width × length. Tape only takes a length; die-cut labels are
 // fixed. Turning swaps width and length, for a label read the other way.
+//
+// A size typed out of range is said so and never reaches the label (it
+// keeps its last good size); onProblem tells the page, so printing and
+// saving wait until it's fixed.
 export default function LabelSizeControls({
   widthMm,
   heightMm,
   sizeId,
   onChange,
+  onProblem,
   children,
 }: {
   widthMm: number;
   heightMm: number;
   sizeId?: string;
   onChange: (widthMm: number, heightMm: number, sizeId: string) => void;
+  onProblem?: (problem: string | null) => void;
   children?: ReactNode;
 }) {
+  // Which boxes show a size that's out of range (each box reports its own).
+  const [bad, setBad] = useState<Record<Box, boolean>>({ length: false, width: false, height: false });
+  const watch = (box: Box) => (p: string | null) => setBad((prev) => (prev[box] === !!p ? prev : { ...prev, [box]: !!p }));
+  const problem = bad.length
+    ? `Length has to be ${LENGTH.min} to ${LENGTH.max} mm`
+    : bad.width || bad.height
+      ? `${bad.width ? "Width" : "Height"} has to be ${SIDE.min} to ${SIDE.max} mm`
+      : null;
+  const report = useRef(onProblem);
+  report.current = onProblem;
+  useEffect(() => {
+    report.current?.(problem);
+  }, [problem]);
+  useEffect(() => () => report.current?.(null), []);
+  const fine = (n: number, limits: NumberLimits) => !numberProblem(n, limits);
+
   const can = useCan();
   const { data: config } = usePrinting();
   const sizes = config?.sizes ?? [];
@@ -69,10 +95,11 @@ export default function LabelSizeControls({
           <label className="flex items-center gap-2">
             <span className="text-gray-500">Length</span>
             <NumberInput
-              min={5}
-              max={1000}
+              min={LENGTH.min}
+              max={LENGTH.max}
               value={sideways ? widthMm : heightMm}
-              onChange={(len) => (sideways ? onChange(len, heightMm, current.id) : onChange(widthMm, len, current.id))}
+              onChange={(len) => fine(len, LENGTH) && (sideways ? onChange(len, heightMm, current.id) : onChange(widthMm, len, current.id))}
+              onProblem={watch("length")}
               className="input py-1 w-20"
             />
             <span className="text-gray-500">mm</span>
@@ -81,11 +108,25 @@ export default function LabelSizeControls({
           <>
             <label className="flex items-center gap-2">
               <span className="text-gray-500">W</span>
-              <NumberInput min={5} max={300} value={widthMm} onChange={(w) => onChange(w, heightMm, CUSTOM_SIZE)} className="input py-1 w-20" />
+              <NumberInput
+                min={SIDE.min}
+                max={SIDE.max}
+                value={widthMm}
+                onChange={(w) => fine(w, SIDE) && onChange(w, heightMm, CUSTOM_SIZE)}
+                onProblem={watch("width")}
+                className="input py-1 w-20"
+              />
             </label>
             <label className="flex items-center gap-2">
               <span className="text-gray-500">H</span>
-              <NumberInput min={5} max={300} value={heightMm} onChange={(h) => onChange(widthMm, h, CUSTOM_SIZE)} className="input py-1 w-20" />
+              <NumberInput
+                min={SIDE.min}
+                max={SIDE.max}
+                value={heightMm}
+                onChange={(h) => fine(h, SIDE) && onChange(widthMm, h, CUSTOM_SIZE)}
+                onProblem={watch("height")}
+                className="input py-1 w-20"
+              />
               <span className="text-gray-500">mm</span>
             </label>
           </>
@@ -113,6 +154,8 @@ export default function LabelSizeControls({
 
         {children}
       </div>
+
+      {problem && <p className="text-xs text-fault-ink">{problem}</p>}
 
       {current && current.brother && loaded.length === 0 && (
         <p className="text-xs text-amber-700">

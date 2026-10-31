@@ -55,6 +55,10 @@ h1 {
   .input {
     @apply bg-white border border-gray-300 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-signal/20 focus:border-signal;
   }
+  /* A value the form won't take (NumberInput, dates out of range). */
+  .input[aria-invalid="true"] {
+    @apply border-fault focus:border-fault focus:ring-fault/20;
+  }
   .btn-primary {
     @apply text-sm px-3.5 py-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:pointer-events-none border border-transparent bg-carbon text-white hover:bg-graphite;
   }

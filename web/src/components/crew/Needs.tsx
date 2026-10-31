@@ -9,6 +9,7 @@ import { formatPeriod, fromLocalInput, toLocalInput } from "../../lib/format";
 import { clashesFor, clashLabel, useRosterActions, type Booking } from "../../lib/crew";
 import { useAuthRecord } from "../../lib/pocketbase";
 import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
 import PersonPicker from "./PersonPicker";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
@@ -220,7 +221,7 @@ export function NeedForm({
       className="flex flex-col gap-2 py-2"
     >
       <div className="flex items-center gap-1.5 flex-wrap">
-        <NumberInput value={draft.quantity} onChange={(n) => set("quantity", n)} min={1} max={99} className="input py-1.5 w-16" />
+        <NumberInput value={draft.quantity} onChange={(n) => set("quantity", n)} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
         <span className="text-gray-500 text-sm">×</span>
         <select value={draft.role} onChange={(e) => set("role", e.target.value)} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus>
           {roles.map((r) => (
@@ -243,7 +244,7 @@ export function NeedForm({
         </div>
       )}
       <div className="flex items-center gap-2">
-        <button type="submit" disabled={saving || !draft.role} className="btn-primary py-1.5">
+        <button type="submit" disabled={saving || !draft.role || !!numberProblem(draft.quantity, { min: 1, max: 99, integer: true })} className="btn-primary py-1.5">
           {saving ? "Saving…" : need ? "Save" : "Add crew need"}
         </button>
         <button type="button" onClick={onDone} className="btn-secondary py-1.5">

@@ -9,6 +9,7 @@ import { describePlan, today } from "../../lib/maintenance";
 import { INTERVAL_UNITS } from "../../lib/statuses";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
 import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
 
@@ -84,7 +85,7 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
           <span className="text-gray-500">How often</span>
           <div className="flex items-center gap-2">
             <span className="text-gray-600">Every</span>
-            <NumberInput value={every} min={1} max={1000} onChange={(n) => setEvery(Math.max(1, Math.round(n)))} className="input py-1.5 w-20" />
+            <NumberInput value={every} min={1} max={1000} integer onChange={setEvery} className="input py-1.5 w-20" ariaLabel="Every" />
             <select value={unit} onChange={(e) => setUnit(e.target.value as IntervalUnit)} className="input py-1.5 w-auto">
               {INTERVAL_UNITS.map((u) => (
                 <option key={u.value} value={u.value}>
@@ -171,7 +172,11 @@ export default function PlanModal({ plan, onClose, onSaved }: { plan?: Maintenan
       </label>
 
       <div className="flex items-center gap-2">
-        <button onClick={save} disabled={saving || !name.trim() || ((!plan || repeat === "fixed") && !firstDue)} className="btn-primary">
+        <button
+          onClick={save}
+          disabled={saving || !name.trim() || ((!plan || repeat === "fixed") && !firstDue) || !!numberProblem(every, { min: 1, max: 1000, integer: true })}
+          className="btn-primary"
+        >
           {saving ? "Saving…" : plan ? "Save plan" : "Create plan"}
         </button>
         <button onClick={onClose} disabled={saving} className="btn-secondary">

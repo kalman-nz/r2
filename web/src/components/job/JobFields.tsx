@@ -1,4 +1,4 @@
-import type { JobDraft } from "../../lib/jobDraft";
+import { DISCOUNT, type JobDraft } from "../../lib/jobDraft";
 import { oneLineAddress } from "../../lib/format";
 import { useContacts, useVenues } from "../../lib/catalog";
 import Field from "../Field";
@@ -6,6 +6,7 @@ import QuickCreateSelect from "../QuickCreateSelect";
 import { JOB_STAGES } from "../../lib/statuses";
 import { useJobStatuses } from "../../lib/workflow";
 import NumberInput from "../NumberInput";
+import { COUNT, numberProblem } from "../../lib/numbers";
 import { useCan } from "../../lib/roles";
 import { JobStatusBadge } from "../StatusBadge";
 
@@ -117,11 +118,11 @@ export default function JobFields({
       )}
       {!readOnly && (
         <>
-          <Field label="Project discount (%)">
+          <Field label="Project discount (%)" error={numberProblem(draft.discountPct, DISCOUNT)}>
             <NumberInput value={draft.discountPct} min={0} max={100} onChange={(n) => set("discountPct", n)} className="input py-2" />
           </Field>
-          <Field label="Charge for days">
-            <NumberInput value={draft.chargeDays} min={0} onChange={(n) => set("chargeDays", Math.round(n))} className="input py-2" />
+          <Field label="Charge for days" error={numberProblem(draft.chargeDays, COUNT)}>
+            <NumberInput value={draft.chargeDays} min={0} integer onChange={(n) => set("chargeDays", n)} className="input py-2" />
           </Field>
           <Field label="Notes on the quote" className="sm:col-span-2">
             <textarea

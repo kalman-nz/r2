@@ -77,21 +77,23 @@ routerAdd(
     if (labels.length > 500) throw new BadRequestError("Make PDFs of 500 labels or fewer at a time");
     let totalPages = 0;
     const pages = labels.map((l, i) => {
+      const which = labels.length === 1 ? "The label" : "Label " + (i + 1);
       if (!l || typeof l.imageDataUrl !== "string" || l.imageDataUrl.indexOf(PNG_PREFIX) !== 0) {
-        throw new BadRequestError("Label " + (i + 1) + " has no PNG image");
+        throw new BadRequestError(which + " has no PNG image");
       }
       const png = l.imageDataUrl.slice(PNG_PREFIX.length);
       // A PNG's base64 always starts with the 8-byte signature, so anything
       // that isn't one (an SVG, which fpdf2 would follow to local files and
       // URLs; another image format) is turned away here, not just by its
       // data-URL label.
-      if (png.slice(0, 11) !== "iVBORw0KGgo") throw new BadRequestError("Label " + (i + 1) + " isn't a PNG image");
+      if (png.slice(0, 11) !== "iVBORw0KGgo") throw new BadRequestError(which + " isn't a PNG image");
       const widthMm = Number(l.widthMm);
       const heightMm = Number(l.heightMm);
-      if (!(widthMm > 0 && widthMm <= 300 && heightMm > 0 && heightMm <= 300)) {
-        throw new BadRequestError("Label " + (i + 1) + " has an impossible size");
-      }
-      const copies = Math.max(1, Math.min(100, Math.round(Number(l.copies) || 1)));
+      if (!(widthMm > 0 && heightMm > 0)) throw new BadRequestError(which + "'s width and length have to be more than 0 mm");
+      if (widthMm > 300 || heightMm > 300) throw new BadRequestError(which + " is over 300 mm, too big for a PDF page");
+      // Refused rather than rounded: 0 copies isn't a PDF anyone wants.
+      const copies = l.copies === undefined ? 1 : Number(l.copies);
+      if (!Number.isInteger(copies) || copies < 1 || copies > 999) throw new BadRequestError("Copies has to be a whole number from 1 to 999");
       totalPages += copies;
       if (totalPages > 2000) throw new BadRequestError("That's over 2000 pages: split it into smaller PDFs");
       return { png: png, widthMm: widthMm, heightMm: heightMm, copies: copies };

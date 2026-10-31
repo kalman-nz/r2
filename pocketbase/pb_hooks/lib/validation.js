@@ -28,6 +28,16 @@ function sameOrg(app, record, field, collection, what) {
   return target;
 }
 
+// A number field that can't go below 0 (and, for counts, has to be whole).
+// The schema refuses these too, but in PocketBase's words and under the
+// field's own name, so this says it the way the app does, and first.
+function checkAmount(record, field, label, whole) {
+  const value = record.getFloat(field);
+  if (!isFinite(value)) throw new BadRequestError(label + " has to be a number");
+  if (value < 0) throw new BadRequestError(label + " can't be negative");
+  if (whole && Math.floor(value) !== value) throw new BadRequestError(label + " has to be a whole number");
+}
+
 function validateItem(app, record) {
   const org = record.getString("org");
   if (!org) return;
@@ -44,6 +54,14 @@ function validateItem(app, record) {
   } else if (record.getString("tracking") !== "bulk" && record.getString("tracking") !== "serial") {
     throw new BadRequestError("Choose whether this item is tracked as a bulk quantity or by serial number");
   }
+
+  checkAmount(record, "stockQty", "Quantity owned", true);
+  checkAmount(record, "outOfServiceQty", "Out of service", true);
+  checkAmount(record, "price", "Price", false);
+  checkAmount(record, "replacementValue", "Replacement cost", false);
+  checkAmount(record, "weightKg", "Weight", false);
+  checkAmount(record, "powerW", "Power", false);
+  checkAmount(record, "bufferHours", "Extra turnaround", false);
 
   if (record.getString("tracking") === "bulk" && record.getInt("outOfServiceQty") > record.getInt("stockQty")) {
     throw new BadRequestError("Out-of-service quantity can't be more than the stock quantity");
@@ -94,6 +112,33 @@ function validateSerial(app, record) {
   }
   if (barcode && countWhere(app, "items", "org = {:org} && barcode = {:code}", { org: org, code: barcode }) > 0) {
     throw new BadRequestError("Barcode " + barcode + " is already used by a bulk item");
+  }
+  checkAmount(record, "purchaseCost", "Purchase cost", false);
+
+  // A manufacturer's serial number belongs to one unit, so it's on only one
+  // of the organisation's units (ignoring case). Checked when it's new or
+  // changed: some imported units share one, and they're left as they are
+  // until someone edits them.
+  const serialNumber = record.getString("serialNumber").trim();
+  record.set("serialNumber", serialNumber);
+  const changed = record.isNew() || record.original().getString("serialNumber").trim().toLowerCase() !== serialNumber.toLowerCase();
+  if (serialNumber && changed) {
+    const rows = arrayOf(new DynamicModel({ barcode: "", label: "", item: "" }));
+    app
+      .db()
+      .newQuery(
+        "SELECT barcode, label, item FROM serials WHERE org = {:org} AND serialNumber != '' AND serialNumber = {:sn} COLLATE NOCASE AND id != {:id} LIMIT 1",
+      )
+      .bind({ org: org, sn: serialNumber, id: record.id })
+      .all(rows);
+    if (rows.length > 0) {
+      let itemName = "";
+      try {
+        itemName = app.findRecordById("items", rows[0].item).getString("name");
+      } catch (_) {}
+      const unit = [itemName, rows[0].barcode || rows[0].label].filter((s) => s).join(" ");
+      throw new BadRequestError("Serial number " + serialNumber + " is already on " + (unit || "another unit"));
+    }
   }
 }
 

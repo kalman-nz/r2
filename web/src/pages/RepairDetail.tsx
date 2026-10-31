@@ -11,6 +11,8 @@ import { useFeature, useRole } from "../lib/roles";
 import { useFollowOrg } from "../lib/org";
 import FilesCard from "../components/FilesCard";
 import NumberInput from "../components/NumberInput";
+import { AMOUNT, numberProblem } from "../lib/numbers";
+import { Problem } from "../components/Field";
 import ProjectPicker, { type ProjectRef } from "../components/ProjectPicker";
 import { RepairStatusBadge, SerialStatusBadge } from "../components/StatusBadge";
 import { useConfirm } from "../components/ConfirmProvider";
@@ -70,6 +72,12 @@ export default function RepairDetail() {
   const units = repair.expand?.serials ?? [];
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(repair));
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => (d ? { ...d, [key]: value } : d));
+  // Not back before the day it was opened (an older repair's date, left as
+  // it is, is fine). The server checks both too.
+  const openedOn = toDateInput(repair.created);
+  const dueProblem = draft.dueAt !== "" && draft.dueAt !== toDateInput(repair.dueAt) && draft.dueAt < openedOn ? "Can't be before it was opened" : null;
+  const costProblem = numberProblem(draft.cost, AMOUNT);
+  const detailsProblem = dueProblem ? `Expected back: ${dueProblem.toLowerCase()}` : costProblem ? `Cost: ${costProblem.toLowerCase()}` : null;
 
   async function update(body: Parameters<typeof api.updateRepair>[1], done: string) {
     setSaving(true);
@@ -109,8 +117,12 @@ export default function RepairDetail() {
     } else if (from !== to) {
       question = { title: label, message: `Move it back to ${label}? ${what} ${many ? "come" : "comes"} out of service again.`, confirmLabel: `Move to ${label}` };
     }
+    // Unsaved edits go with it, so they have to be right.
+    if (dirty && detailsProblem) {
+      showToast("error", `Fix the details first. ${detailsProblem}`);
+      return;
+    }
     if (question && !(await confirm(question))) return;
-    // Unsaved edits go with it.
     await update(
       { ...(dirty ? { ...draft, dueAt: fromDateInput(draft.dueAt) } : {}), status: next },
       to === "repaired" && from !== to ? `${label}: back in service` : `Moved to ${label}`,
@@ -203,11 +215,21 @@ export default function RepairDetail() {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-gray-500">Expected back</span>
-              <input type="date" value={draft.dueAt} onChange={(e) => set("dueAt", e.target.value)} disabled={!canEdit} className="input py-1.5" />
+              <input
+                type="date"
+                value={draft.dueAt}
+                min={openedOn}
+                onChange={(e) => set("dueAt", e.target.value)}
+                disabled={!canEdit}
+                aria-invalid={dueProblem ? true : undefined}
+                className="input py-1.5"
+              />
+              <Problem>{dueProblem}</Problem>
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-gray-500">Cost</span>
               <NumberInput value={draft.cost} min={0} onChange={(n) => set("cost", n)} disabled={!canEdit} className="input py-1.5" />
+              <Problem>{costProblem}</Problem>
             </label>
           </div>
           <label className="flex flex-col gap-1">
@@ -223,7 +245,7 @@ export default function RepairDetail() {
           </label>
           {canEdit && (
             <div className="flex items-center gap-2">
-              <button onClick={saveDetails} disabled={!dirty || saving || !draft.fault.trim()} className="btn-secondary w-fit">
+              <button onClick={saveDetails} disabled={!dirty || saving || !draft.fault.trim() || !!detailsProblem} className="btn-secondary w-fit">
                 {saving ? "Saving…" : "Save"}
               </button>
               {dirty && (

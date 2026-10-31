@@ -75,6 +75,8 @@ export function buildCustomTextTemplate(text: string, widthMm: number, heightMm:
     align: "center",
     valign: "middle",
     wrap: true,
+    // Typed over, or the label made smaller, it still fits.
+    shrink: true,
     padding: PADDING_MM,
   };
   return { name: "Custom text", widthMm, heightMm, elements: [element] };

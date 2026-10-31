@@ -3,7 +3,7 @@ import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { pb } from "./pocketbase";
 import type { IntervalUnit, Item, MaintenanceJob, MaintenanceKind, MaintenancePlan, Repair, RepairStatusDef, Serial } from "./api";
 import { orgFilter } from "./currentOrg";
-import { localDateInput } from "./format";
+import { localDateInput, toDateInput } from "./format";
 import { MAINTENANCE_KINDS } from "./statuses";
 
 // Maintenance and repairs on the web side (pb_hooks/lib/maintenance.js and
@@ -14,6 +14,13 @@ export type JobWithExpand = MaintenanceJob & { expand?: { item?: Item; serial?: 
 export type RepairWithItem = Repair & { expand?: { item?: Item; job?: { id: string; number: number; name: string }; serials?: Serial[] } };
 
 export const today = () => localDateInput(new Date());
+
+// Whether a date picked as a day (saved as its local midnight, like a
+// repair's expected back) is behind us. On the day itself it isn't late.
+export function dayPassed(value: string | null | undefined): boolean {
+  const day = toDateInput(value);
+  return day !== "" && day < today();
+}
 
 // The calendar day n days from today.
 export function inDays(n: number): string {

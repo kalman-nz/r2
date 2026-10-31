@@ -87,6 +87,23 @@ function money(value, what) {
   return n;
 }
 
+// When the kit's expected back: "" for none, otherwise a date (the app
+// sends the start of the day picked) no earlier than the day the repair
+// was opened, both in the organisation's time zone.
+function expectedBack(org, value, openedOn) {
+  const { toMs, toPbDate } = require("./time.js");
+  const { dayOf } = require("./maintenance.js");
+  const raw = text(value, 40);
+  if (!raw) return "";
+  const ms = toMs(raw);
+  if (!isFinite(ms)) throw new BadRequestError("Expected back isn't a date");
+  const stored = toPbDate(ms);
+  if (dayOf(stored, org) < openedOn) {
+    throw new BadRequestError("Expected back can't be before the repair was opened (" + openedOn.split("-").reverse().join("/") + ")");
+  }
+  return stored;
+}
+
 // The project a repair came back from: "" for none, otherwise one of the
 // organisation's own.
 function projectOf(tx, org, id) {
@@ -126,6 +143,7 @@ function unitsUnderRepair(tx, org, exceptId) {
 function openRepair(app, org, body, who) {
   const fault = text(body.fault, 2000);
   if (!fault) throw new BadRequestError("Say what's wrong with it");
+  const dueAt = text(body.dueAt, 40) ? expectedBack(org, body.dueAt, require("./maintenance.js").todayFor(org)) : "";
   let repair;
   app.runInTransaction((tx) => {
     let item;
@@ -147,14 +165,14 @@ function openRepair(app, org, body, who) {
       status: status.id,
       fault: fault,
       repairer: text(body.repairer, 200),
-      dueAt: text(body.dueAt, 40),
+      dueAt: dueAt,
       notes: text(body.notes, 5000),
       job: projectOf(tx, org, body.job),
       createdBy: who ? who.id : "",
     });
 
     if (item.getString("tracking") === "serial") {
-      const ids = Array.isArray(body.serials) ? body.serials.map(String) : [];
+      const ids = (Array.isArray(body.serials) ? body.serials.map(String) : []).filter((id, i, all) => all.indexOf(id) === i);
       if (ids.length === 0) throw new BadRequestError("Pick the units that need repairing");
       const busy = unitsUnderRepair(tx, org, "");
       for (const id of ids) {
@@ -179,7 +197,8 @@ function openRepair(app, org, body, who) {
       const qty = Number(body.quantity);
       if (!Number.isInteger(qty) || qty < 1) throw new BadRequestError("Quantity must be a whole number, 1 or more");
       const usable = item.getInt("stockQty") - item.getInt("outOfServiceQty");
-      if (qty > usable) throw new BadRequestError("Only " + usable + " of " + item.getString("name") + " are in service");
+      if (usable <= 0) throw new BadRequestError("None of " + item.getString("name") + " are in service");
+      if (qty > usable) throw new BadRequestError("Can't repair " + qty + ": only " + usable + " of " + item.getString("name") + " are in service");
       item.set("outOfServiceQty", item.getInt("outOfServiceQty") + qty);
       tx.save(item);
       repair.set("quantity", qty);
@@ -251,6 +270,9 @@ function hold(tx, repair, from) {
 // Any status can follow any other; when the stage changes, the kit goes in
 // or out of service to match.
 function updateRepair(app, repair, body) {
+  const { toMs } = require("./time.js");
+  const org = repair.getString("org");
+  const openedOn = body.dueAt !== undefined ? require("./maintenance.js").dayOf(repair.getString("created"), org) : "";
   app.runInTransaction((tx) => {
     const record = tx.findRecordById("repairs", repair.id);
     if (body.fault !== undefined) {
@@ -260,7 +282,13 @@ function updateRepair(app, repair, body) {
     }
     if (body.repairer !== undefined) record.set("repairer", text(body.repairer, 200));
     if (body.cost !== undefined) record.set("cost", money(body.cost, "Cost"));
-    if (body.dueAt !== undefined) record.set("dueAt", text(body.dueAt, 40));
+    if (body.dueAt !== undefined) {
+      // Only a changed date is checked, so an older repair's can be kept.
+      const was = record.getString("dueAt");
+      const next = text(body.dueAt, 40);
+      const same = next === was || (!!next && !!was && toMs(next) === toMs(was));
+      if (!same) record.set("dueAt", expectedBack(org, next, openedOn));
+    }
     if (body.notes !== undefined) record.set("notes", text(body.notes, 5000));
     if (body.job !== undefined) record.set("job", projectOf(tx, record.getString("org"), body.job));
 
