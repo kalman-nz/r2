@@ -84,6 +84,12 @@ function venueInfo(venue) {
   };
 }
 
+function decodeCustom(record) {
+  const { decodeJson } = require("./records.js");
+  const value = decodeJson(record.get("custom"), {});
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 function jobInfo(app, job) {
   return {
     id: job.id,
@@ -105,6 +111,8 @@ function jobInfo(app, job) {
     reference: job.getString("reference"),
     quoteNotes: job.getString("quoteNotes"),
     notes: job.getString("notes"),
+    // Its custom fields' values (Settings → Projects → Custom fields), by key.
+    custom: decodeCustom(job),
     headings: headingsOf(job),
     created: job.getString("created"),
     updated: job.getString("updated"),
@@ -731,6 +739,168 @@ function issueQuote(jobId, authRecord) {
   return quote;
 }
 
+// A copy of a project, for a repeat event: its client, location, notes,
+// discount, custom fields and schedule (moved to start at body.start), and,
+// unless told not to, its equipment (lines, headings, prices, discounts)
+// and crew needs (with nobody on them). Quotes, scans and who was rostered
+// stay with the original; the copy starts in the default status. Lines for
+// items archived since are left off. body: { name, start, equipment?,
+// crew? }. Returns { id, skipped } (skipped: lines left off).
+function copyJob(jobId, body, who) {
+  const { toPbDate } = require("./time.js");
+  const name = typeof body.name === "string" ? body.name.trim().slice(0, 300) : "";
+  if (!name) throw new BadRequestError("Give the copy a name");
+  const startMs = toMs(String(body.start || ""));
+  if (!isFinite(startMs)) throw new BadRequestError("Say when the copy starts");
+  const withEquipment = body.equipment !== false;
+  const withCrew = body.crew !== false;
+  let result = { id: "", skipped: 0 };
+  $app.runInTransaction((tx) => {
+    const src = requireJob(tx, jobId);
+    const org = src.getString("org");
+    const from = toMs(src.getString("startAt") || src.getString("prepAt"));
+    if (!isFinite(from)) throw new BadRequestError("This project has no dates to copy from");
+    const delta = startMs - from;
+    const shift = (value) => {
+      const ms = toMs(value);
+      return value && isFinite(ms) ? toPbDate(ms + delta) : "";
+    };
+    const make = (collection, data) => {
+      const record = new Record(tx.findCollectionByNameOrId(collection), data);
+      tx.save(record);
+      return record;
+    };
+
+    const job = make("jobs", {
+      org: org,
+      name: name,
+      client: src.getString("client"),
+      venue: src.getString("venue"),
+      discountPct: src.getFloat("discountPct"),
+      chargeDays: src.getInt("chargeDays"),
+      quoteNotes: src.getString("quoteNotes"),
+      notes: src.getString("notes"),
+      custom: decodeJson(src.get("custom"), {}),
+      prepAt: shift(src.getString("prepAt")),
+      returnAt: shift(src.getString("returnAt")),
+      startAt: shift(src.getString("startAt")),
+      endAt: shift(src.getString("endAt")),
+      createdBy: who ? who.id : "",
+    });
+
+    // Subprojects, then the schedule. A section keeps one usage and one
+    // billing period (projects from before that rule may have more: the
+    // rest come over as plain schedule items).
+    const subs = {};
+    for (const sp of tx.findRecordsByFilter("subprojects", "job = {:job}", "sortOrder,created", 0, 0, { job: src.id })) {
+      subs[sp.id] = make("subprojects", {
+        org: org,
+        job: job.id,
+        name: sp.getString("name"),
+        sortOrder: sp.getInt("sortOrder"),
+        prepAt: shift(sp.getString("prepAt")),
+        returnAt: shift(sp.getString("returnAt")),
+        billingStart: shift(sp.getString("billingStart")),
+        billingEnd: shift(sp.getString("billingEnd")),
+      }).id;
+    }
+    const periods = {};
+    const taken = {};
+    for (const p of tx.findRecordsByFilter("job_periods", "job = {:job}", "start,created", 0, 0, { job: src.id })) {
+      const section = subs[p.getString("subproject")] || "";
+      let kind = p.getString("kind");
+      if (kind === "usage" || kind === "billing") {
+        if (taken[section + ":" + kind]) kind = "other";
+        else taken[section + ":" + kind] = true;
+      }
+      periods[p.id] = make("job_periods", {
+        org: org,
+        job: job.id,
+        subproject: section,
+        kind: kind,
+        name: p.getString("name"),
+        start: shift(p.getString("start")),
+        end: shift(p.getString("end")),
+        notes: p.getString("notes"),
+      }).id;
+    }
+
+    if (withEquipment) {
+      const lines = tx.findRecordsByFilter("job_lines", "job = {:job}", "sortOrder,created", 0, 0, { job: src.id });
+      const archived = {};
+      for (const l of lines) {
+        const itemId = l.getString("item");
+        if (itemId && archived[itemId] === undefined) {
+          const item = findOrNull(tx, "items", itemId);
+          archived[itemId] = !item || item.getBool("archived");
+        }
+      }
+      const copied = {};
+      // Parents before the lines added with them (kit contents, accessories).
+      const ordered = lines.filter((l) => !l.getString("parentLine")).concat(lines.filter((l) => !!l.getString("parentLine")));
+      for (const l of ordered) {
+        const parent = l.getString("parentLine");
+        if ((l.getString("item") && archived[l.getString("item")]) || (parent && !copied[parent])) {
+          result.skipped++;
+          continue;
+        }
+        copied[l.id] = make("job_lines", {
+          org: org,
+          job: job.id,
+          subproject: subs[l.getString("subproject")] || "",
+          parentLine: parent ? copied[parent] : "",
+          item: l.getString("item"),
+          lineType: l.getString("lineType"),
+          description: l.getString("description"),
+          quantity: l.getFloat("quantity"),
+          perParent: l.getFloat("perParent"),
+          unitPrice: l.getFloat("unitPrice"),
+          priceMode: l.getString("priceMode"),
+          discountPct: l.getFloat("discountPct"),
+          group: l.getString("group"),
+          sortOrder: l.getFloat("sortOrder"),
+          notes: l.getString("notes"),
+        }).id;
+      }
+      // Its headings, each in its part of the copy.
+      const headings = headingsOf(src)
+        .map((h) => ({ section: h.section ? subs[h.section] : "", name: h.name }))
+        .filter((h) => h.section !== undefined);
+      if (headings.length > 0) {
+        job.set("headings", headings);
+        tx.save(job);
+      }
+    }
+
+    if (withCrew) {
+      const { levelsOf } = require("./crew.js");
+      for (const n of tx.findRecordsByFilter("crew_needs", "job = {:job}", "sortOrder,created", 0, 0, { job: src.id })) {
+        const period = periods[n.getString("period")];
+        if (!period) continue;
+        const role = findOrNull(tx, "crew_roles", n.getString("role"));
+        if (!role) continue;
+        const level = levelsOf(role).indexOf(n.getString("level")) !== -1 ? n.getString("level") : "";
+        const custom = n.getBool("customTimes");
+        make("crew_needs", {
+          org: org,
+          job: job.id,
+          period: period,
+          role: role.id,
+          level: level,
+          quantity: n.getInt("quantity"),
+          customTimes: custom,
+          start: custom ? shift(n.getString("start")) : "",
+          end: custom ? shift(n.getString("end")) : "",
+          notes: n.getString("notes"),
+          sortOrder: n.getInt("sortOrder"),
+        });
+      }
+    }
+    result.id = job.id;
+  });
+  return result;
+}
+
 // A new subproject with its own usage and billing periods. body: { name,
 // usageStart, usageEnd, billingStart?, billingEnd? }: billing defaults to
 // the usage window.
@@ -836,4 +1006,5 @@ function checkPriceFields(ctx, body) {
 }
 
 module.exports = {
-  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject, headingAction, issueQuote, loadLines, loadItems };
+  checkPriceFields, requireJob, buildSummary, addLine, updateLine, deleteLine, addSubproject,
+  copyJob, headingAction, issueQuote, loadLines, loadItems };

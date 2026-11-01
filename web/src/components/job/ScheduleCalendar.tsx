@@ -314,7 +314,7 @@ export default function ScheduleCalendar({
                 key={sec.id || "main"}
                 onClick={() => toggle(sec.id)}
                 aria-pressed={on}
-                className={`px-2 py-0.5 rounded-full border ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-300 hover:text-gray-900"}`}
+                className={`px-2 py-0.5 rounded border ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-300 hover:text-gray-900"}`}
               >
                 {sec.name}
               </button>
@@ -450,7 +450,6 @@ export default function ScheduleCalendar({
           </div>
         </div>
       </div>
-      {canEdit && <p className="text-xs text-gray-400">Drag on empty time to add · drag a block or line to move it · drag its bottom edge to resize · click to edit</p>}
     </div>
   );
 }

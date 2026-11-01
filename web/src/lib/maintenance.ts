@@ -156,7 +156,13 @@ export function useRepairStatuses() {
       statuses,
       isLoading,
       byId,
+      // Kit out of service while it's in this status.
       isOpen: (id: string) => (byId.get(id)?.stage ?? "open") === "open",
+      // The repair's closed (finished) in this status. Kit out of service never is.
+      isClosed: (id: string) => {
+        const s = byId.get(id);
+        return !!s && s.stage !== "open" && s.closes !== false;
+      },
       name: (id: string) => byId.get(id)?.name ?? "",
       // Where new repairs start.
       defaultId: (open.find((s) => s.isDefault) ?? open[0])?.id ?? "",

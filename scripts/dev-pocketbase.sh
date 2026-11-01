@@ -42,9 +42,9 @@ if [ ! -x "$VENV/bin/python" ]; then
     echo "No python3 found; PDF downloads won't work locally (everything else will)."
   fi
 fi
-# Label printing: brother_ql without its pinned Pillow 9.5, which won't
-# install on new Pythons — print_label.py makes it work with the current
-# Pillow. Also done for venvs made before printing was set up here.
+# Label printing: brother_ql and its helpers, keeping whatever Pillow the
+# PDF step installed (print_label.py makes brother_ql work with a current
+# one). Also done for venvs made before printing was set up here.
 if [ -x "$VENV/bin/python" ] && ! "$VENV/bin/python" -c "import brother_ql" >/dev/null 2>&1; then
   echo "Setting up label printing in $VENV…"
   grep -v -i '^pillow' print/requirements.txt | "$VENV/bin/pip" install --quiet --no-deps -r /dev/stdin \

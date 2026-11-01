@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type JobLineView, type TrackedProject } from "../lib/api";
+import { api, type JobLineView, type JobStatus, type TrackedProject } from "../lib/api";
+import { pb } from "../lib/pocketbase";
+import { useJobStatuses } from "../lib/workflow";
+import { useConfirm } from "../components/ConfirmProvider";
 import { formatDateTime, parseDate } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { invalidateMaintenance } from "../lib/maintenance";
@@ -30,12 +33,53 @@ export default function ScanPage() {
 }
 
 // Every tracked project going out, out or just back, as a board (a column
-// per tracking step) or a list; pick one to scan its kit.
+// per tracking step) or a list; pick one to scan its kit. On the board,
+// planners drag a project to a step to give it the status that step sets
+// (Settings → Tracking steps), scanned or not; it then sits at least that
+// far along.
 function ChooseJob() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const can = useCan();
+  const confirm = useConfirm();
+  const { showToast } = useToast();
   const [search, setSearch] = useState("");
   const [layout, setLayout] = useLayout();
   const { steps } = useTrackingSteps();
+  const { byId: statusById } = useJobStatuses();
+  const canMove = can("jobs.edit");
+  // The status a step sets, and the furthest step that sets a project's status.
+  const statusOfStep = (stepId: string) => steps.find((s) => s.id === stepId)?.jobStatus ?? "";
+  const stepOfStatus = (jobStatus: string) => [...steps].reverse().find((s) => !!s.jobStatus && s.jobStatus === jobStatus)?.id;
+  const done = (stage: JobStatus) => stage === "returned" || stage === "cancelled";
+
+  // Dropped on a step: the status it sets. One that releases the kit (or
+  // books it again) asks first, as on the project's page.
+  async function moveTo(p: TrackedProject, stepId: string) {
+    const to = statusById.get(statusOfStep(stepId));
+    if (!to || to.id === p.jobStatus) return;
+    let question: { title: string; message: string; confirmLabel: string; danger?: boolean } | null = null;
+    if (done(to.stage) && !done(p.status)) {
+      question = { title: to.name, message: `Move #${p.number} to ${to.name}? Its equipment is released for other bookings.`, confirmLabel: `Move to ${to.name}`, danger: to.stage === "cancelled" };
+    } else if (done(p.status) && !done(to.stage)) {
+      question = { title: to.name, message: `Move #${p.number} back to ${to.name}? Its equipment is booked again.`, confirmLabel: `Move to ${to.name}` };
+    }
+    if (question && !(await confirm(question))) return;
+    // Straight to its new column, while it saves.
+    queryClient.setQueryData<TrackedProject[]>(["tracking-projects"], (prev) => prev?.map((x) => (x.id === p.id ? { ...x, jobStatus: to.id, status: to.stage } : x)));
+    try {
+      await pb.collection("jobs").update(p.id, { jobStatus: to.id });
+      showToast("success", `#${p.number} moved to ${to.name}`);
+    } catch (err) {
+      showToast("error", `Couldn't change #${p.number}'s status: ${errorText(err)}`);
+    } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tracking-projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["job-summary", p.id] }),
+      ]);
+    }
+  }
   const {
     data: projects = [],
     isLoading,
@@ -50,7 +94,6 @@ function ChooseJob() {
     return projects.filter((p) => !term || [String(p.number), p.name, p.client].some((v) => v.toLowerCase().includes(term)));
   }, [projects, search]);
   const withKit = filtered.filter((p) => p.needed > 0);
-  const noKit = filtered.length - withKit.length;
   const now = Date.now();
   const open = (p: TrackedProject) => navigate(`/projects/${p.id}/scan`);
   // When it goes out, or (once it's out) when it's due back.
@@ -64,12 +107,17 @@ function ChooseJob() {
     };
   };
 
+  const late = withKit.filter((p) => when(p).late).length;
+
   return (
     <div className={`${layout === "board" ? "max-w-none" : "max-w-2xl mx-auto"} w-full flex flex-col gap-3`}>
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Equipment tracking</h1>
-          <p className="text-sm text-gray-500">Where every project's kit is. Pick one to prep, load or bring back its kit.</p>
+          <p className="text-xs text-gray-500">
+            {isLoading ? "Loading…" : `${withKit.length} project${withKit.length === 1 ? "" : "s"}`}
+            {late > 0 && <span className="text-fault-ink"> · {late} late</span>}
+          </p>
         </div>
         <LayoutSwitch layout={layout} onChange={setLayout} />
       </div>
@@ -84,11 +132,23 @@ function ChooseJob() {
           at={(p) => p.at}
           total={(p) => p.needed}
           empty="No projects"
+          placeAt={(p) => stepOfStatus(p.jobStatus)}
+          canDrop={(p, stepId) => canMove && !!statusById.get(statusOfStep(stepId)) && statusOfStep(stepId) !== p.jobStatus}
+          onDrop={canMove ? moveTo : undefined}
           card={(p, progress) => {
             const w = when(p);
             return (
-              <button
+              // A div rather than a button, so it can be dragged everywhere.
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => open(p)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    open(p);
+                  }
+                }}
                 className="w-full text-left card px-3 py-2.5 flex flex-col gap-1.5 hover:border-gray-300 hover:shadow-sm transition-shadow"
               >
                 <span className="flex items-start justify-between gap-2">
@@ -105,7 +165,7 @@ function ChooseJob() {
                   <span className="text-[11px] text-gray-400 ml-auto">{p.needed} units</span>
                 </span>
                 {p.suggestion && <span className="text-xs font-medium text-signal-ink">Everything's here: set to {p.suggestion}?</span>}
-              </button>
+              </div>
             );
           }}
         />
@@ -131,11 +191,6 @@ function ChooseJob() {
           })}
           {withKit.length === 0 && <p className="px-4 py-6 text-sm text-gray-500 text-center">No projects to track.</p>}
         </div>
-      )}
-      {noKit > 0 && (
-        <p className="text-xs text-gray-500">
-          {noKit} project{noKit === 1 ? "" : "s"} with no physical kit {noKit === 1 ? "isn't" : "aren't"} shown.
-        </p>
       )}
     </div>
   );

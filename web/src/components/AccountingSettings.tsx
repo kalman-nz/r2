@@ -59,7 +59,7 @@ export default function AccountingSettings() {
           <Field label="Payment terms (days)">
             <input value={draft.xeroDueDays} onChange={(e) => set("xeroDueDays", e.target.value)} inputMode="numeric" className="input py-2" />
           </Field>
-          <Field label="Invoice number prefix" hint={`Project #1001 becomes ${draft.invoicePrefix || ""}1001. Use one Xero isn't already using.`}>
+          <Field label="Invoice number prefix">
             <input value={draft.invoicePrefix} onChange={(e) => set("invoicePrefix", e.target.value)} className="input py-2 font-mono" />
           </Field>
         </div>

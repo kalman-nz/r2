@@ -21,7 +21,7 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
   const now = Date.now();
   const jobs = $app.findRecordsByFilter(
     "jobs",
-    "org = {:org} && status != 'cancelled' && returnAt >= {:from} && prepAt <= {:to}",
+    "org = {:org} && (jobStatus.calendar = true || (jobStatus = '' && status != 'cancelled')) && returnAt >= {:from} && prepAt <= {:to}",
     "prepAt",
     2000,
     0,

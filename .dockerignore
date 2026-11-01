@@ -7,3 +7,6 @@ dist
 pocketbase/.env
 print/venv
 pb_data.tar.gz
+.pb
+.env
+**/__pycache__

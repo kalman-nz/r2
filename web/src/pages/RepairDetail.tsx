@@ -52,7 +52,7 @@ export default function RepairDetail() {
     queryFn: () => pb.collection("repairs").getOne<RepairWithExpand>(id, { expand: "item,serials,job,createdBy" }),
   });
   useFollowOrg(repair?.org);
-  const { statuses, byId, isOpen } = useRepairStatuses();
+  const { statuses, byId, isOpen, isClosed } = useRepairStatuses();
   const { data: activity = [] } = useQuery({
     queryKey: ["repairs", id, "activity", repair?.updated],
     queryFn: () => api.repairActivity(id),
@@ -160,15 +160,17 @@ export default function RepairDetail() {
           <div className="inline-flex items-center flex-wrap rounded-md border border-gray-300 bg-gray-50 p-0.5" role="radiogroup" aria-label="Status">
             {statuses.map((s, i) => {
               const on = s.id === repair.status;
-              const ends = s.stage !== "open";
+              const ends = isClosed(s.id);
               return (
                 <span key={s.id} className="flex items-center">
-                  {i > 0 && ends !== (statuses[i - 1].stage !== "open") && <span className="hidden sm:block w-px h-5 bg-gray-300 mx-1" aria-hidden />}
+                  {i > 0 && ends !== isClosed(statuses[i - 1].id) && <span className="hidden sm:block w-px h-5 bg-gray-300 mx-1" aria-hidden />}
                   <button
                     type="button"
                     role="radio"
                     aria-checked={on}
-                    title={s.stage === "open" ? "Out of service while it's here" : s.stage === "repaired" ? "Ends it: back in service" : "Ends it: retired"}
+                    title={
+                      (s.stage === "open" ? "Out of service while it's here" : s.stage === "repaired" ? "Back in service" : "Retired") + (ends ? ": ends the repair" : "")
+                    }
                     disabled={saving}
                     onClick={() => setStatus(s.id)}
                     className={`flex items-center gap-1.5 px-3 py-1 text-sm rounded transition-colors disabled:opacity-60 ${

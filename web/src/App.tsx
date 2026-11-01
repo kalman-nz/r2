@@ -15,6 +15,7 @@ import ItemDetail from "./pages/ItemDetail";
 import MaintenancePage from "./pages/MaintenancePage";
 import RosteringPage from "./pages/RosteringPage";
 import CrewPage from "./pages/CrewPage";
+import CrewPersonPage from "./pages/CrewPersonPage";
 import MaintenanceJobDetail from "./pages/MaintenanceJobDetail";
 import MaintenancePlanDetail from "./pages/MaintenancePlanDetail";
 import RepairDetail from "./pages/RepairDetail";
@@ -88,11 +89,13 @@ const icons = {
       <path d="M13 14h4M13 17h3" />
     </Icon>
   ),
+  // A crew pass: a lanyard badge with a person on it.
   crew: (
     <Icon>
-      <circle cx="12" cy="7" r="3" />
-      <path d="M6 20a6 6 0 0 1 12 0" />
-      <path d="M9.5 4.5 12 2l2.5 2.5" />
+      <rect x="5" y="2.5" width="14" height="19" rx="2" />
+      <path d="M10 5.5h4" />
+      <circle cx="12" cy="10.5" r="2.25" />
+      <path d="M8.5 19a3.5 3.5 0 0 1 7 0" />
     </Icon>
   ),
   contacts: (
@@ -151,8 +154,10 @@ const icons = {
 };
 
 // Icons only on phones (the scan page needs the width), labels from md up.
+// shrink-0: a sidebar too full for the screen scrolls, rather than
+// squashing Home (the one link sitting straight in the scrolling nav).
 function sidebarLinkClass(isActive: boolean) {
-  return `flex items-center gap-3 mx-2 px-2.5 h-9 rounded-md text-sm font-medium ${
+  return `flex items-center gap-3 mx-2 px-2.5 h-9 shrink-0 rounded-md text-sm font-medium ${
     isActive
       ? "bg-graphite text-white shadow-[inset_2px_0_0_var(--color-signal)]"
       : "text-steel hover:bg-graphite/60 hover:text-white"
@@ -320,6 +325,7 @@ function AppShell() {
                   <Route path="/projects/:id/scan" element={<WithFeature feature="scanning"><ScanPage /></WithFeature>} />
                   <Route path="/rostering" element={<WithFeature feature="crew"><RosteringPage /></WithFeature>} />
                   <Route path="/crew" element={<WithFeature feature="crew"><CrewPage /></WithFeature>} />
+                  <Route path="/crew/:id" element={<WithFeature feature="crew"><CrewPersonPage /></WithFeature>} />
                   <Route path="/scan" element={<WithFeature feature="scanning"><ScanPage /></WithFeature>} />
                   <Route path="/inventory" element={<ItemsList />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />

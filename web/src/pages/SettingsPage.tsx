@@ -11,6 +11,7 @@ import CrewRolesSettings from "../components/CrewRolesSettings";
 import TrackingStepsSettings from "../components/TrackingStepsSettings";
 import JobStatusesSettings from "../components/JobStatusesSettings";
 import DocumentsSettings from "../components/DocumentsSettings";
+import ProjectFieldsSettings from "../components/ProjectFieldsSettings";
 import ImportSettings from "../components/ImportSettings";
 import IntegrationsSettings from "../components/IntegrationsSettings";
 import AccountingSettings from "../components/AccountingSettings";
@@ -47,7 +48,7 @@ type NavItem = { to: string; label: string; group: string; folder?: string; perm
 // sidebar; within a group, in this order. Each section shows to anyone
 // whose role has any of its permissions.
 const GROUPS = ["Organisation", "Planning", "Warehouse", "Finance", "Data"];
-const ORDER = ["general", "access", "activity", "project-statuses", "documents", "calendar", "crew-roles", "inventory", "custom-fields", "equipment-tracking", "repair-statuses", "labels", "printer", "pricing", "accounting", "import", "integrations"];
+const ORDER = ["general", "access", "activity", "project-statuses", "project-fields", "documents", "calendar", "crew-roles", "inventory", "custom-fields", "equipment-tracking", "repair-statuses", "labels", "printer", "pricing", "accounting", "import", "integrations"];
 
 const NAV_ITEMS: NavItem[] = [
   {
@@ -62,6 +63,20 @@ const NAV_ITEMS: NavItem[] = [
         <path d="M4 6h10M4 12h16M4 18h7" />
         <circle cx="18" cy="6" r="2" />
         <circle cx="15" cy="18" r="2" />
+      </Icon>
+    ),
+  },
+  {
+    to: "project-fields",
+    label: "Custom fields",
+    group: "Planning",
+    folder: "Projects",
+    feature: "projects",
+    permissions: ["settings.edit"],
+    icon: (
+      <Icon>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M7 10h4M7 14h10" />
       </Icon>
     ),
   },
@@ -303,13 +318,15 @@ export default function SettingsPage() {
     const item = NAV_ITEMS.find((i) => i.to === to)!;
     return <RequireRole permission={item.permissions}>{element}</RequireRole>;
   };
+  // From md up the menu and the page beside it scroll on their own, so the
+  // menu stays put however long the page is.
   return (
-    <div className="w-full flex flex-col gap-4">
-      <div>
+    <div className="w-full flex flex-col gap-4 md:h-full md:min-h-0">
+      <div className="shrink-0">
         <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
       </div>
-      <div className="flex flex-col md:flex-row items-start gap-6">
-        <nav className="w-full md:w-52 shrink-0 flex md:flex-col gap-0.5 md:gap-4 overflow-x-auto">
+      <div className="flex flex-col md:flex-row items-start gap-6 md:flex-1 md:min-h-0">
+        <nav className="w-full md:w-52 shrink-0 flex md:flex-col gap-0.5 md:gap-4 overflow-x-auto md:overflow-x-visible md:overflow-y-auto md:self-stretch md:min-h-0 md:pb-2">
           {GROUPS.map((group) => {
             const inGroup = items.filter((i) => i.group === group);
             if (inGroup.length === 0) return null;
@@ -331,32 +348,35 @@ export default function SettingsPage() {
             );
           })}
         </nav>
-        <div className={`flex-1 min-w-0 w-full ${current?.wide ? "max-w-6xl" : "max-w-3xl"}`}>
-          <Routes>
-            <Route index element={items[0] ? <Navigate to={items[0].to} replace /> : <Navigate to="/" replace />} />
-            <Route path="general" element={gate("general", <GeneralSettings />)} />
-            <Route path="pricing" element={gate("pricing", <PricingSettings />)} />
-            <Route path="accounting" element={gate("accounting", <AccountingSettings />)} />
-            <Route path="inventory" element={gate("inventory", <CatalogSettings />)} />
-            <Route path="custom-fields" element={gate("custom-fields", <CustomFieldsSettings />)} />
-            <Route path="repair-statuses" element={gate("repair-statuses", <RepairStatusesSettings />)} />
-            <Route path="crew-roles" element={gate("crew-roles", <CrewRolesSettings />)} />
-            <Route path="equipment-tracking" element={gate("equipment-tracking", <TrackingStepsSettings />)} />
-            <Route path="project-statuses" element={gate("project-statuses", <JobStatusesSettings />)} />
-            <Route path="features" element={<Navigate to=".." replace />} />
-            <Route path="documents" element={gate("documents", <DocumentsSettings />)} />
-            <Route path="import" element={gate("import", <ImportSettings />)} />
-            <Route path="integrations" element={gate("integrations", <IntegrationsSettings />)} />
-            <Route path="labels" element={gate("labels", <LabelsList />)} />
-            <Route path="printer" element={gate("printer", <PrinterSettings />)} />
-            <Route path="calendar" element={gate("calendar", <CalendarFeed />)} />
-            <Route path="activity" element={gate("activity", <LogsPage />)} />
-            <Route path="access" element={gate("access", <AccessSettings />)} />
-            {/* Where they were before they were combined */}
-            <Route path="team" element={<Navigate to="/settings/access" replace />} />
-            <Route path="roles" element={<Navigate to="/settings/access?tab=roles" replace />} />
-            <Route path="users" element={<Navigate to="/settings/access" replace />} />
-          </Routes>
+        <div className="flex-1 min-w-0 w-full md:self-stretch md:min-h-0 md:overflow-y-auto md:pr-1 md:pb-2">
+          <div className={current?.wide ? "max-w-6xl" : "max-w-3xl"}>
+            <Routes>
+              <Route index element={items[0] ? <Navigate to={items[0].to} replace /> : <Navigate to="/" replace />} />
+              <Route path="general" element={gate("general", <GeneralSettings />)} />
+              <Route path="pricing" element={gate("pricing", <PricingSettings />)} />
+              <Route path="accounting" element={gate("accounting", <AccountingSettings />)} />
+              <Route path="inventory" element={gate("inventory", <CatalogSettings />)} />
+              <Route path="custom-fields" element={gate("custom-fields", <CustomFieldsSettings />)} />
+              <Route path="repair-statuses" element={gate("repair-statuses", <RepairStatusesSettings />)} />
+              <Route path="crew-roles" element={gate("crew-roles", <CrewRolesSettings />)} />
+              <Route path="equipment-tracking" element={gate("equipment-tracking", <TrackingStepsSettings />)} />
+              <Route path="project-statuses" element={gate("project-statuses", <JobStatusesSettings />)} />
+              <Route path="features" element={<Navigate to=".." replace />} />
+              <Route path="documents" element={gate("documents", <DocumentsSettings />)} />
+              <Route path="project-fields" element={gate("project-fields", <ProjectFieldsSettings />)} />
+              <Route path="import" element={gate("import", <ImportSettings />)} />
+              <Route path="integrations" element={gate("integrations", <IntegrationsSettings />)} />
+              <Route path="labels" element={gate("labels", <LabelsList />)} />
+              <Route path="printer" element={gate("printer", <PrinterSettings />)} />
+              <Route path="calendar" element={gate("calendar", <CalendarFeed />)} />
+              <Route path="activity" element={gate("activity", <LogsPage />)} />
+              <Route path="access" element={gate("access", <AccessSettings />)} />
+              {/* Where they were before they were combined */}
+              <Route path="team" element={<Navigate to="/settings/access" replace />} />
+              <Route path="roles" element={<Navigate to="/settings/access?tab=roles" replace />} />
+              <Route path="users" element={<Navigate to="/settings/access" replace />} />
+            </Routes>
+          </div>
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { orgFilter } from "../lib/currentOrg";
 import { formatDateTime, formatPeriod, formatTime, localDateInput, parseDate } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { asString } from "../lib/views";
-import { clashesFor, clashLabel, useCrewBookings, useCrewPeople, useCrewRoles, type Booking } from "../lib/crew";
+import { clashesFor, clashLabel, skillNames, useCrewBookings, useCrewPeople, useCrewRoles, type Booking } from "../lib/crew";
 import FiltersMenu, { FilterField } from "../components/FiltersMenu";
 import PageViews from "../components/PageViews";
 import Segmented from "../components/Segmented";
@@ -63,7 +63,14 @@ export default function RosteringPage() {
     queryKey: ["crew-needs", "range", fromIso, toIso],
     queryFn: () =>
       pb.collection("crew_needs").getFullList<NeedRow>({
-        filter: orgFilter(pb.filter("start <= {:to} && end >= {:from} && job.status != 'cancelled'", { from: fromIso, to: toIso })),
+        // Projects whose status has crew planning on (Settings → Project
+        // statuses); one with no status yet goes by its stage, as before.
+        filter: orgFilter(
+          pb.filter("start <= {:to} && end >= {:from} && (job.jobStatus.rostering = true || (job.jobStatus = '' && job.status != 'cancelled'))", {
+            from: fromIso,
+            to: toIso,
+          }),
+        ),
         sort: "start,sortOrder",
         expand: "job,period,role",
       }),
@@ -225,7 +232,7 @@ export default function RosteringPage() {
           ))}
           {!isLoading && byDay.size === 0 && (
             <p className="card px-4 py-6 text-sm text-gray-500 text-center">
-              {needs.length === 0 ? "No crew needed in these dates. Add crew needs to a project's schedule items." : "Nothing matches."}
+              {needs.length === 0 ? "No crew needed in these dates." : "Nothing matches."}
             </p>
           )}
         </div>
@@ -250,8 +257,10 @@ function ByPerson({ people, bookings, roleById }: { people: ReturnType<typeof us
       {rows.map(({ person, theirs }) => (
         <div key={person.id} className="px-4 py-2.5 grid grid-cols-1 md:grid-cols-[14rem_minmax(0,1fr)] gap-x-4 gap-y-1">
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-900">{person.name}</span>
-            <span className="block text-xs text-gray-500 truncate">{person.skills.map((id) => roleById.get(id)?.name).filter(Boolean).join(", ") || (person.user ? "Member" : "Freelancer")}</span>
+            <Link to={`/crew/${person.id}`} className="text-sm font-medium text-gray-900 hover:underline">
+              {person.name}
+            </Link>
+            <span className="block text-xs text-gray-500 truncate">{skillNames(person, roleById).join(", ") || (person.user ? "Member" : "Freelancer")}</span>
           </div>
           <div className="flex flex-col gap-0.5 text-xs min-w-0">
             {theirs.length === 0 && <span className="text-gray-400 pt-0.5">Free</span>}

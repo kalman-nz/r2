@@ -52,14 +52,14 @@ export default function SyncCard({ jobId }: { jobId: string }) {
   let text = "";
   if (link) {
     const order = typeof link.extra.orderNumber === "string" || typeof link.extra.orderNumber === "number" ? String(link.extra.orderNumber) : "";
-    if (link.remoteType === "projectrequests") text = `Sent to Rentman as project request ${link.remoteId}, waiting to be accepted there.`;
-    else if (link.provider === "rentman") text = `From Rentman project ${link.remoteId}. Changes made in Rentman come in here; edits here stay in R2.`;
-    else text = `From Momentus event ${link.remoteId}.${order ? ` Quotes go to Momentus as order ${order}.` : ""}`;
+    if (link.remoteType === "projectrequests") text = `Sent as project request ${link.remoteId}, not accepted yet.`;
+    else if (link.provider === "rentman") text = `Rentman project ${link.remoteId}.`;
+    else text = `Momentus event ${link.remoteId}${order ? `, order ${order}` : ""}.`;
   }
 
   return (
     <section className="card p-4 flex flex-col gap-2 text-sm">
-      <h2 className="text-sm font-semibold text-gray-500">{link ? `Synced with ${NAME[link.provider]}` : "Rentman"}</h2>
+      <h2 className="eyebrow text-gray-500">{link ? `Synced with ${NAME[link.provider]}` : "Rentman"}</h2>
       {link && <p className="text-xs text-gray-600">{text}</p>}
       {link?.syncedAt && <p className="text-xs text-gray-400">Last synced {formatDateTime(link.syncedAt)}</p>}
       {!link && data.sending && <p className="text-xs text-gray-600">Sending to Rentman…</p>}

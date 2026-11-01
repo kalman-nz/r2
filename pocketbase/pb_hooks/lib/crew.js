@@ -10,6 +10,8 @@
 
 const DEFAULT_ROLES = ["Audio operator", "Lighting operator", "Video operator", "Stage manager", "Rigger", "Technical labour", "Driver"];
 const MAX_ROLES = 100;
+// A role's levels (migration 0051): Driver 1F, 2F, 4F, lowest first.
+const MAX_LEVELS = 10;
 
 function text(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -18,6 +20,28 @@ function text(value, max) {
 function find(app, collection, id) {
   const { findOrNull } = require("./records.js");
   return findOrNull(app, collection, id);
+}
+
+// A role's levels, lowest first ([] for none).
+function levelsOf(role) {
+  const { decodeJson } = require("./records.js");
+  const list = role ? decodeJson(role.get("levels"), []) : [];
+  return Array.isArray(list) ? list.filter((l) => typeof l === "string" && l) : [];
+}
+
+function cleanLevels(raw, roleName) {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new BadRequestError(roleName + "'s levels need to be a list");
+  const seen = {};
+  const out = [];
+  for (const l of raw) {
+    const level = text(l, 30);
+    if (!level || seen[level.toLowerCase()]) continue;
+    seen[level.toLowerCase()] = true;
+    out.push(level);
+  }
+  if (out.length > MAX_LEVELS) throw new BadRequestError(roleName + " can have up to " + MAX_LEVELS + " levels");
+  return out;
 }
 
 function rolesOf(app, org) {
@@ -30,9 +54,9 @@ function createDefaultCrewRoles(app, org) {
   DEFAULT_ROLES.forEach((name, i) => app.save(new Record(collection, { org: org, name: name, sortOrder: (i + 1) * 10 })));
 }
 
-// Settings → Crew roles: the whole list, in order ([{ id?, name }]). A role
-// a schedule item needs stays until it's taken off; removing one takes it off
-// people's skills.
+// Settings → Crew roles: the whole list, in order ([{ id?, name, levels? }]).
+// A role a schedule item needs stays until it's taken off; removing one
+// takes it off people's skills.
 function saveCrewRoles(app, org, list) {
   if (!Array.isArray(list)) throw new BadRequestError("Send the list of crew roles");
   if (list.length > MAX_ROLES) throw new BadRequestError("There can be up to " + MAX_ROLES + " crew roles");
@@ -42,7 +66,7 @@ function saveCrewRoles(app, org, list) {
     if (!name) throw new BadRequestError("Every crew role needs a name");
     if (seen[name.toLowerCase()]) throw new BadRequestError("There are two crew roles called " + name);
     seen[name.toLowerCase()] = true;
-    return { id: r && r.id ? String(r.id) : "", name: name };
+    return { id: r && r.id ? String(r.id) : "", name: name, levels: cleanLevels(r && r.levels, name) };
   });
   app.runInTransaction((tx) => {
     const existing = {};
@@ -58,6 +82,7 @@ function saveCrewRoles(app, org, list) {
         record = new Record(collection, { org: org });
       }
       record.set("name", r.name);
+      record.set("levels", r.levels);
       record.set("sortOrder", (i + 1) * 10);
       tx.save(record);
       kept[record.id] = true;
@@ -127,7 +152,22 @@ function validatePerson(app, record) {
   if (!record.getString("name")) throw new BadRequestError("Give them a name");
   record.set("phone", text(record.getString("phone"), 40));
   record.set("notes", text(record.getString("notes"), 2000));
-  for (const id of record.getStringSlice("skills")) sameOrgOf(record, find(app, "crew_roles", id), "crew role");
+  // Their level at each role they do, one of the role's own. Only a level
+  // being changed is checked: one a role's since renamed stays as it was
+  // until someone picks another (so renaming them, say, still saves).
+  const { decodeJson } = require("./records.js");
+  const given = decodeJson(record.get("skillLevels"), {});
+  const before = record.isNew() ? {} : decodeJson(record.original().get("skillLevels"), {});
+  const levels = {};
+  for (const id of record.getStringSlice("skills")) {
+    const role = sameOrgOf(record, find(app, "crew_roles", id), "crew role");
+    const level = given && typeof given === "object" ? text(given[id], 30) : "";
+    if (!level) continue;
+    const unchanged = before && typeof before === "object" && before[id] === level;
+    if (!unchanged && levelsOf(role).indexOf(level) === -1) throw new BadRequestError(level + " isn't one of " + role.getString("name") + "'s levels");
+    levels[id] = level;
+  }
+  record.set("skillLevels", levels);
 }
 
 // A need: one of this project's schedule items, one of the organisation's
@@ -138,7 +178,12 @@ function validateNeed(app, record) {
   const job = sameOrgOf(record, find(app, "jobs", record.getString("job")), "project");
   const period = find(app, "job_periods", record.getString("period"));
   if (!period || period.getString("job") !== job.id) throw new BadRequestError("That schedule item isn't on this project");
-  sameOrgOf(record, find(app, "crew_roles", record.getString("role")), "crew role");
+  const role = sameOrgOf(record, find(app, "crew_roles", record.getString("role")), "crew role");
+  // The lowest level it takes: one of the role's, or "" for any.
+  const level = text(record.getString("level"), 30);
+  const unchanged = !record.isNew() && level === record.original().getString("level") && role.id === record.original().getString("role");
+  if (level && !unchanged && levelsOf(role).indexOf(level) === -1) throw new BadRequestError(level + " isn't one of " + role.getString("name") + "'s levels");
+  record.set("level", level);
   if (!record.getBool("customTimes") || !record.getString("start") || !record.getString("end")) {
     record.set("customTimes", false);
     record.set("start", period.getString("start"));
@@ -204,6 +249,7 @@ function guardPersonDelete(app, record) {
 
 module.exports = {
   DEFAULT_ROLES,
+  levelsOf,
   rolesOf,
   createDefaultCrewRoles,
   saveCrewRoles,

@@ -9,6 +9,16 @@ import { QuoteStatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { useCan } from "../lib/roles";
 import Breadcrumbs from "../components/Breadcrumbs";
+import StatusPicker from "../components/StatusPicker";
+import { useConfirm } from "../components/ConfirmProvider";
+
+// A quote's answer from the client, as a status row like a project's.
+const QUOTE_STATUSES: { id: QuoteStatus; name: string; colour: "blue" | "green" | "red" | "gray" }[] = [
+  { id: "issued", name: "Issued", colour: "blue" },
+  { id: "accepted", name: "Accepted", colour: "green" },
+  { id: "declined", name: "Declined", colour: "red" },
+  { id: "void", name: "Void", colour: "gray" },
+];
 
 // A quote, rendered entirely from the snapshot taken when it was issued
 // (lib/jobs.js issueQuote) — never from the live job. The PDF to send the
@@ -16,6 +26,8 @@ import Breadcrumbs from "../components/Breadcrumbs";
 // page is the on-screen version, and still prints on A4 from the browser.
 export default function QuoteView() {
   const canSetStatus = useCan()("quotes.status");
+  const confirm = useConfirm();
+  const [moving, setMoving] = useState(false);
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -40,13 +52,22 @@ export default function QuoteView() {
   const number = `Q${s.job.number}-${quote.version}`;
 
   async function setStatus(status: QuoteStatus) {
+    if (status === quote!.status) return;
+    const name = QUOTE_STATUSES.find((q) => q.id === status)?.name ?? status;
+    if (status === "void") {
+      const ok = await confirm({ title: `Void ${number}`, message: `Void ${number}? It's marked superseded or withdrawn.`, confirmLabel: "Void", danger: true });
+      if (!ok) return;
+    }
+    setMoving(true);
     try {
       const updated = await api.setQuoteStatus(quote!.id, status);
       queryClient.setQueryData(["quote", id], updated);
       await queryClient.invalidateQueries({ queryKey: ["job-summary", quote!.job] });
-      showToast("success", `Marked ${status}`);
+      showToast("success", `Marked ${name.toLowerCase()}`);
     } catch (err) {
       showToast("error", `Couldn't update: ${errorText(err)}`);
+    } finally {
+      setMoving(false);
     }
   }
 
@@ -84,24 +105,10 @@ export default function QuoteView() {
       <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <Breadcrumbs crumbs={[{ label: "Projects", to: "/projects" }, { label: `#${s.job.number} ${s.job.name}`, to: `/projects/${quote.job}` }, { label: `Quote ${number}` }]} />
-          <QuoteStatusBadge status={quote.status} />
+          {!canSetStatus && <QuoteStatusBadge status={quote.status} />}
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {canSetStatus && quote.status !== "accepted" && (
-            <button onClick={() => setStatus("accepted")} className="btn-secondary">
-              Mark accepted
-            </button>
-          )}
-          {canSetStatus && quote.status !== "declined" && (
-            <button onClick={() => setStatus("declined")} className="btn-secondary">
-              Declined
-            </button>
-          )}
-          {canSetStatus && quote.status !== "void" && (
-            <button onClick={() => setStatus("void")} className="btn-secondary">
-              Void
-            </button>
-          )}
+          {canSetStatus && <StatusPicker statuses={QUOTE_STATUSES} value={quote.status} onChange={(s) => setStatus(s as QuoteStatus)} disabled={moving} />}
           <button onClick={() => window.print()} className="btn-secondary">
             Print
           </button>

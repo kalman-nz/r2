@@ -22,7 +22,9 @@ routerAdd(
     }
     const jobs = $app.findRecordsByFilter(
       "jobs",
-      "org = {:org} && status != 'cancelled' && status != 'enquiry' && returnAt >= {:from} && returnAt <= {:to}",
+      // Projects whose status can be invoiced (Settings → Project statuses);
+      // one with no status yet goes by its stage, as before.
+      "org = {:org} && (jobStatus.invoicing = true || (jobStatus = '' && status != 'cancelled' && status != 'enquiry')) && returnAt >= {:from} && returnAt <= {:to}",
       "returnAt",
       1000,
       0,
@@ -47,6 +49,7 @@ routerAdd(
         number: job.getInt("number"),
         name: job.getString("name"),
         status: job.getString("status"),
+        jobStatus: job.getString("jobStatus"),
         client: clients[job.getString("client")] || "",
         returnAt: job.getString("returnAt"),
         quote: quote

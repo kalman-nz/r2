@@ -131,3 +131,14 @@ export function oneLineAddress(address: string | null | undefined): string {
 export function stackedAddress(address: string | null | undefined): string {
   return addressLines(address).join("\n");
 }
+
+export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "Fri 30 Oct" this year, "1 Aug 1965" otherwise (the day of the week
+// matters less then).
+export function shortDay(d: Date): string {
+  return d.getFullYear() === new Date().getFullYear()
+    ? `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
+    : `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}

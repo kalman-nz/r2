@@ -16,6 +16,7 @@ import { displayPath, useCategoryPaths } from "../lib/catalog";
 import Field from "./Field";
 import Switch from "./Switch";
 import Segmented from "./Segmented";
+import { Dotted } from "./StatusBadge";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 
@@ -107,18 +108,26 @@ function Section({ title, hint, children }: { title: string; hint?: ReactNode; c
 function StatusPill<C extends { enabled: boolean; paused: boolean }>({ summary }: { summary: IntegrationSummary<C> }) {
   const { config, state, failed } = summary;
   let label = "Off";
-  let tone = "bg-gray-100 text-gray-600";
+  let dot = "bg-gray-300";
+  let text = "text-gray-500";
   if (config.enabled && config.paused) {
     label = "Paused";
-    tone = "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
+    dot = "bg-amber-500";
+    text = "text-amber-800";
   } else if (config.enabled && (state.lastError || failed.length)) {
     label = "Needs attention";
-    tone = "bg-red-50 text-red-700 ring-1 ring-red-200";
+    dot = "bg-red-500";
+    text = "text-fault-ink";
   } else if (config.enabled) {
     label = state.lastPollAt ? "Live" : "Starting…";
-    tone = "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200";
+    dot = "bg-emerald-500";
+    text = "text-gray-700";
   }
-  return <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${tone}`}>{label}</span>;
+  return (
+    <Dotted dot={dot} text={text}>
+      {label}
+    </Dotted>
+  );
 }
 
 function SecretInput({ label, isSet, hint, onSave, saving }: { label: string; isSet: boolean; hint?: string; onSave: (value: string) => void; saving: boolean }) {
@@ -503,11 +512,6 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
       >
         <Switch checked={draft.projects} onChange={(v) => set("projects", v)} label="Bring in projects and their equipment" />
         <Switch checked={draft.projectRequests} onChange={(v) => set("projectRequests", v)} label="Let people send R2 projects to Rentman as project requests" />
-        {draft.projectRequests && (
-          <p className="text-xs text-gray-500 -mt-1">
-            A “Send to Rentman” option appears on R2 projects. Someone accepts the request in Rentman, and the project then links back up with the R2 one.
-          </p>
-        )}
       </Section>
 
       <Section title="When both sides change the same thing">
@@ -669,7 +673,7 @@ function MomentusCard({ summary }: { summary: IntegrationSummary<MomentusSyncCon
         <div className="flex flex-col gap-2">
           <span className="text-sm text-gray-500">Event statuses</span>
           {seen.length === 0 ? (
-            <p className="text-xs text-gray-500">The statuses your venue uses appear here after the first sync, so you can choose which to bring in and what each means in R2.</p>
+            <p className="text-xs text-gray-500">None yet: they appear after the first sync.</p>
           ) : (
             <div className="flex flex-col gap-1.5">
               {seen.map(([code, name]) => {

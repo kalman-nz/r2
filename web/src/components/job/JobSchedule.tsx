@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
-import type { JobPeriod, JobSummary, PeriodKind, Subproject } from "../../lib/api";
+import type { CrewRole, JobPeriod, JobSummary, PeriodKind, Subproject } from "../../lib/api";
 import { formatDateTime, formatDuration, formatPeriod, fromLocalInput, parseDate, toLocalInput } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { withOrg } from "../../lib/currentOrg";
@@ -14,7 +14,9 @@ import NewSubprojectModal from "./NewSubprojectModal";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Segmented from "../Segmented";
 import Modal from "../Modal";
-import { PeriodNeeds } from "../crew/Needs";
+import { LevelSelect, PeriodNeeds } from "../crew/Needs";
+import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
 import { useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
 import { useOrg } from "../../lib/org";
 
@@ -35,17 +37,32 @@ const kindInfo = (kind: PeriodKind) => PERIOD_KINDS.find((k) => k.value === kind
 // Usage and billing first, then the rest; each in time order.
 const RANK: Record<PeriodKind, number> = { usage: 0, billing: 1, other: 2 };
 
+// A crew role a new schedule item needs, said while adding it: how many,
+// which role and the lowest level ("" for any).
+interface CrewDraft {
+  key: number;
+  role: string;
+  level: string;
+  quantity: number;
+}
+
 interface Draft {
   kind: PeriodKind;
   name: string;
   start: string; // datetime-local
   end: string;
   notes: string;
+  // Only when adding: an item's crew needs are changed under it afterwards.
+  crew: CrewDraft[];
 }
 
+let crewKey = 0;
+
 function draftOf(p: JobPeriod): Draft {
-  return { kind: p.kind, name: p.name, start: toLocalInput(p.start), end: toLocalInput(p.end), notes: p.notes };
+  return { kind: p.kind, name: p.name, start: toLocalInput(p.start), end: toLocalInput(p.end), notes: p.notes, crew: [] };
 }
+
+const crewProblem = (crew: CrewDraft[]) => crew.some((c) => !c.role || !!numberProblem(c.quantity, { min: 1, max: 99, integer: true }));
 
 // A project's schedule. Usage periods book the kit, billing periods are
 // what's charged (each counted on its own), and the rest are named times
@@ -61,6 +78,9 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
   const confirm = useConfirm();
   const { job, periods, pricing, subprojects = [] } = summary;
   const { feature } = useOrg();
+  // With crew rostering on, a new schedule item can say what crew it needs.
+  const { roles: allCrewRoles } = useCrewRoles();
+  const crewRoles = feature("crew") && canEdit ? allCrewRoles : undefined;
   const [editingId, setEditingId] = useState<string | null>(null);
   // A new period and the section it goes in ("" for the main project).
   const [adding, setAdding] = useState<{ section: string; draft: Draft } | null>(null);
@@ -114,7 +134,18 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     setBusy(true);
     try {
       if (id) await pb.collection("job_periods").update(id, body);
-      else await pb.collection("job_periods").create(withOrg({ ...body, job: job.id, subproject: section }));
+      else {
+        const period = await pb.collection("job_periods").create<JobPeriod>(withOrg({ ...body, job: job.id, subproject: section }));
+        // The crew it needs, on its times (rostered on the Crew tab).
+        try {
+          for (const c of d.crew) {
+            await pb.collection("crew_needs").create(withOrg({ job: job.id, period: period.id, role: c.role, level: c.level, quantity: c.quantity, customTimes: false }));
+          }
+        } catch (err) {
+          showToast("error", `Added ${body.name}, but couldn't add all its crew: ${errorText(err)}`);
+        }
+        if (d.crew.length > 0) await queryClient.invalidateQueries({ queryKey: ["crew-needs"] });
+      }
       await refresh();
       return true;
     } catch (err) {
@@ -153,7 +184,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     const [start, end] = kind === "other" ? [from, from + 2 * HOUR] : [ms(owner.prepAt), ms(owner.returnAt)];
     const iso = (t: number) => new Date(t).toISOString();
     setEditingId(null);
-    setAdding({ section, draft: { kind, name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "" } });
+    setAdding({ section, draft: { kind, name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "", crew: [] } });
   }
 
   async function renameSubproject(sp: Subproject, name: string) {
@@ -189,6 +220,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
         draft={adding.draft}
         taken={takenIn(section)}
         onChange={(draft) => setAdding({ section, draft })}
+        crewRoles={crewRoles}
         busy={busy}
         submitLabel="Add period"
         onCancel={() => setAdding(null)}
@@ -232,7 +264,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
       <section className="card p-4 flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-gray-900">Schedule</h2>
+            <h2 className="eyebrow text-gray-500">Schedule</h2>
             <Segmented
               label="Schedule view"
               compact
@@ -283,7 +315,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
             canEdit={canEdit}
             onCreate={(start, end) => {
               const iso = (t: number) => new Date(t).toISOString();
-              setCalendarAdd({ section: "", draft: { kind: "other", name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "" } });
+              setCalendarAdd({ section: "", draft: { kind: "other", name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "", crew: [] } });
             }}
             onOpen={(p) => setCalendarEdit(p)}
             onChange={(p, start, end) =>
@@ -316,6 +348,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
               draft={calendarAdd.draft}
               taken={takenIn(calendarAdd.section)}
               onChange={(draft) => setCalendarAdd({ ...calendarAdd, draft })}
+              crewRoles={crewRoles}
               busy={busy}
               submitLabel="Add period"
               onCancel={() => setCalendarAdd(null)}
@@ -384,7 +417,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
             <div className="divide-y divide-gray-100 border-t border-gray-100">
               {rows(others)}
               {others.length === 0 && (
-                <p className="px-4 py-5 text-sm text-gray-500">Pack in, crew calls, rehearsals, anything else worth planning. These don't book or charge anything.</p>
+                <p className="px-4 py-5 text-sm text-gray-500">Nothing else scheduled.</p>
               )}
             </div>
           </section>
@@ -519,8 +552,9 @@ function Timeline({ periods }: { periods: JobPeriod[] }) {
 
 function KindBadge({ kind }: { kind: PeriodKind }) {
   if (kind === "other") return null;
-  const style = kind === "usage" ? "bg-data-soft text-data-ink" : "bg-signal-soft text-signal-ink";
-  return <span className={`eyebrow px-1.5 py-0.5 rounded ${style}`}>{kindInfo(kind).label}</span>;
+  // Plain text, coloured like its bar: no chip behind it.
+  const style = kind === "usage" ? "text-data-ink" : "text-signal-ink";
+  return <span className={`eyebrow ${style}`}>{kindInfo(kind).label}</span>;
 }
 
 function PeriodRow({
@@ -619,6 +653,7 @@ function PeriodForm({
   submitDisabled = false,
   onSubmit,
   onCancel,
+  crewRoles,
 }: {
   draft: Draft;
   onChange: (d: Draft) => void;
@@ -630,6 +665,8 @@ function PeriodForm({
   submitDisabled?: boolean;
   onSubmit: () => void;
   onCancel: () => void;
+  // Adding with crew rostering on: the roles it can need.
+  crewRoles?: CrewRole[];
 }) {
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => onChange({ ...draft, [key]: value });
   const start = ms(fromLocalInput(draft.start));
@@ -655,17 +692,14 @@ function PeriodForm({
             className="input py-2"
           />
         </Field>
-        <Field
-          label="Does"
-          hint={
-            kindLocked
-              ? "Every project and subproject has one of these. Change its times instead"
-              : draft.kind === "other" && taken.length > 0
-                ? "There's already a usage and billing period: change their times instead"
-                : kindInfo(draft.kind).hint
-          }
-        >
-          <select value={draft.kind} onChange={(e) => set("kind", e.target.value as PeriodKind)} disabled={kindLocked} className="input py-2">
+        <Field label="Does">
+          <select
+            value={draft.kind}
+            onChange={(e) => set("kind", e.target.value as PeriodKind)}
+            disabled={kindLocked}
+            title={kindLocked ? "Every project and subproject has one of these: change its times instead" : kindInfo(draft.kind).hint}
+            className="input py-2"
+          >
             {PERIOD_KINDS.map((k) => (
               <option key={k.value} value={k.value} disabled={k.value !== draft.kind && taken.includes(k.value)}>
                 {k.label}
@@ -686,12 +720,12 @@ function PeriodForm({
           value={draft.notes}
           onChange={(e) => set("notes", e.target.value)}
           className="input py-2"
-          placeholder="Access, contacts, who's needed"
           maxLength={2000}
         />
       </Field>
+      {crewRoles && crewRoles.length > 0 && <CrewRows roles={crewRoles} crew={draft.crew} onChange={(crew) => set("crew", crew)} />}
       <div className="flex items-center gap-2">
-        <button type="submit" disabled={busy || submitDisabled || backwards || !draft.name.trim()} className="btn-primary">
+        <button type="submit" disabled={busy || submitDisabled || backwards || !draft.name.trim() || crewProblem(draft.crew)} className="btn-primary">
           {busy ? "Saving…" : submitLabel}
         </button>
         <button type="button" onClick={onCancel} className="btn-secondary">
@@ -699,5 +733,46 @@ function PeriodForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// The crew a new schedule item needs, said while adding it: 1× Audio
+// operator, 3× Technical labour. They're on the item's times; rostering
+// suggests people by skill, level and who's free.
+function CrewRows({ roles, crew, onChange }: { roles: CrewRole[]; crew: CrewDraft[]; onChange: (crew: CrewDraft[]) => void }) {
+  const set = (key: number, patch: Partial<CrewDraft>) => onChange(crew.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm text-gray-500">Crew needed</span>
+      {crew.map((c) => (
+        <div key={c.key} className="flex items-center gap-1.5 flex-wrap">
+          <NumberInput value={c.quantity} onChange={(n) => set(c.key, { quantity: n })} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
+          <span className="text-gray-500 text-sm">×</span>
+          <select value={c.role} onChange={(e) => set(c.key, { role: e.target.value, level: "" })} className="input py-1.5 w-auto" aria-label="Crew role">
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <LevelSelect role={roles.find((r) => r.id === c.role)} value={c.level} onChange={(level) => set(c.key, { level })} />
+          <button
+            type="button"
+            onClick={() => onChange(crew.filter((x) => x.key !== c.key))}
+            className="w-6 h-6 rounded text-gray-400 hover:text-fault-ink hover:bg-gray-100"
+            aria-label="Remove this crew role"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...crew, { key: ++crewKey, role: roles[0].id, level: "", quantity: 1 }])}
+        className="self-start text-xs font-medium text-signal-ink hover:text-signal-ink-hover"
+      >
+        + Crew role
+      </button>
+    </div>
   );
 }
