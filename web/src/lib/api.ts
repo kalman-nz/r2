@@ -1102,6 +1102,8 @@ export interface RentmanSyncConfig {
   projects: boolean;
   projectRequests: boolean;
   webhookKey: string;
+  // Set by the server from the projects feature; not saved from here.
+  contacts?: boolean;
 }
 
 export interface MomentusSyncConfig {

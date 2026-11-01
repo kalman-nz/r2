@@ -420,7 +420,7 @@ function RentmanCard({ summary }: { summary: IntegrationSummary<RentmanSyncConfi
   const set = <K extends keyof RentmanSyncConfig>(key: K, value: RentmanSyncConfig[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   async function saveDraft() {
-    const { enabled: _e, paused: _p, webhookKey: _w, ...rest } = draft;
+    const { enabled: _e, paused: _p, webhookKey: _w, contacts: _c, ...rest } = draft;
     await save(rest);
   }
 

@@ -125,6 +125,9 @@ function cleanConfig(provider, current, body) {
   const next = JSON.parse(JSON.stringify(current));
   const defaults = sync.connector(provider).DEFAULTS;
   for (const key of Object.keys(body || {})) {
+    // Rentman's contacts follows the projects feature (WITHOUT_PROJECTS), not
+    // a setting: the settings page sends it back with the rest, so skip it.
+    if (provider === "rentman" && key === "contacts") continue;
     if (!(key in defaults) || key === "webhookKey") throw new BadRequestError("Unknown setting: " + key);
     const v = body[key];
     switch (key) {
