@@ -5,7 +5,7 @@ import { pb } from "../lib/pocketbase";
 import { api, type CrewMember, type CrewNeed, type CrewRole, type Dashboard, type JobPeriod, type Quote } from "../lib/api";
 import { orgFilter } from "../lib/currentOrg";
 import { formatDate, formatDateTime, formatDuration, formatTime, nzd, parseDate } from "../lib/format";
-import { assetLabel, dueLabel, inDays, invalidateMaintenance, today, useMaintenanceJobs, useRepairs } from "../lib/maintenance";
+import { assetLabel, dayPassed, dueLabel, inDays, invalidateMaintenance, today, useMaintenanceJobs, useRepairs } from "../lib/maintenance";
 import { byDay, dayOf, greeting, PANEL_BY_ID, panelAllowed, STANDARD_PANELS, startsLabel, type PanelId, type ProjectRow } from "../lib/home";
 import { useOrg } from "../lib/org";
 import { useRole } from "../lib/roles";
@@ -144,7 +144,15 @@ export default function Dashboard() {
     return [...byJob.values()].map((m) => ({ ...m, at: at(m) })).sort((a, b) => time(a.at) - time(b.at));
   })();
   const maintenanceOverdue = maintenance.filter((m) => m.dueOn < todayDay);
-  const repairsOverdue = repairs.filter((r) => time(r.dueAt) < now);
+  const repairsOverdue = repairs.filter((r) => dayPassed(r.dueAt));
+  // The kit on those same open repairs (every open status; bulk by
+  // quantity), so it can't disagree with Open repairs. With repairs off,
+  // units flagged In repair by hand.
+  const unitsInRepair = feature("repairs")
+    ? repairsLoading
+      ? null
+      : repairs.reduce((n, r) => n + (r.quantity || r.serials.length), 0)
+    : (unitsOut?.repair ?? null);
 
   // Packing progress for what's next to prep (with scanning on).
   const prepIds = toPrep.slice(0, 20).map((j) => j.id);
@@ -216,7 +224,12 @@ export default function Dashboard() {
                   to="/maintenance?tab=repairs"
                 />
               )}
-              <Stat label="Units in repair" value={unitsOut ? unitsOut.repair : "—"} hint="Out of service" to="/inventory" />
+              <Stat
+                label="Units in repair"
+                value={unitsInRepair ?? "—"}
+                hint="Out of service"
+                to={feature("repairs") ? "/maintenance?tab=repairs" : "/inventory"}
+              />
               <Stat label="Units lost" value={unitsOut ? unitsOut.lost : "—"} hint={unitsOut && unitsOut.lost > 0 ? "Missing" : "None missing"} alert={!!unitsOut && unitsOut.lost > 0} to="/inventory" />
             </div>
           );
@@ -442,14 +455,14 @@ export default function Dashboard() {
         return (
           <Panel key={id} title="Open repairs" sub="Out of service" count={repairs.length} action={{ to: "/maintenance?tab=repairs", label: "View all" }} empty={repairsLoading ? "Loading…" : "Nothing in for repair."}>
             {repairs.slice(0, PANEL_ROWS).map((r) => {
-              const overdue = time(r.dueAt) < now;
+              const overdue = dayPassed(r.dueAt);
               return (
                 <Row key={r.id} onOpen={() => navigate(`/maintenance/repairs/${r.id}`)}>
                   <span className="font-mono text-xs text-gray-500 w-10 shrink-0">R{r.number}</span>
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-gray-900 truncate">{r.expand?.item?.name ?? "(deleted item)"}</div>
                     <div className={`text-xs truncate ${overdue ? "text-fault-ink font-medium" : "text-gray-500"}`}>
-                      {overdue ? `Expected back ${formatDateTime(r.dueAt)}` : r.fault || "No fault described"}
+                      {overdue ? `Expected back ${formatDate(r.dueAt)}` : r.fault || "No fault described"}
                     </div>
                   </div>
                   <RepairStatusBadge status={r.status} />

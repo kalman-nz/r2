@@ -10,6 +10,11 @@
 // Moving a repair from one stage to another puts its kit in or out of
 // service to match, in the same transaction as the repair itself, so stock
 // and repairs can't disagree.
+//
+// Whether a status closes the repair (stamps closedAt) is its own option
+// (closes, migration 0050), so kit can be back in service, or written off,
+// with the repair still open (an invoice to come, an insurance claim). Kit
+// out of service never closes.
 
 const STAGES = ["open", "repaired", "unrepairable"];
 // Must match the colour field (migrations 0034 and 0035).
@@ -34,7 +39,9 @@ function createDefaultStatuses(app, org) {
   if (statusesOf(app, org).length > 0) return;
   const collection = app.findCollectionByNameOrId("repair_statuses");
   DEFAULT_STATUSES.forEach((d, i) => {
-    app.save(new Record(collection, { org: org, name: d.name, stage: d.stage, colour: d.colour, sortOrder: (i + 1) * 10, isDefault: !!d.isDefault }));
+    app.save(
+      new Record(collection, { org: org, name: d.name, stage: d.stage, colour: d.colour, sortOrder: (i + 1) * 10, isDefault: !!d.isDefault, closes: d.stage !== "open" }),
+    );
   });
 }
 
@@ -68,6 +75,18 @@ function stageOf(tx, repair) {
   }
 }
 
+// Whether a repair's status closes it; one with no status is open.
+function closesOf(tx, repair) {
+  const id = repair.getString("status");
+  if (!id) return false;
+  try {
+    const status = tx.findRecordById("repair_statuses", id);
+    return status.getString("stage") !== "open" && status.getBool("closes");
+  } catch (_) {
+    return false;
+  }
+}
+
 function statusName(app, id) {
   try {
     return app.findRecordById("repair_statuses", id).getString("name");
@@ -85,6 +104,23 @@ function money(value, what) {
   const n = Number(value);
   if (!isFinite(n) || n < 0) throw new BadRequestError(what + " must be 0 or more");
   return n;
+}
+
+// When the kit's expected back: "" for none, otherwise a date (the app
+// sends the start of the day picked) no earlier than the day the repair
+// was opened, both in the organisation's time zone.
+function expectedBack(org, value, openedOn) {
+  const { toMs, toPbDate } = require("./time.js");
+  const { dayOf } = require("./maintenance.js");
+  const raw = text(value, 40);
+  if (!raw) return "";
+  const ms = toMs(raw);
+  if (!isFinite(ms)) throw new BadRequestError("Expected back isn't a date");
+  const stored = toPbDate(ms);
+  if (dayOf(stored, org) < openedOn) {
+    throw new BadRequestError("Expected back can't be before the repair was opened (" + openedOn.split("-").reverse().join("/") + ")");
+  }
+  return stored;
 }
 
 // The project a repair came back from: "" for none, otherwise one of the
@@ -126,6 +162,7 @@ function unitsUnderRepair(tx, org, exceptId) {
 function openRepair(app, org, body, who) {
   const fault = text(body.fault, 2000);
   if (!fault) throw new BadRequestError("Say what's wrong with it");
+  const dueAt = text(body.dueAt, 40) ? expectedBack(org, body.dueAt, require("./maintenance.js").todayFor(org)) : "";
   let repair;
   app.runInTransaction((tx) => {
     let item;
@@ -147,14 +184,14 @@ function openRepair(app, org, body, who) {
       status: status.id,
       fault: fault,
       repairer: text(body.repairer, 200),
-      dueAt: text(body.dueAt, 40),
+      dueAt: dueAt,
       notes: text(body.notes, 5000),
       job: projectOf(tx, org, body.job),
       createdBy: who ? who.id : "",
     });
 
     if (item.getString("tracking") === "serial") {
-      const ids = Array.isArray(body.serials) ? body.serials.map(String) : [];
+      const ids = (Array.isArray(body.serials) ? body.serials.map(String) : []).filter((id, i, all) => all.indexOf(id) === i);
       if (ids.length === 0) throw new BadRequestError("Pick the units that need repairing");
       const busy = unitsUnderRepair(tx, org, "");
       for (const id of ids) {
@@ -179,7 +216,8 @@ function openRepair(app, org, body, who) {
       const qty = Number(body.quantity);
       if (!Number.isInteger(qty) || qty < 1) throw new BadRequestError("Quantity must be a whole number, 1 or more");
       const usable = item.getInt("stockQty") - item.getInt("outOfServiceQty");
-      if (qty > usable) throw new BadRequestError("Only " + usable + " of " + item.getString("name") + " are in service");
+      if (usable <= 0) throw new BadRequestError("None of " + item.getString("name") + " are in service");
+      if (qty > usable) throw new BadRequestError("Can't repair " + qty + ": only " + usable + " of " + item.getString("name") + " are in service");
       item.set("outOfServiceQty", item.getInt("outOfServiceQty") + qty);
       tx.save(item);
       repair.set("quantity", qty);
@@ -251,6 +289,9 @@ function hold(tx, repair, from) {
 // Any status can follow any other; when the stage changes, the kit goes in
 // or out of service to match.
 function updateRepair(app, repair, body) {
+  const { toMs } = require("./time.js");
+  const org = repair.getString("org");
+  const openedOn = body.dueAt !== undefined ? require("./maintenance.js").dayOf(repair.getString("created"), org) : "";
   app.runInTransaction((tx) => {
     const record = tx.findRecordById("repairs", repair.id);
     if (body.fault !== undefined) {
@@ -260,7 +301,13 @@ function updateRepair(app, repair, body) {
     }
     if (body.repairer !== undefined) record.set("repairer", text(body.repairer, 200));
     if (body.cost !== undefined) record.set("cost", money(body.cost, "Cost"));
-    if (body.dueAt !== undefined) record.set("dueAt", text(body.dueAt, 40));
+    if (body.dueAt !== undefined) {
+      // Only a changed date is checked, so an older repair's can be kept.
+      const was = record.getString("dueAt");
+      const next = text(body.dueAt, 40);
+      const same = next === was || (!!next && !!was && toMs(next) === toMs(was));
+      if (!same) record.set("dueAt", expectedBack(org, next, openedOn));
+    }
     if (body.notes !== undefined) record.set("notes", text(body.notes, 5000));
     if (body.job !== undefined) record.set("job", projectOf(tx, record.getString("org"), body.job));
 
@@ -268,15 +315,15 @@ function updateRepair(app, repair, body) {
       const to = statusFor(tx, record.getString("org"), body.status);
       const fromStage = stageOf(tx, record);
       const toStage = to.getString("stage");
+      const fromCloses = closesOf(tx, record);
+      const toCloses = toStage !== "open" && to.getBool("closes");
       if (fromStage !== toStage) {
         if (fromStage !== "open") hold(tx, record, fromStage);
-        if (toStage !== "open") {
-          release(tx, record, toStage === "unrepairable");
-          record.set("closedAt", new Date().toISOString());
-        } else {
-          record.set("closedAt", "");
-        }
+        if (toStage !== "open") release(tx, record, toStage === "unrepairable");
       }
+      // Stamped when it closes (or closes another way), cleared when it reopens.
+      if (!toCloses) record.set("closedAt", "");
+      else if (!fromCloses || fromStage !== toStage) record.set("closedAt", new Date().toISOString());
       record.set("status", to.id);
     }
     tx.save(record);
@@ -285,9 +332,10 @@ function updateRepair(app, repair, body) {
 }
 
 // Replaces the organisation's statuses with `list`, in order:
-// [{ id?, name, stage, colour, isDefault }]. New ones are made and missing
-// ones deleted. A status with repairs in it can't be deleted or change
-// stage (their kit would have to move); there's always an open status for
+// [{ id?, name, stage, colour, isDefault, closes? }] (closes left out: as
+// the stage had it). New ones are made and missing ones deleted. A status
+// with repairs in it can't be deleted or change what it does (their kit
+// and closed dates would have to move); there's always an open status for
 // new repairs to start in and a repaired one to finish with, and exactly
 // one default. Returns the saved list.
 function saveStatuses(app, org, list) {
@@ -304,6 +352,8 @@ function saveStatuses(app, org, list) {
       id: s.id ? String(s.id) : "",
       name: name,
       stage: s.stage,
+      // Kit out of service never closes the repair.
+      closes: s.stage !== "open" && (typeof s.closes === "boolean" ? s.closes : true),
       colour: COLOURS.indexOf(s.colour) !== -1 ? s.colour : "gray",
       isDefault: !!s.isDefault,
       sortOrder: (i + 1) * 10,
@@ -329,8 +379,9 @@ function saveStatuses(app, org, list) {
       if (s.id) {
         record = existing[s.id];
         if (!record) throw new BadRequestError("One of those statuses doesn't exist");
-        if (record.getString("stage") !== s.stage && inUse(s.id) > 0) {
-          throw new BadRequestError(record.getString("name") + " has repairs in it, so what it does to the kit can't change. Add a new status instead");
+        const closesNow = record.getString("stage") !== "open" && record.getBool("closes");
+        if ((record.getString("stage") !== s.stage || closesNow !== s.closes) && inUse(s.id) > 0) {
+          throw new BadRequestError(record.getString("name") + " has repairs in it, so what it does can't change. Add a new status instead");
         }
         kept[s.id] = true;
       } else {
@@ -338,6 +389,7 @@ function saveStatuses(app, org, list) {
       }
       record.set("name", s.name);
       record.set("stage", s.stage);
+      record.set("closes", s.closes);
       record.set("colour", s.colour);
       record.set("sortOrder", s.sortOrder);
       record.set("isDefault", s.isDefault);

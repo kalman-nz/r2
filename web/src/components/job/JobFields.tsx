@@ -1,12 +1,12 @@
-import type { JobDraft } from "../../lib/jobDraft";
+import { DISCOUNT, type JobDraft } from "../../lib/jobDraft";
 import { oneLineAddress } from "../../lib/format";
 import { useContacts, useVenues } from "../../lib/catalog";
 import Field from "../Field";
 import QuickCreateSelect from "../QuickCreateSelect";
-import { JOB_STAGES } from "../../lib/statuses";
 import { useJobStatuses } from "../../lib/workflow";
 import NumberInput from "../NumberInput";
-import { useCan } from "../../lib/roles";
+import { COUNT, numberProblem } from "../../lib/numbers";
+import { useCan, useFeature } from "../../lib/roles";
 import { JobStatusBadge } from "../StatusBadge";
 
 export default function JobFields({
@@ -22,10 +22,11 @@ export default function JobFields({
   withDates?: boolean;
 }) {
   const can = useCan();
+  // Discounts, charged days and quote notes only with prices and quotes.
+  const pricing = useFeature()("pricing");
   const { statuses, byId, defaultId } = useJobStatuses();
   // A new project shows where it'll start; the server fills the default in.
   const statusId = draft.jobStatus || (draft.status ? (statuses.find((s) => s.stage === draft.status)?.id ?? "") : defaultId);
-  const stage = byId.get(statusId)?.stage ?? draft.status;
   const { data: contacts = [] } = useContacts();
   const { data: venues = [] } = useVenues();
   const set = <K extends keyof JobDraft>(key: K, value: JobDraft[K]) => onChange({ ...draft, [key]: value });
@@ -73,7 +74,7 @@ export default function JobFields({
           />
         )}
       </Field>
-      <Field label="Status" hint={JOB_STAGES.find((s) => s.value === stage)?.hint}>
+      <Field label="Status">
         {readOnly ? (
           <span className="py-2">
             <JobStatusBadge status={draft.status} jobStatus={draft.jobStatus} />
@@ -115,13 +116,13 @@ export default function JobFields({
           </Field>
         </>
       )}
-      {!readOnly && (
+      {!readOnly && pricing && (
         <>
-          <Field label="Project discount (%)">
+          <Field label="Project discount (%)" error={numberProblem(draft.discountPct, DISCOUNT)}>
             <NumberInput value={draft.discountPct} min={0} max={100} onChange={(n) => set("discountPct", n)} className="input py-2" />
           </Field>
-          <Field label="Charge for days">
-            <NumberInput value={draft.chargeDays} min={0} onChange={(n) => set("chargeDays", Math.round(n))} className="input py-2" />
+          <Field label="Charge for days" error={numberProblem(draft.chargeDays, COUNT)}>
+            <NumberInput value={draft.chargeDays} min={0} integer onChange={(n) => set("chargeDays", n)} className="input py-2" />
           </Field>
           <Field label="Notes on the quote" className="sm:col-span-2">
             <textarea
@@ -129,7 +130,6 @@ export default function JobFields({
               onChange={(e) => set("quoteNotes", e.target.value)}
               rows={2}
               className="input py-2"
-              placeholder="Shown to the client"
             />
           </Field>
         </>
@@ -141,7 +141,6 @@ export default function JobFields({
           disabled={readOnly}
           rows={2}
           className="input py-2"
-          placeholder="Crew, access, parking — not shown to the client"
         />
       </Field>
     </div>

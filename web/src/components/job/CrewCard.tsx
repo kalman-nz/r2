@@ -48,7 +48,7 @@ export default function CrewCard({ summary, canEdit }: { summary: JobSummary; ca
   return (
     <section className="card p-4 flex flex-col gap-2 text-sm">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-500">Crew</h2>
+        <h2 className="eyebrow text-gray-500">Crew</h2>
         {rostering && (
           <Link to={`/projects/${jobId}?tab=crew`} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
             {canEdit ? "Roster crew" : "See crew"}
@@ -56,12 +56,14 @@ export default function CrewCard({ summary, canEdit }: { summary: JobSummary; ca
         )}
       </div>
       {rostering && slots > 0 && <p className={`text-xs ${open > 0 ? "text-amber-700" : "text-gray-500"}`}>{open > 0 ? `${open} of ${slots} slots to fill` : `All ${slots} slots filled`}</p>}
-      {byPerson.size === 0 && <p className="text-xs text-gray-500">Nobody's on it yet.</p>}
+      {byPerson.size === 0 && <p className="text-gray-500">Nobody yet.</p>}
       {[...byPerson].map(([personId, theirs]) => (
         <div key={personId} className="group flex items-start justify-between gap-2">
           <span className="min-w-0">
             <span className="block text-gray-900 truncate">
-              {personById.get(personId)?.name ?? "Someone"}
+              <Link to={`/crew/${personId}`} className="hover:underline">
+                {personById.get(personId)?.name ?? "Someone"}
+              </Link>
               {theirs[0].user && theirs[0].user === me?.id && <span className="text-xs text-gray-400"> (you)</span>}
             </span>
             {theirs.map(doing).filter(Boolean).length > 0 && (
@@ -81,7 +83,7 @@ export default function CrewCard({ summary, canEdit }: { summary: JobSummary; ca
       ))}
       {canEdit && !rostering && (
         <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
-          <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Doing what? e.g. Sound op" maxLength={60} className="input py-1.5 flex-1 min-w-0" />
+          <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Doing what?" maxLength={60} className="input py-1.5 flex-1 min-w-0" />
           <PersonPicker
             people={people}
             exclude={new Set(crew.filter((c) => !c.need).map((c) => c.person))}

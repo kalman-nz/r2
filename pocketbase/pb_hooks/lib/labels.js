@@ -7,8 +7,8 @@ const FONTS = ["system", "archivo", "condensed", "mono", "serif"];
 function validateTemplateBody(data) {
   if (!data || typeof data !== "object") throw new BadRequestError("Invalid body");
   if (typeof data.name !== "string" || !data.name) throw new BadRequestError("name is required");
-  if (typeof data.widthMm !== "number" || data.widthMm <= 0) throw new BadRequestError("widthMm must be a positive number");
-  if (typeof data.heightMm !== "number" || data.heightMm <= 0) throw new BadRequestError("heightMm must be a positive number");
+  if (typeof data.widthMm !== "number" || !(data.widthMm > 0)) throw new BadRequestError("The label's width has to be more than 0 mm");
+  if (typeof data.heightMm !== "number" || !(data.heightMm > 0)) throw new BadRequestError("The label's length has to be more than 0 mm");
   if (!Array.isArray(data.elements)) throw new BadRequestError("elements must be an array");
 
   for (const el of data.elements) {

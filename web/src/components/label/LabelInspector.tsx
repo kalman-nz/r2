@@ -53,6 +53,7 @@ function Num({
     <label className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white pl-2 focus-within:border-signal focus-within:ring-2 focus-within:ring-signal/20">
       <span className="text-xs text-gray-400 w-3 shrink-0">{label}</span>
       <NumberInput
+        clamp
         min={min}
         max={max}
         value={roundMm(value)}
@@ -357,6 +358,7 @@ export function ElementInspector({
           <div className="grid grid-cols-2 gap-1.5">
             <Row label="Line height">
               <NumberInput
+                clamp
                 min={0.6}
                 max={3}
                 value={el.lineHeight ?? 1.2}
@@ -365,7 +367,7 @@ export function ElementInspector({
               />
             </Row>
             <Row label="Padding (mm)">
-              <NumberInput min={0} value={el.padding ?? 0} onChange={(padding) => onPatch({ padding }, k("pad"))} className="input py-1" />
+              <NumberInput clamp min={0} value={el.padding ?? 0} onChange={(padding) => onPatch({ padding }, k("pad"))} className="input py-1" />
             </Row>
           </div>
           <Row label="Ink">
@@ -381,11 +383,14 @@ export function ElementInspector({
           </Row>
           {el.inverted && (
             <Row label="Corner radius (mm)">
-              <NumberInput min={0} value={el.cornerRadius ?? 0} onChange={(cornerRadius) => onPatch({ cornerRadius }, k("radius"))} className="input py-1" />
+              <NumberInput clamp min={0} value={el.cornerRadius ?? 0} onChange={(cornerRadius) => onPatch({ cornerRadius }, k("radius"))} className="input py-1" />
             </Row>
           )}
           <Check checked={el.wrap ?? false} onChange={(wrap) => onPatch({ wrap })}>
             Wrap onto more lines (instead of squeezing onto one)
+          </Check>
+          <Check checked={el.shrink ?? false} onChange={(shrink) => onPatch({ shrink })}>
+            Shrink to fit
           </Check>
           {el.wrap && (
             <Check checked={el.breakWords ?? true} onChange={(breakWords) => onPatch({ breakWords })}>
@@ -402,7 +407,7 @@ export function ElementInspector({
           </Check>
           {el.showText && (
             <Row label="Text size (mm)">
-              <NumberInput min={1} value={el.fontSize ?? 2.5} onChange={(fontSize) => onPatch({ fontSize }, k("size"))} className="input py-1" />
+              <NumberInput clamp min={1} value={el.fontSize ?? 2.5} onChange={(fontSize) => onPatch({ fontSize }, k("size"))} className="input py-1" />
             </Row>
           )}
         </Section>
@@ -436,11 +441,11 @@ export function ElementInspector({
           </Row>
           <div className="grid grid-cols-2 gap-1.5">
             <Row label="Thickness (mm)">
-              <NumberInput min={0.1} value={el.strokeWidth ?? 0.5} onChange={(strokeWidth) => onPatch({ strokeWidth }, k("sw"))} className="input py-1" />
+              <NumberInput clamp min={0.1} value={el.strokeWidth ?? 0.5} onChange={(strokeWidth) => onPatch({ strokeWidth }, k("sw"))} className="input py-1" />
             </Row>
             {el.type === "rect" && (
               <Row label="Corner radius (mm)">
-                <NumberInput min={0} value={el.cornerRadius ?? 0} onChange={(cornerRadius) => onPatch({ cornerRadius }, k("radius"))} className="input py-1" />
+                <NumberInput clamp min={0} value={el.cornerRadius ?? 0} onChange={(cornerRadius) => onPatch({ cornerRadius }, k("radius"))} className="input py-1" />
               </Row>
             )}
           </div>

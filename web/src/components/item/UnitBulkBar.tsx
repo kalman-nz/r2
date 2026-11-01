@@ -12,6 +12,7 @@ import SelectionBar from "../SelectionBar";
 import { useConfirm } from "../ConfirmProvider";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
+import { AMOUNT, numberProblem } from "../../lib/numbers";
 import { useToast } from "../ToastProvider";
 import { updateEach } from "./BulkEditModal";
 import NewRepairModal from "../repair/NewRepairModal";
@@ -368,7 +369,7 @@ function EditModal({
           )}
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={apply} disabled={busy || on.size === 0} className="btn-primary">
+        <button onClick={apply} disabled={busy || on.size === 0 || (on.has("purchaseCost") && !!numberProblem(purchaseCost, AMOUNT))} className="btn-primary">
           {busy ? "Saving…" : `Update ${what}`}
         </button>
         <button onClick={onClose} disabled={busy} className="btn-secondary">

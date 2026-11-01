@@ -174,9 +174,11 @@ export interface RepairStatusDef extends RecordModel {
   colour: StatusColour | "";
   sortOrder: number;
   isDefault: boolean;
+  // Closes the repair (stamps it closed); kit out of service never does.
+  closes: boolean;
 }
 
-export type RepairStatusInput = Pick<RepairStatusDef, "name" | "stage" | "colour" | "isDefault"> & { id?: string };
+export type RepairStatusInput = Pick<RepairStatusDef, "name" | "stage" | "colour" | "isDefault" | "closes"> & { id?: string };
 
 // One of an organisation's own project statuses (Settings → Project
 // statuses, pb_hooks/lib/jobStatuses.js), on one of the fixed stages
@@ -188,9 +190,14 @@ export interface JobStatusDef extends RecordModel {
   colour: StatusColour | "";
   sortOrder: number;
   isDefault: boolean;
+  // Its own options (Settings → Project statuses): on the Rostering page,
+  // in the calendar feed, in the Xero export.
+  rostering: boolean;
+  calendar: boolean;
+  invoicing: boolean;
 }
 
-export type JobStatusInput = Pick<JobStatusDef, "name" | "stage" | "colour" | "isDefault"> & { id?: string };
+export type JobStatusInput = Pick<JobStatusDef, "name" | "stage" | "colour" | "isDefault" | "rostering" | "calendar" | "invoicing"> & { id?: string };
 
 // Equipment tracking (pb_hooks/lib/tracking.js): where kit is on its way
 // to a project and back. Each organisation's steps sit on fixed stages:
@@ -342,6 +349,8 @@ export interface Contact extends RecordModel {
   billingAddress: string;
   notes: string;
   archived: boolean;
+  // Its custom fields' values, by key (Settings → Projects → Custom fields).
+  custom?: Record<string, unknown> | null;
 }
 
 export interface Venue extends RecordModel {
@@ -352,6 +361,7 @@ export interface Venue extends RecordModel {
   phone: string;
   notes: string;
   archived: boolean;
+  custom?: Record<string, unknown> | null;
 }
 
 export interface Job extends RecordModel {
@@ -379,6 +389,7 @@ export interface Job extends RecordModel {
   quoteNotes: string;
   notes: string;
   createdBy: string;
+  custom?: Record<string, unknown> | null;
 }
 
 export interface Scan extends RecordModel {
@@ -494,6 +505,8 @@ export interface JobInfo {
   reference: string;
   quoteNotes: string;
   notes: string;
+  // Its custom fields' values, by key (Settings → Projects → Custom fields).
+  custom?: Record<string, unknown>;
   // Equipment headings in order, per part ("" = the main project).
   headings?: { section: string; name: string }[];
   created: string;
@@ -873,7 +886,7 @@ export interface AdminUser {
 export interface CustomFieldDef {
   key: string;
   label: string;
-  appliesTo: "item" | "serial";
+  appliesTo: "item" | "serial" | "job" | "contact" | "venue";
 }
 
 export type CustomFieldType = "text" | "number" | "boolean" | "date" | "select";
@@ -885,7 +898,7 @@ export interface CustomField extends RecordModel {
   org: string;
   key: string;
   label: string;
-  appliesTo: "item" | "serial";
+  appliesTo: "item" | "serial" | "job" | "contact" | "venue";
   // Empty on fields imported before types existed: those are text.
   type: CustomFieldType | "";
   options: string[] | null;
@@ -983,6 +996,8 @@ export interface CrewMember extends RecordModel {
 export interface CrewRole extends RecordModel {
   org: string;
   name: string;
+  // Its levels, lowest first (Driver 1F, 2F, 4F); none for most roles.
+  levels: string[] | null;
   sortOrder: number;
 }
 
@@ -995,6 +1010,8 @@ export interface CrewPerson extends RecordModel {
   phone: string;
   email: string;
   skills: string[];
+  // Their level at each role they do, by role id.
+  skillLevels: Record<string, string> | null;
   notes: string;
   archived: boolean;
 }
@@ -1007,6 +1024,8 @@ export interface CrewNeed extends RecordModel {
   period: string;
   role: string;
   quantity: number;
+  // The lowest of its role's levels it takes ("" for any).
+  level: string;
   start: string;
   end: string;
   customTimes: boolean;
@@ -1041,6 +1060,8 @@ export interface XeroJob {
   number: number;
   name: string;
   status: JobStatus;
+  // The organisation's own status (a JobStatusDef id).
+  jobStatus?: string;
   client: string;
   returnAt: string;
   quote: { id: string; version: number; status: QuoteStatus; exGst: number; total: number } | null;
@@ -1184,6 +1205,9 @@ export const api = {
     jobId: string,
     body: { action: "add" | "rename" | "remove" | "move"; section: string; name: string; to?: string; direction?: -1 | 1 },
   ) => request<JobSummary>(`/api/jobs/${jobId}/headings`, json("POST", body)),
+  // A copy of a project for a repeat event (lib/jobs.js copyJob).
+  copyJob: (jobId: string, body: { name: string; start: string; equipment: boolean; crew: boolean }) =>
+    request<{ id: string; skipped: number }>(`/api/jobs/${jobId}/copy`, json("POST", body)),
   addSubproject: (jobId: string, body: { name: string; usageStart: string; usageEnd: string; billingStart?: string; billingEnd?: string }) =>
     request<JobSummary>(`/api/jobs/${jobId}/subprojects`, json("POST", body)),
   issueQuote: (jobId: string) =>
@@ -1246,7 +1270,7 @@ export const api = {
   deleteSerialFile: (id: string, name: string) => request<Serial>(`/api/serials/${id}/files/${encodeURIComponent(name)}`, json("DELETE")),
   repairActivity: (id: string) => request<LogEntry[]>(`/api/repairs/${id}/activity`),
   saveRepairStatuses: (statuses: RepairStatusInput[]) => request<RepairStatusDef[]>("/api/repair-statuses", json("PUT", { statuses })),
-  saveCrewRoles: (roles: { id?: string; name: string }[]) => request<CrewRole[]>("/api/crew-roles", json("PUT", { roles })),
+  saveCrewRoles: (roles: { id?: string; name: string; levels: string[] }[]) => request<CrewRole[]>("/api/crew-roles", json("PUT", { roles })),
   searchAddresses: (q: string) => request<AddressMatch[]>(`/api/addresses?q=${encodeURIComponent(q)}`),
   warmAddressLookup: () => request<AddressMatch[]>("/api/addresses?warm=1"),
   trackingProjects: () => request<TrackedProject[]>("/api/tracking/projects"),

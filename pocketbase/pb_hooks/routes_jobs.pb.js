@@ -53,6 +53,29 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
+// Copying a project for a repeat event (lib/jobs.js copyJob). body: { name,
+// start, equipment?, crew? }. Returns { id, skipped }.
+routerAdd(
+  "POST",
+  "/api/jobs/{id}/copy",
+  (e) => {
+    const { copyJob, requireJob } = require(`${__hooks}/lib/jobs.js`);
+    const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { whoName } = require(`${__hooks}/lib/auth.js`);
+    const { logEvent } = require(`${__hooks}/lib/log.js`);
+    const job = requireJob($app, e.request.pathValue("id"));
+    const ctx = requireRecordOrg(e, job, "jobs.create");
+    const body = e.requestInfo().body || {};
+    if (body.equipment !== false && !ctx.can("jobs.lines")) throw new ForbiddenError("Your role can't add equipment to projects");
+    // Crew needs only come over while the organisation uses crew rostering.
+    if (!ctx.features.crew) body.crew = false;
+    const result = copyJob(job.id, body, e.auth);
+    logEvent(ctx.orgId, "job_copied", whoName(e.auth), { job: result.id, from: job.id });
+    return e.json(200, result);
+  },
+  $apis.requireAuth("users"),
+);
+
 // A subproject: part of the project with its own schedule (lib/jobs.js
 // addSubproject). Renaming and deleting go through the collection.
 routerAdd(

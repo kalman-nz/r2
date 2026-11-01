@@ -166,6 +166,7 @@ export default function LabelDesigner({
   sizeId,
   elements,
   onSizeChange,
+  onSizeProblem,
   onElementsChange: setElements,
   dataFields = true,
   initialSelectedId = null,
@@ -175,6 +176,8 @@ export default function LabelDesigner({
   sizeId?: string;
   elements: LabelElement[];
   onSizeChange: (widthMm: number, heightMm: number, sizeId: string) => void;
+  // A size typed out of range (LabelSizeControls), for the page to wait on.
+  onSizeProblem?: (problem: string | null) => void;
   onElementsChange: Dispatch<SetStateAction<LabelElement[]>>;
   dataFields?: boolean;
   initialSelectedId?: string | null;
@@ -704,7 +707,7 @@ export default function LabelDesigner({
 
   return (
     <div className="flex-1 lg:min-h-0 flex flex-col gap-3">
-      <LabelSizeControls widthMm={widthMm} heightMm={heightMm} sizeId={sizeId} onChange={onSizeChange}>
+      <LabelSizeControls widthMm={widthMm} heightMm={heightMm} sizeId={sizeId} onChange={onSizeChange} onProblem={onSizeProblem}>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           <span className="text-gray-500 mr-0.5">Add</span>
           {dataFields && (

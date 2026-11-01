@@ -412,14 +412,29 @@ export default function ItemsList() {
     }
   }
 
-  // The server refuses items that have been on a project or scanned; those
-  // are counted and left selected, to archive instead.
+  // The server refuses items with history (on a project, scanned, repairs
+  // or maintenance done); those are counted and left selected, to archive
+  // instead. Scheduled maintenance on the rest (repairs booked in for later
+  // included) goes with them, so the confirmation says how much.
   async function deleteSelected() {
     const targets = selectedItems;
     const what = `${targets.length} item${targets.length === 1 ? "" : "s"}`;
+    let jobs = 0;
+    try {
+      for (let i = 0; i < targets.length; i += 50) {
+        const chunk = targets.slice(i, i + 50);
+        const params = Object.fromEntries(chunk.map((t, j) => [`i${j}`, t.id]));
+        const filter = pb.filter(`status = 'scheduled' && (${chunk.map((_, j) => `item = {:i${j}}`).join(" || ")})`, params);
+        jobs += (await pb.collection("maintenance_jobs").getList(1, 1, { filter, fields: "id" })).totalItems;
+      }
+    } catch (err) {
+      showToast("error", errorText(err));
+      return;
+    }
+    const also = jobs > 0 ? `their units, kit links and ${jobs} scheduled maintenance job${jobs === 1 ? "" : "s"}` : "their units and kit links";
     const ok = await confirm({
       title: `Delete ${what}`,
-      message: `Delete ${what}, with their units and kit links? This can't be undone. Anything that's been on a project or scanned is skipped: archive those instead.`,
+      message: `Delete ${what}, with ${also}? This can't be undone. Anything with history (on a project, scanned, repaired or maintained) is skipped: archive those instead.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -441,7 +456,7 @@ export default function ItemsList() {
     else
       showToast(
         "error",
-        `Deleted ${deleted}. ${kept.size} couldn't be deleted (they've been used on projects or scanned) and are still selected, so you can archive them.`,
+        `Deleted ${deleted}. ${kept.size} couldn't be deleted (they have history) and are still selected, so you can archive them.`,
       );
   }
 

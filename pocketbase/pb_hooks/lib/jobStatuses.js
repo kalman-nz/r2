@@ -11,6 +11,11 @@
 //   returned     done: nothing held
 //   cancelled    nothing held
 //
+// Each status also has options of its own, set per status (migration
+// 0050): rostering (on the Rostering page), calendar (in the calendar feed)
+// and invoicing (in the Xero export). New statuses start as their stage
+// would have it (optionsFor).
+//
 // A project has both: jobStatus (one of the organisation's statuses) and
 // status (its stage), which availability, scanning, the calendar feed and
 // the Xero export read. syncJobStatus() keeps them together on every save:
@@ -37,6 +42,11 @@ function text(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+// A status's own options as its stage had them before they could be set.
+function optionsFor(stage) {
+  return { rostering: stage !== "cancelled", calendar: stage !== "cancelled", invoicing: stage !== "enquiry" && stage !== "cancelled" };
+}
+
 function statusesOf(app, org) {
   return app.findRecordsByFilter("job_statuses", "org = {:org}", "sortOrder,created", 0, 0, { org: org });
 }
@@ -45,7 +55,9 @@ function createDefaultJobStatuses(app, org) {
   if (statusesOf(app, org).length > 0) return;
   const collection = app.findCollectionByNameOrId("job_statuses");
   DEFAULT_JOB_STATUSES.forEach((d, i) => {
-    app.save(new Record(collection, { org: org, name: d.name, stage: d.stage, colour: d.colour, sortOrder: (i + 1) * 10, isDefault: !!d.isDefault }));
+    app.save(
+      new Record(collection, Object.assign({ org: org, name: d.name, stage: d.stage, colour: d.colour, sortOrder: (i + 1) * 10, isDefault: !!d.isDefault }, optionsFor(d.stage))),
+    );
   });
 }
 
@@ -84,7 +96,8 @@ function syncJobStatus(app, record) {
 }
 
 // Replaces the organisation's statuses with `list`, in order:
-// [{ id?, name, stage, colour, isDefault }]. moves: { removedId: keptId }
+// [{ id?, name, stage, colour, isDefault, rostering?, calendar?, invoicing? }]
+// (an option left out goes by the stage). moves: { removedId: keptId }
 // says where a removed status's projects go (to one that already exists).
 // A status whose stage changes takes its projects with it, so their kit is
 // held or released to match. There's always a status for new projects to
@@ -99,6 +112,8 @@ function saveJobStatuses(app, org, list, moves) {
     if (seen[name.toLowerCase()]) throw new BadRequestError("There are two statuses called " + name);
     seen[name.toLowerCase()] = true;
     if (STAGES.indexOf(s.stage) === -1) throw new BadRequestError("Pick what " + name + " means for the kit");
+    const given = optionsFor(s.stage);
+    for (const key in given) if (typeof s[key] === "boolean") given[key] = s[key];
     return {
       id: s.id ? String(s.id) : "",
       name: name,
@@ -106,6 +121,7 @@ function saveJobStatuses(app, org, list, moves) {
       colour: COLOURS.indexOf(s.colour) !== -1 ? s.colour : "gray",
       isDefault: !!s.isDefault,
       sortOrder: (i + 1) * 10,
+      options: given,
     };
   });
   const startable = clean.filter((s) => STARTING.indexOf(s.stage) !== -1);
@@ -142,6 +158,7 @@ function saveJobStatuses(app, org, list, moves) {
       record.set("colour", s.colour);
       record.set("sortOrder", s.sortOrder);
       record.set("isDefault", s.isDefault);
+      for (const key in s.options) record.set(key, s.options[key]);
       tx.save(record);
     }
     for (const id in existing) {
@@ -160,4 +177,4 @@ function saveJobStatuses(app, org, list, moves) {
   return statusesOf(app, org);
 }
 
-module.exports = { STAGES, STARTING, COLOURS, DEFAULT_JOB_STATUSES, statusesOf, createDefaultJobStatuses, syncJobStatus, saveJobStatuses };
+module.exports = { STAGES, STARTING, COLOURS, DEFAULT_JOB_STATUSES, optionsFor, statusesOf, createDefaultJobStatuses, syncJobStatus, saveJobStatuses };

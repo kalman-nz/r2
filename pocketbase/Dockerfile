@@ -13,11 +13,9 @@ COPY web ./web
 RUN pnpm build:web
 
 
-# Debian, not Alpine — brother_ql pins Pillow to 9.5.0 (see print/requirements.txt),
-# which doesn't build against the very new Python 3.14 that Alpine's current
-# python3 package ships. Debian bookworm's python3 (3.11) is the same
-# interpreter version the old app image already built this venv against
-# successfully, so stick with it here too.
+# Debian, not Alpine: Pillow and friends install as prebuilt wheels on
+# Debian bookworm's python3 (3.11), the interpreter this venv has always
+# been built against. Alpine would build them from source.
 FROM debian:bookworm-slim
 ARG PB_VERSION=0.39.11
 # BuildKit sets this automatically (amd64/arm64) to match the build platform —

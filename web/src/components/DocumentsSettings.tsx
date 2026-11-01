@@ -115,13 +115,7 @@ export default function DocumentsSettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-base font-semibold text-gray-900">Documents</h2>
-        <p className="text-sm text-gray-500">
-          Forms to print from a project's Documents menu, alongside the packing list: a technical handover, a deprep checklist, or anything you use. Each
-          starts with the project's details.
-        </p>
-      </div>
+      <h2 className="text-sm font-semibold text-gray-900">Documents</h2>
 
       <div className="flex flex-col md:flex-row gap-4 items-start">
         <div className="w-full md:w-56 shrink-0 card p-1.5 flex flex-col gap-0.5">
@@ -150,7 +144,7 @@ export default function DocumentsSettings() {
               <Field label="Description">
                 <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="input py-2" />
               </Field>
-              <Field label="Equipment" hint={EQUIPMENT_MODES.find((m) => m.value === draft.equipment)?.hint}>
+              <Field label="Equipment">
                 <select value={draft.equipment} onChange={(e) => setDraft({ ...draft, equipment: e.target.value as Draft["equipment"] })} className="input py-2">
                   {EQUIPMENT_MODES.map((m) => (
                     <option key={m.value} value={m.value}>
@@ -167,7 +161,7 @@ export default function DocumentsSettings() {
 
             <div className="flex flex-col gap-1.5">
               <span className="text-sm text-gray-500">Parts, in order</span>
-              {draft.fields.length === 0 && <p className="text-sm text-gray-400">No parts yet: add some below.</p>}
+              {draft.fields.length === 0 && <p className="text-sm text-gray-400">No parts yet.</p>}
               {draft.fields.map((f, i) => (
                 <div key={f.id} className={`flex items-start gap-1.5 ${f.type === "heading" ? "pt-2" : ""}`}>
                   <select

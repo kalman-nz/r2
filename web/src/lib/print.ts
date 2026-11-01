@@ -5,6 +5,10 @@ import { printGeometry, type LabelSize, type Printer } from "./printing";
 
 type Design = Pick<LabelTemplateData, "widthMm" | "heightMm" | "elements">;
 
+// How many copies of a label can be asked for at once: whole, 1 to 999, the
+// same as the PDF route (routes_pdf.pb.js) takes.
+export const COPIES = { min: 1, max: 999, integer: true };
+
 // The label renderer (the barcode library and fonts) is most of the app's
 // weight and only needed once someone prints, so it loads on first use —
 // the scan page on a phone never downloads it.

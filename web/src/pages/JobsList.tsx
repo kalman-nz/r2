@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb, useAuthRecord } from "../lib/pocketbase";
 import { api, type Contact, type CrewMember, type CrewPerson, type Job, type JobStatus, type Venue, type ViewConfig } from "../lib/api";
-import { formatDateTimeYear, num, parseDate } from "../lib/format";
+import { formatDateTimeYear, MONTHS, num, parseDate, WEEKDAYS } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge, OverdueBadge } from "../components/StatusBadge";
 import { overdueReason } from "../lib/overdue";
@@ -20,8 +20,10 @@ import { useJobStatuses } from "../lib/workflow";
 import { errorText } from "../lib/errors";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmProvider";
-import { updateEach } from "../components/item/BulkEditModal";
+import { updateEach } from "../lib/bulk";
 import SelectionBar from "../components/SelectionBar";
+import DateCell from "../components/DateCell";
+import { customKeysIn, customSortValue, customText, customValueOf, useCustomFields } from "../lib/customFields";
 
 type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
 type CrewWithPerson = CrewMember & { expand?: { person?: CrewPerson } };
@@ -41,26 +43,6 @@ interface Row extends JobWithExpand {
 interface Column extends TableColumn<Row> {
   toggleable: boolean;
   shown: boolean;
-}
-
-// Dates on one line, short enough to read in a narrow column: "Fri 30 Oct
-// 4:30 pm" this year, "1 Aug 1965" otherwise (the day of the week matters
-// less then). The full date's in the hover text.
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function DateCell({ value, alert }: { value: string; alert?: boolean }) {
-  const d = parseDate(value);
-  if (!d) return <span className="text-gray-300">—</span>;
-  const thisYear = d.getFullYear() === new Date().getFullYear();
-  const day = thisYear ? `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}` : `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }).replace(/\s?([AP]M)$/i, (_, m: string) => ` ${m.toLowerCase()}`);
-  return (
-    <span className={`tabular-nums ${alert ? "text-fault-ink font-medium" : "text-gray-700"}`}>
-      {day}
-      <span className={`ml-1.5 ${alert ? "" : "text-gray-400"}`}>{time}</span>
-    </span>
-  );
 }
 
 const time = (value: string) => parseDate(value)?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -432,6 +414,45 @@ export default function JobsList() {
     return out;
   }, [rows, mine]);
 
+  // The organisation's custom project fields, as columns (off to start
+  // with), sorts and, for yes/no and dropdown fields, groups.
+  const { fields: customFields } = useCustomFields("job");
+  const allColumns = useMemo<Column[]>(
+    () => [
+      ...COLUMNS,
+      ...customFields.map((f) => ({
+        key: `custom:${f.key}`,
+        label: f.label,
+        toggleable: true,
+        shown: false,
+        width: 150,
+        minWidth: 90,
+        sortValue: (j: Row) => customSortValue(f, customValueOf(j, f)),
+        title: (j: Row) => customText(f, customValueOf(j, f)),
+        render: (j: Row) => text(customText(f, customValueOf(j, f))),
+      })),
+    ],
+    [customFields],
+  );
+  const sortable = allColumns.filter((c) => c.sortValue);
+  const allGroups = useMemo<GroupOption<Row>[]>(
+    () => [
+      ...GROUPS,
+      ...customFields
+        .filter((f) => f.type === "select" || f.type === "boolean")
+        .map((f) => ({
+          key: `custom:${f.key}`,
+          label: f.label,
+          value: (j: Row) => {
+            const label = customText(f, customValueOf(j, f));
+            const order = f.type === "select" ? (f.options ?? []).indexOf(label) : label === "Yes" ? 0 : 1;
+            return label ? { id: label, label, order: order === -1 ? 999 : order } : { id: "", label: `No ${f.label.toLowerCase()}`, order: 1000 };
+          },
+        })),
+    ],
+    [customFields],
+  );
+
   const filtered = useMemo(() => {
     const now = Date.now();
     const term = search.trim().toLowerCase().replace(/^#/, "");
@@ -443,14 +464,16 @@ export default function JobsList() {
       if (crewUser && !onCrew.get(crewUser)?.has(j.id)) return false;
       if (
         term &&
-        ![String(j.number), j.name, j.reference, j.clientName, j.venueName, j.statusName, ...j.crewNames].some((v) => v.toLowerCase().includes(term))
+        ![String(j.number), j.name, j.reference, j.clientName, j.venueName, j.statusName, ...j.crewNames, ...customFields.map((f) => customText(f, customValueOf(j, f)))].some(
+          (v) => v.toLowerCase().includes(term),
+        )
       ) {
         return false;
       }
       return true;
     });
-    return sortRows(result, COLUMNS, sorts);
-  }, [rows, statusId, view, mine, when, client, venue, crewUser, onCrew, search, sorts]);
+    return sortRows(result, allColumns, sorts);
+  }, [rows, statusId, view, mine, when, client, venue, crewUser, onCrew, search, sorts, allColumns, customFields]);
 
   // What a saved view keeps.
   const settings: ViewConfig = {
@@ -474,18 +497,19 @@ export default function JobsList() {
     setClient(asString(s.client));
     setVenue(asString(s.venue));
     setCrewUser(asString(s.crew));
-    setShown(asStrings(s.columns, COLUMN_KEYS));
+    const custom = customKeysIn(s);
+    setShown(asStrings(s.columns, [...COLUMN_KEYS, ...custom]));
     const sized: Record<string, number> = {};
     if (s.widths && typeof s.widths === "object") {
       for (const [k, v] of Object.entries(s.widths)) if (typeof v === "number" && v > 0) sized[k] = v;
     }
     setWidths(sized);
-    setSorts(readSorts(s, SORT_KEYS, { key: "start", dir: newestFirst(status ? "" : saved) ? "desc" : "asc" }));
-    setGroupBy(readGroups(s, GROUP_KEYS));
+    setSorts(readSorts(s, [...SORT_KEYS, ...custom], { key: "start", dir: newestFirst(status ? "" : saved) ? "desc" : "asc" }));
+    setGroupBy(readGroups(s, [...GROUP_KEYS, ...custom]));
     setSelected(new Set());
   }
 
-  const columns = COLUMNS.filter((c) => !c.toggleable || shown.includes(c.key));
+  const columns = allColumns.filter((c) => !c.toggleable || shown.includes(c.key));
   const selectedRows = filtered.filter((j) => selected.has(j.id));
   const title = statusId
     ? (byId.get(statusId)?.name ?? "Projects")
@@ -661,10 +685,10 @@ export default function JobsList() {
                 {crewUser && !crewChoices.some(([id]) => id === crewUser) && <option value={crewUser}>Someone</option>}
               </select>
             </FilterField>
-            <SortList columns={SORTABLE} sorts={sorts} onChange={setSorts} />
-            <GroupFields options={GROUPS} groupBy={groupBy} onChange={setGroupBy} />
+            <SortList columns={sortable} sorts={sorts} onChange={setSorts} />
+            <GroupFields options={allGroups} groupBy={groupBy} onChange={setGroupBy} />
           </FiltersMenu>
-          <ColumnsMenu columns={COLUMNS.filter((c) => c.toggleable)} visible={shown} onChange={setShown} />
+          <ColumnsMenu columns={allColumns.filter((c) => c.toggleable)} visible={shown} onChange={setShown} />
         </div>
       </div>
 
@@ -699,7 +723,7 @@ export default function JobsList() {
         onRowClick={(j, e) => (e.metaKey || e.ctrlKey ? window.open(`/projects/${j.id}`, "_blank") : navigate(`/projects/${j.id}`))}
         sorts={sorts}
         onSortsChange={setSorts}
-        groups={groupBy.map((k) => GROUPS.find((g) => g.key === k)!).filter(Boolean)}
+        groups={groupBy.map((k) => allGroups.find((g) => g.key === k)!).filter(Boolean)}
         widths={widths}
         onWidthsChange={setWidths}
         selected={can("jobs.edit") || can("jobs.delete") ? selected : undefined}

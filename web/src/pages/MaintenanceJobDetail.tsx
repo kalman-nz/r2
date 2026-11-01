@@ -11,6 +11,7 @@ import { useFollowOrg } from "../lib/org";
 import { useRole } from "../lib/roles";
 import FilesCard from "../components/FilesCard";
 import NumberInput from "../components/NumberInput";
+import { AMOUNT, numberProblem } from "../lib/numbers";
 import { ResultBadge } from "../components/maintenance/ResultBadge";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
@@ -182,7 +183,7 @@ export default function MaintenanceJobDetail() {
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} disabled={!canEdit} rows={3} className="input py-1.5" />
             </label>
             {canEdit && (
-              <button onClick={saveDetails} disabled={!dirty || !dueOn} className="btn-secondary w-fit">
+              <button onClick={saveDetails} disabled={!dirty || !dueOn || !!numberProblem(cost, AMOUNT)} className="btn-secondary w-fit">
                 Save
               </button>
             )}
@@ -284,7 +285,7 @@ function RecordCard({ job, onDone }: { job: JobWithExpand; onDone: () => Promise
               {bulk && (
                 <label className="flex items-center gap-2">
                   <span className="text-gray-600">How many failed</span>
-                  <NumberInput value={failedQty} min={1} onChange={(n) => setFailedQty(Math.max(1, Math.round(n)))} className="input py-1 w-20" />
+                  <NumberInput value={failedQty} min={1} integer onChange={setFailedQty} className="input py-1 w-20" />
                 </label>
               )}
               {job.item && (
@@ -311,7 +312,16 @@ function RecordCard({ job, onDone }: { job: JobWithExpand; onDone: () => Promise
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="input py-1.5" placeholder="Readings, what was done, parts used…" />
           </label>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={save} disabled={saving || !doneOn || (result === "fail" && repair && !!job.item && !fault.trim())} className="btn-primary">
+            <button
+              onClick={save}
+              disabled={
+                saving ||
+                !doneOn ||
+                (result === "fail" && repair && !!job.item && !fault.trim()) ||
+                (result === "fail" && bulk && !!numberProblem(failedQty, { min: 1, integer: true }))
+              }
+              className="btn-primary"
+            >
               {saving ? "Recording…" : "Record"}
             </button>
           </div>

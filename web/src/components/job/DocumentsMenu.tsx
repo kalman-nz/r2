@@ -23,7 +23,6 @@ export default function DocumentsMenu({ jobId }: { jobId: string }) {
         <div className="absolute right-0 top-full mt-1 w-72 max-w-[calc(100vw-1.5rem)] max-h-[70vh] overflow-y-auto card shadow-lg py-1 z-40 text-sm">
           <Link to={`/print/jobs/${jobId}/packing`} className={item}>
             <span className="block font-medium text-gray-900">Packing list</span>
-            <span className="block text-xs text-gray-500">What to pack, to tick off, with where it's kept</span>
           </Link>
           {isLoading && <p className="px-3 py-2 text-xs text-gray-400">Loading…</p>}
           {templates.map((t) => (

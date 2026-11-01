@@ -22,10 +22,10 @@ export default function TrackingCard({ summary, canScan }: { summary: JobSummary
     return (
       <section className="card p-4 flex flex-col gap-2 text-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-500">Equipment tracking</h2>
+          <h2 className="eyebrow text-gray-500">Equipment tracking</h2>
           {scanLink}
         </div>
-        <p className="text-gray-500 text-xs">Nothing's been scanned yet. Scan this project's kit to track it; projects nobody scans go without.</p>
+        <p className="text-gray-500">Nothing scanned yet.</p>
       </section>
     );
   }
@@ -47,7 +47,7 @@ export default function TrackingCard({ summary, canScan }: { summary: JobSummary
   return (
     <section className="card p-4 flex flex-col gap-2.5 text-sm">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-500">Equipment tracking</h2>
+        <h2 className="eyebrow text-gray-500">Equipment tracking</h2>
         {scanLink}
       </div>
       {job.status === "returned" && notBack > 0 && (
@@ -57,7 +57,7 @@ export default function TrackingCard({ summary, canScan }: { summary: JobSummary
       )}
       {canScan && <TrackingSuggestion summary={summary} />}
       {total === 0 ? (
-        <p className="text-gray-500 text-xs">No physical kit on this project.</p>
+        <p className="text-gray-500">No physical kit on this project.</p>
       ) : (
         <>
           <div className="flex items-center justify-between gap-2">

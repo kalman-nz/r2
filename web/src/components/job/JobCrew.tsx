@@ -56,15 +56,17 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="card p-4 flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900">Crew</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {slots === 0
-              ? "Say what each schedule item needs, like 1× Audio operator and 3× Technical labour for the pack in, then pick who's doing it."
-              : `${filled} of ${slots} slot${slots === 1 ? "" : "s"} filled${doubleBooked > 0 ? ` · ${doubleBooked} double-booked` : ""}`}
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-gray-600">
+          {slots === 0 ? (
+            "No crew needed yet."
+          ) : (
+            <>
+              {filled} of {slots} slot{slots === 1 ? "" : "s"} filled
+              {doubleBooked > 0 && <span className="text-amber-700"> · {doubleBooked} double-booked</span>}
+            </>
+          )}
+        </p>
         <div className="flex items-center gap-3 text-xs">
           <Link to="/rostering" className="text-signal-ink hover:text-signal-ink-hover font-medium">
             Rostering
@@ -73,7 +75,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
             Crew list
           </Link>
         </div>
-      </section>
+      </div>
 
       {periods.map((p) => {
         const here = needs.filter((n) => n.period === p.id);
@@ -129,15 +131,14 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
       })}
 
       <section className="card px-4 py-3 flex flex-col gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Whole project</h3>
-          <p className="text-xs text-gray-500">People on all of it rather than a schedule item, like the project manager.</p>
-        </div>
+        <h3 className="text-sm font-semibold text-gray-900">Whole project</h3>
         {whole.length === 0 && <p className="text-xs text-gray-400">Nobody.</p>}
         {whole.map((c) => (
           <div key={c.id} className="group flex items-center gap-2 text-sm">
             <span className="text-gray-900">
-              {personById.get(c.person)?.name ?? "Someone"}
+              <Link to={`/crew/${c.person}`} className="hover:underline">
+                {personById.get(c.person)?.name ?? "Someone"}
+              </Link>
               {c.user && c.user === me?.id && <span className="text-xs text-gray-400"> (you)</span>}
             </span>
             {c.function && <span className="text-xs text-gray-500">{c.function}</span>}

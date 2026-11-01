@@ -98,3 +98,37 @@ export function useRosterActions() {
     refresh,
   };
 }
+
+// Skill levels (migration 0051): a role's levels lowest first, someone's
+// level at a role, and how well someone fits a slot that asks for one.
+export function levelsOf(role?: CrewRole | null): string[] {
+  return Array.isArray(role?.levels) ? role.levels.filter((l): l is string => typeof l === "string" && l !== "") : [];
+}
+
+export function levelOf(person: CrewPerson, roleId: string): string {
+  const levels = person.skillLevels;
+  return levels && typeof levels === "object" && typeof levels[roleId] === "string" ? levels[roleId] : "";
+}
+
+// "Driver 4F" (or just "Driver").
+export function skillName(role: CrewRole, level: string): string {
+  return level ? `${role.name} ${level}` : role.name;
+}
+
+// Each of someone's skills, with their level, in the organisation's order.
+export function skillNames(person: CrewPerson, roleById: Map<string, CrewRole>): string[] {
+  return person.skills
+    .map((id) => roleById.get(id))
+    .filter((r): r is CrewRole => !!r)
+    .map((r) => skillName(r, levelOf(person, r.id)));
+}
+
+// How someone fits a slot: "fits" (the role, at the level or above), "below"
+// (the role, but a lower level or none set) or "no" (not the role).
+export function fitFor(person: CrewPerson, role: CrewRole | undefined, level: string): "fits" | "below" | "no" {
+  if (!role || !person.skills.includes(role.id)) return "no";
+  if (!level) return "fits";
+  const levels = levelsOf(role);
+  const theirs = levels.indexOf(levelOf(person, role.id));
+  return theirs !== -1 && theirs >= levels.indexOf(level) ? "fits" : "below";
+}

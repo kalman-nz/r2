@@ -24,6 +24,7 @@ export interface LabelElement {
   align?: "left" | "center" | "right"; // text/staticText only, defaults to left
   valign?: "top" | "middle" | "bottom"; // text/staticText only, defaults to top
   wrap?: boolean; // text/staticText only — wrap to multiple lines within width/height instead of squishing onto one line
+  shrink?: boolean; // text/staticText only — fontSize is the most it can be: it comes down until the text fits the box (lib/renderLabel.ts fitTextPx)
   breakWords?: boolean; // wrap only — allow splitting a single word mid-character when it doesn't fit a line on its own (default true, matches old behavior); off just lets that line condense/overflow instead of breaking it
   padding?: number; // mm inset on all sides, text/staticText only
   lockAspect?: boolean; // resize keeps width:height fixed — QR codes and images generally want this

@@ -88,9 +88,6 @@ function CustomLineModal({
 
   return (
     <Modal title="Add a custom line" onClose={onClose}>
-      <p className="text-xs text-gray-500 -mt-2">
-        For anything that isn't inventory: delivery, labour, a sale item, a credit (use a negative price).
-      </p>
       <Field label="Description">
         <input autoFocus value={description} onChange={(e) => setDescription(e.target.value)} className="input py-2" placeholder="e.g. Delivery & collection" />
       </Field>
@@ -325,10 +322,10 @@ export default function JobLines({
   return (
     <section className="card overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2 flex-wrap">
-        <h2 className="text-sm font-semibold text-gray-500">Equipment & services ({lines.filter((l) => !l.parentLine).length})</h2>
+        <h2 className="eyebrow text-gray-500">Equipment & services</h2>
         <div className="flex items-center gap-1.5">
           {canEdit && (
-            <button onClick={() => setAddingSubproject(true)} className="btn-secondary" title="Part of the project with its own booking and billing times">
+            <button onClick={() => setAddingSubproject(true)} className="btn-secondary">
               Add subproject
             </button>
           )}
@@ -441,12 +438,20 @@ export default function JobLines({
             );
           })}
         </table>
-        {lines.length === 0 && !split && (
-          <p className="px-4 py-8 text-gray-500 text-sm text-center">
-            Nothing on this project yet.{canEdit ? " Add equipment to see availability and pricing." : ""}
-          </p>
-        )}
+        {lines.length === 0 && !split && <p className="px-4 py-8 text-gray-500 text-sm text-center">Nothing on this project yet.</p>}
       </div>
+
+      {showPrices && summary.pricing && lines.length > 0 && (
+        <div className="flex items-center justify-end gap-5 px-4 py-2.5 border-t border-gray-200 text-sm tabular-nums">
+          <span className="text-gray-500">
+            {summary.pricing.days} day{summary.pricing.days === 1 ? "" : "s"}
+          </span>
+          {summary.pricing.totals.jobDiscount !== 0 && (
+            <span className="text-gray-500">Project discount −{nzd(summary.pricing.totals.jobDiscount)}</span>
+          )}
+          <span className="font-semibold text-gray-900">Total ex GST {nzd(summary.pricing.totals.exGst)}</span>
+        </div>
+      )}
 
       {pickingSection && (
         <ItemPicker jobId={job.id} start={pickingSection.prepAt} end={pickingSection.returnAt} onAdd={addItem} onClose={() => setPicking(null)} />

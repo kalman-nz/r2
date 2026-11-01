@@ -5,6 +5,7 @@ import { displayPath, useCategories, useCategoryPaths, useLocations } from "../.
 import { errorText } from "../../lib/errors";
 import Field from "../Field";
 import NumberInput from "../NumberInput";
+import { AMOUNT, COUNT, numberProblem } from "../../lib/numbers";
 import Segmented from "../Segmented";
 import { useToast } from "../ToastProvider";
 import { currentOrgId } from "../../lib/currentOrg";
@@ -95,6 +96,20 @@ export default function ItemForm({
   const dirty = photo !== null || JSON.stringify(draft) !== JSON.stringify(draftFrom(item, defaultFolder));
   const isKit = draft.kind === "kit";
 
+  // What's wrong with each number shown, and everything stopping Save, said
+  // next to it (a disabled button on its own doesn't say why).
+  const shows = { pricing: feature("pricing"), warehouse: !isKit };
+  const problems = {
+    stockQty: shows.warehouse && draft.tracking === "bulk" ? numberProblem(draft.stockQty, COUNT) : null,
+    price: shows.pricing ? numberProblem(draft.price, AMOUNT) : null,
+    replacementValue: shows.pricing ? numberProblem(draft.replacementValue, AMOUNT) : null,
+    bufferHours: shows.warehouse && feature("projects") ? numberProblem(draft.bufferHours, AMOUNT) : null,
+    weightKg: shows.warehouse ? numberProblem(draft.weightKg, AMOUNT) : null,
+    powerW: shows.warehouse ? numberProblem(draft.powerW, AMOUNT) : null,
+  };
+  const missing = draft.name.trim() ? [] : ["name"];
+  const wrong = (Object.keys(problems) as (keyof typeof problems)[]).filter((k) => problems[k]).map((k) => `${FIELD_NAMES[k]}: ${problems[k]!.toLowerCase()}`);
+
   async function save() {
     setSaving(true);
     try {
@@ -143,7 +158,14 @@ export default function ItemForm({
     <div className="flex flex-col gap-5">
       <Group title="Identification">
         <Field label="Name" className="sm:col-span-2">
-          <input value={draft.name} onChange={(e) => set("name", e.target.value)} disabled={readOnly} className="input py-2" placeholder="e.g. Shure SM58" />
+          <input
+            value={draft.name}
+            onChange={(e) => set("name", e.target.value)}
+            disabled={readOnly}
+            aria-required
+            className="input py-2"
+            placeholder="e.g. Shure SM58"
+          />
         </Field>
         <Field label="Folder">
           <select value={draft.category} onChange={(e) => set("category", e.target.value)} disabled={readOnly} className="input py-2">
@@ -194,7 +216,7 @@ export default function ItemForm({
 
       {feature("pricing") && (
         <Group title="Pricing">
-          <Field label="Price (ex GST)" className="sm:col-span-2">
+          <Field label="Price (ex GST)" className="sm:col-span-2" error={problems.price}>
             <div className="flex items-center gap-2 flex-wrap">
               <NumberInput value={draft.price} min={0} onChange={(n) => set("price", n)} disabled={readOnly} className="input py-2 w-36" />
               <Segmented
@@ -212,7 +234,7 @@ export default function ItemForm({
               />
             </div>
           </Field>
-          <Field label="Replacement cost">
+          <Field label="Replacement cost" error={problems.replacementValue}>
             <NumberInput value={draft.replacementValue} min={0} onChange={(n) => set("replacementValue", n)} disabled={readOnly} className="input py-2" />
           </Field>
         </Group>
@@ -221,8 +243,8 @@ export default function ItemForm({
       {!isKit && (
         <Group title="Warehouse">
           {draft.tracking === "bulk" && (
-            <Field label="Quantity owned">
-              <NumberInput value={draft.stockQty} min={0} onChange={(n) => set("stockQty", Math.round(n))} disabled={readOnly} className="input py-2" />
+            <Field label="Quantity owned" error={problems.stockQty}>
+              <NumberInput value={draft.stockQty} min={0} integer onChange={(n) => set("stockQty", n)} disabled={readOnly} className="input py-2" />
             </Field>
           )}
           {draft.tracking === "bulk" && !item && locations.length > 0 && (
@@ -248,14 +270,14 @@ export default function ItemForm({
             </>
           )}
           {feature("projects") && (
-            <Field label="Extra turnaround (h)">
+            <Field label="Extra turnaround (h)" error={problems.bufferHours}>
               <NumberInput value={draft.bufferHours} min={0} onChange={(n) => set("bufferHours", n)} disabled={readOnly} className="input py-2" />
             </Field>
           )}
-          <Field label="Weight (kg)">
+          <Field label="Weight (kg)" error={problems.weightKg}>
             <NumberInput value={draft.weightKg} min={0} onChange={(n) => set("weightKg", n)} disabled={readOnly} className="input py-2" />
           </Field>
-          <Field label="Power (W)">
+          <Field label="Power (W)" error={problems.powerW}>
             <NumberInput value={draft.powerW} min={0} onChange={(n) => set("powerW", n)} disabled={readOnly} className="input py-2" />
           </Field>
         </Group>
@@ -291,15 +313,27 @@ export default function ItemForm({
       </Group>
       {!readOnly && (
         <div className="sticky bottom-0 -mx-4 -mb-4 px-4 py-3 flex items-center gap-3 flex-wrap bg-white/95 backdrop-blur border-t border-gray-200 rounded-b-md">
-          <button onClick={save} disabled={saving || !dirty || !draft.name.trim()} className="btn-primary py-2">
+          <button onClick={save} disabled={saving || !dirty || missing.length > 0 || wrong.length > 0} className="btn-primary py-2">
             {saving ? "Saving…" : item ? "Save changes" : "Create item"}
           </button>
+          {missing.length > 0 && <span className="text-xs text-gray-500">Needs a {missing.join(", ")}</span>}
+          {wrong.length > 0 && <span className="text-xs text-fault-ink">{wrong.join(" · ")}</span>}
           {footer}
         </div>
       )}
     </div>
   );
 }
+
+// How the form's number fields are named in what's stopping Save.
+const FIELD_NAMES = {
+  stockQty: "Quantity owned",
+  price: "Price",
+  replacementValue: "Replacement cost",
+  bufferHours: "Extra turnaround",
+  weightKg: "Weight",
+  powerW: "Power",
+};
 
 // The same groups as ItemOverview, so a field is in the same place whether
 // you're reading or editing.

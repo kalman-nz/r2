@@ -685,6 +685,9 @@ function importItemRow(app, org, row, counts, cache) {
   // Where it's kept: units and bulk stock both go to this location and
   // shelf, like units added by hand.
   const bin = String(row.locationInWarehouse || "").trim();
+  // Refused rather than rounded or zeroed, like the item form.
+  const quantity = serialised ? 0 : csvNumber(row.quantity, "quantity") || 0;
+  if (quantity < 0 || !Number.isInteger(quantity)) throw new Error("quantity has to be a whole number, 0 or more, not " + row.quantity);
   const location = locationForName(app, org, row.location, cache, counts);
   const item = new Record(app.findCollectionByNameOrId("items"), {
     org: org,
@@ -693,7 +696,7 @@ function importItemRow(app, org, row, counts, cache) {
     category: categoryForPath(app, org, row.category, cache),
     kind: "item",
     tracking: serialised ? "serial" : "bulk",
-    stockQty: serialised ? 0 : Math.max(0, Math.round(csvNumber(row.quantity, "quantity") || 0)),
+    stockQty: quantity,
     price: csvNumber(row.price, "price") || 0,
     priceUnit: csvPriceUnit(row.priceUnit),
     replacementValue: csvNumber(row.replacementValue, "replacement value") || 0,

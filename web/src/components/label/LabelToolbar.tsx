@@ -190,11 +190,11 @@ function SettingsMenu({ prefs, onPrefs }: { prefs: DesignerPrefs; onPrefs: (p: D
           </label>
           <label className="flex items-center justify-between gap-2">
             <span className="text-gray-500">Grid size (mm)</span>
-            <NumberInput min={0.5} max={20} value={prefs.gridMm} onChange={(gridMm) => onPrefs({ ...prefs, gridMm })} className="input py-1 w-20" />
+            <NumberInput clamp min={0.5} max={20} value={prefs.gridMm} onChange={(gridMm) => onPrefs({ ...prefs, gridMm })} className="input py-1 w-20" />
           </label>
           <label className="flex items-center justify-between gap-2">
             <span className="text-gray-500">Margin guide (mm)</span>
-            <NumberInput min={0} max={20} value={prefs.marginMm} onChange={(marginMm) => onPrefs({ ...prefs, marginMm })} className="input py-1 w-20" />
+            <NumberInput clamp min={0} max={20} value={prefs.marginMm} onChange={(marginMm) => onPrefs({ ...prefs, marginMm })} className="input py-1 w-20" />
           </label>
         </div>
       )}

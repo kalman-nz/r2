@@ -6,9 +6,10 @@ import type { CrewMember, CrewNeed, CrewPerson, CrewRole, JobPeriod } from "../.
 import { withOrg } from "../../lib/currentOrg";
 import { errorText } from "../../lib/errors";
 import { formatPeriod, fromLocalInput, toLocalInput } from "../../lib/format";
-import { clashesFor, clashLabel, useRosterActions, type Booking } from "../../lib/crew";
+import { clashesFor, clashLabel, levelsOf, useRosterActions, type Booking } from "../../lib/crew";
 import { useAuthRecord } from "../../lib/pocketbase";
 import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
 import PersonPicker from "./PersonPicker";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
@@ -67,6 +68,7 @@ export function NeedSlots({
         {heading}
         <span className="text-sm font-medium text-gray-900">
           {need.quantity}× {roleName}
+          {need.level && <span className="font-normal text-gray-500"> {need.level}</span>}
         </span>
         <span className={`text-xs tabular-nums ${open > 0 ? "text-amber-700" : "text-gray-500"}`}>{open > 0 ? `${crew.length} of ${need.quantity} filled` : "Filled"}</span>
         {ownTimes && <span className="text-xs text-gray-500">{formatPeriod(need.start, need.end)}</span>}
@@ -84,7 +86,9 @@ export function NeedSlots({
           return (
             <span key={c.id} className="group inline-flex items-center gap-1.5" title={clash ? `Also booked then: ${clash}` : undefined}>
               <span className="text-gray-800">
-                {person?.name ?? "Someone"}
+                <Link to={`/crew/${c.person}`} className="hover:underline">
+                  {person?.name ?? "Someone"}
+                </Link>
                 {c.user && c.user === me?.id && <span className="text-xs text-gray-400"> (you)</span>}
               </span>
               {clash && <span className="text-xs text-amber-700">double-booked</span>}
@@ -105,8 +109,8 @@ export function NeedSlots({
         {canEdit && open > 0 && (
           <PersonPicker
             people={people}
-            roleId={need.role}
-            roleName={roleName}
+            role={role}
+            level={need.level}
             exclude={new Set(crew.map((c) => c.person))}
             busy={busyNote}
             disabled={busy}
@@ -121,6 +125,8 @@ export function NeedSlots({
 
 interface NeedDraft {
   role: string;
+  // The lowest of the role's levels it takes ("" for any).
+  level: string;
   quantity: number;
   customTimes: boolean;
   start: string; // datetime-local
@@ -148,6 +154,7 @@ export function NeedForm({
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<NeedDraft>(() => ({
     role: need?.role ?? roles[0]?.id ?? "",
+    level: need?.level ?? "",
     quantity: need?.quantity ?? 1,
     customTimes: need?.customTimes ?? false,
     start: toLocalInput(need?.customTimes ? need.start : period.start),
@@ -161,6 +168,7 @@ export function NeedForm({
     setSaving(true);
     const body = {
       role: draft.role,
+      level: draft.level,
       quantity: draft.quantity,
       customTimes: draft.customTimes,
       start: draft.customTimes ? fromLocalInput(draft.start) : "",
@@ -220,15 +228,16 @@ export function NeedForm({
       className="flex flex-col gap-2 py-2"
     >
       <div className="flex items-center gap-1.5 flex-wrap">
-        <NumberInput value={draft.quantity} onChange={(n) => set("quantity", n)} min={1} max={99} className="input py-1.5 w-16" />
+        <NumberInput value={draft.quantity} onChange={(n) => set("quantity", n)} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
         <span className="text-gray-500 text-sm">×</span>
-        <select value={draft.role} onChange={(e) => set("role", e.target.value)} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus>
+        <select value={draft.role} onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value, level: "" }))} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus>
           {roles.map((r) => (
             <option key={r.id} value={r.id}>
               {r.name}
             </option>
           ))}
         </select>
+        <LevelSelect role={roles.find((r) => r.id === draft.role)} value={draft.level} onChange={(level) => set("level", level)} />
         <input value={draft.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Notes, e.g. bring PPE" maxLength={500} className="input py-1.5 flex-1 min-w-40" />
       </div>
       <label className="flex items-center gap-2 text-xs text-gray-600">
@@ -243,7 +252,7 @@ export function NeedForm({
         </div>
       )}
       <div className="flex items-center gap-2">
-        <button type="submit" disabled={saving || !draft.role} className="btn-primary py-1.5">
+        <button type="submit" disabled={saving || !draft.role || !!numberProblem(draft.quantity, { min: 1, max: 99, integer: true })} className="btn-primary py-1.5">
           {saving ? "Saving…" : need ? "Save" : "Add crew need"}
         </button>
         <button type="button" onClick={onDone} className="btn-secondary py-1.5">
@@ -256,6 +265,23 @@ export function NeedForm({
         )}
       </div>
     </form>
+  );
+}
+
+// The lowest level a slot takes, for a role that has levels.
+export function LevelSelect({ role, value, onChange }: { role?: CrewRole; value: string; onChange: (level: string) => void }) {
+  const levels = levelsOf(role);
+  if (levels.length === 0) return null;
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="input py-1.5 w-auto" aria-label={`${role?.name ?? "Role"} level`}>
+      <option value="">Any level</option>
+      {[...levels, ...(value && !levels.includes(value) ? [value] : [])].map((l) => (
+        <option key={l} value={l}>
+          {l}
+          {levels.indexOf(l) !== -1 && levels.indexOf(l) < levels.length - 1 ? " or above" : ""}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -291,7 +317,8 @@ export function PeriodNeeds({
           const filled = crew.filter((c) => c.need === n.id).length;
           return (
             <span key={n.id} className="text-gray-700">
-              {n.quantity}× {roleName(n.role)}{" "}
+              {n.quantity}× {roleName(n.role)}
+              {n.level && ` ${n.level}`}{" "}
               <span className={`tabular-nums ${filled < n.quantity ? "text-amber-700" : "text-gray-400"}`}>
                 ({filled}/{n.quantity})
               </span>

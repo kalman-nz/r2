@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ViewConfig } from "../../lib/api";
 import { formatDate, nzd, parseDate } from "../../lib/format";
-import { unitName, useRepairStatuses, useRepairs, type RepairWithItem } from "../../lib/maintenance";
+import { dayPassed, unitName, useRepairStatuses, useRepairs, type RepairWithItem } from "../../lib/maintenance";
 import { useFeature } from "../../lib/roles";
 import { readGroups, readSorts, readWidths, sortRows, sortSettings, type GroupOption, type Sort } from "../../lib/table";
 import { asString, asStrings } from "../../lib/views";
@@ -39,8 +39,8 @@ export default function RepairsTab() {
   const [assignee, setAssignee] = useState("");
   const { data: repairs = [], isLoading, error } = useRepairs();
   const { statuses, isOpen, byId, name: statusName } = useRepairStatuses();
-  const now = Date.now();
-  const overdue = (r: RepairWithItem) => isOpen(r.status) && time(r.dueAt) < now;
+  // Late once the day it was expected back has gone, not from its midnight.
+  const overdue = (r: RepairWithItem) => isOpen(r.status) && dayPassed(r.dueAt);
 
   const columns = useMemo<Column[]>(
     () => [
@@ -174,7 +174,7 @@ export default function RepairsTab() {
         render: (r) => <RepairStatusBadge status={r.status} />,
       },
     ],
-    // overdue only reads isOpen and the time, so isOpen covers it.
+    // overdue only reads isOpen and today's date, so isOpen covers it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [statuses, isOpen],
   );

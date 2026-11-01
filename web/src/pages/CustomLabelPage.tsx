@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { renderLabelToCanvas } from "../lib/renderLabel";
 import { buildCustomTextTemplate } from "../lib/customLabel";
-import { designText, downloadLabelsPdf, renderForPdf, renderForPrinter, sendToPrinters, type PrintJob } from "../lib/print";
+import { COPIES, designText, downloadLabelsPdf, renderForPdf, renderForPrinter, sendToPrinters, type PrintJob } from "../lib/print";
 import { sizeForTemplate, usePrinting, type LabelSize, type Printer } from "../lib/printing";
 import { usePrinterChoice } from "../components/print/usePrinterChoice";
 import { generateId } from "../lib/id";
@@ -17,6 +17,7 @@ import { errorText } from "../lib/errors";
 import LabelDesigner from "../components/LabelDesigner";
 import { useToast } from "../components/ToastProvider";
 import NumberInput from "../components/NumberInput";
+import { numberProblem } from "../lib/numbers";
 import { api } from "../lib/api";
 
 // px per mm the preview is drawn at. It's shown smaller when that doesn't
@@ -36,6 +37,12 @@ interface Design {
 function starterDesign(): Design {
   const [text] = buildCustomTextTemplate("Label text", 62, 29).elements;
   return { widthMm: 62, heightMm: 29, sizeId: "tape-62", elements: [{ ...text, id: generateId() }] };
+}
+
+// Whether an element fills the whole label, like the starter's big text.
+function fillsLabel(el: LabelElement, design: Design) {
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  return !el.rotation && near(el.x, 0) && near(el.y, 0) && near(el.width, design.widthMm) && near(el.height, design.heightMm);
 }
 
 function tabClass(active: boolean) {
@@ -177,7 +184,8 @@ async function printToChain(
 }
 
 // Copies, the printer, PDF and Print. Only printers with the label's stock
-// loaded are offered.
+// loaded are offered. Nothing goes out while the copies or (problem) the
+// label's size are wrong; what's wrong is said under the buttons.
 function PrintActions({
   size,
   copies,
@@ -187,6 +195,7 @@ function PrintActions({
   onPrint,
   printing,
   disabled,
+  problem,
 }: {
   size: LabelSize | null;
   copies: number;
@@ -196,8 +205,11 @@ function PrintActions({
   onPrint: (chain: Printer[]) => void;
   printing: boolean;
   disabled: boolean;
+  problem?: string | null;
 }) {
   const { fitting, chosen, chain, choose, status } = usePrinterChoice(size);
+  const copiesProblem = numberProblem(copies, COPIES);
+  const blocked = disabled || !!problem || !!copiesProblem;
   return (
     <div className="flex items-center justify-end gap-3 flex-wrap">
       {fitting.length > 0 ? (
@@ -219,14 +231,17 @@ function PrintActions({
       )}
       <label className="flex items-center gap-2 text-sm text-gray-500">
         Copies
-        <NumberInput min={1} value={copies} onChange={onCopies} className="w-14 input py-1" />
+        <NumberInput min={COPIES.min} max={COPIES.max} integer value={copies} onChange={onCopies} className="w-16 input py-1" ariaLabel="Copies" />
       </label>
-      <button onClick={onDownload} disabled={downloading || disabled} className="btn-secondary py-2">
+      <button onClick={onDownload} disabled={downloading || blocked} className="btn-secondary py-2">
         {downloading ? "Making PDF…" : "Download PDF"}
       </button>
-      <button onClick={() => onPrint(chain)} disabled={printing || disabled || chain.length === 0} className="btn-primary py-2 px-4">
-        {printing ? "Printing…" : copies > 1 ? `Print ${copies}` : "Print"}
+      <button onClick={() => onPrint(chain)} disabled={printing || blocked || chain.length === 0} className="btn-primary py-2 px-4">
+        {printing ? "Printing…" : copies > 1 && !copiesProblem ? `Print ${copies}` : "Print"}
       </button>
+      {(problem || copiesProblem) && (
+        <p className="basis-full text-right text-xs text-fault-ink">{problem ?? `Copies has to be a whole number from ${COPIES.min} to ${COPIES.max}`}</p>
+      )}
     </div>
   );
 }
@@ -236,6 +251,8 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [firstElementId] = useState(() => design.elements[0]?.id ?? null);
+  // A size typed out of range: the label keeps its last good one meanwhile.
+  const [sizeProblem, setSizeProblem] = useState<string | null>(null);
   const { showToast } = useToast();
   const { data: printingConfig } = usePrinting();
   const size = sizeForTemplate(design, printingConfig?.sizes ?? []);
@@ -271,7 +288,18 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
         heightMm={design.heightMm}
         sizeId={design.sizeId}
         elements={design.elements}
-        onSizeChange={(widthMm, heightMm, sizeId) => onChange((prev) => ({ ...prev, widthMm, heightMm, sizeId }))}
+        onSizeChange={(widthMm, heightMm, sizeId) =>
+          // What filled the label still does, so its text (shrinking to
+          // fit) never runs off the edge.
+          onChange((prev) => ({
+            ...prev,
+            widthMm,
+            heightMm,
+            sizeId,
+            elements: prev.elements.map((el) => (fillsLabel(el, prev) ? { ...el, width: widthMm, height: heightMm } : el)),
+          }))
+        }
+        onSizeProblem={setSizeProblem}
         onElementsChange={(update) =>
           onChange((prev) => ({ ...prev, elements: typeof update === "function" ? update(prev.elements) : update }))
         }
@@ -287,6 +315,7 @@ function BuildMode({ design, onChange }: { design: Design; onChange: (update: (p
         onPrint={print}
         printing={printing}
         disabled={empty}
+        problem={sizeProblem}
       />
     </div>
   );

@@ -18,6 +18,8 @@ export default function LabelEditor() {
   const [sizeId, setSizeId] = useState("tape-62");
   const [elements, setElements] = useState<LabelElement[]>([]);
   const [saving, setSaving] = useState(false);
+  // A size typed out of range: said under the size, and Save waits.
+  const [sizeProblem, setSizeProblem] = useState<string | null>(null);
 
   useEffect(() => {
     if (isNew || !id) return;
@@ -58,7 +60,7 @@ export default function LabelEditor() {
           onChange={(e) => setName(e.target.value)}
           className="bg-transparent text-xl font-semibold text-gray-900 focus:outline-none border-b border-transparent focus:border-gray-300"
         />
-        <button onClick={save} disabled={saving} className="btn-primary py-1.5 px-4">
+        <button onClick={save} disabled={saving || !!sizeProblem} title={sizeProblem ?? undefined} className="btn-primary py-1.5 px-4">
           {saving ? "Saving…" : "Save template"}
         </button>
       </div>
@@ -73,6 +75,7 @@ export default function LabelEditor() {
           setHeightMm(h);
           setSizeId(size);
         }}
+        onSizeProblem={setSizeProblem}
         onElementsChange={setElements}
       />
     </div>

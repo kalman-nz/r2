@@ -8,6 +8,8 @@ import { fromDateInput } from "../../lib/format";
 import { today, useRepairStatuses } from "../../lib/maintenance";
 import Modal from "../Modal";
 import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
+import { Problem } from "../Field";
 import ProjectPicker, { type ProjectRef } from "../ProjectPicker";
 import { useFeature } from "../../lib/roles";
 import { useToast } from "../ToastProvider";
@@ -125,8 +127,20 @@ export default function NewRepairModal({
     setUnitSearch("");
   }
   const inService = item && !serialised ? item.stockQty - item.outOfServiceQty : 0;
+  // Refused rather than cut down to what's in service. Booked in for later,
+  // it's the item as a whole, so the count doesn't matter yet.
+  const quantityProblem =
+    !item || serialised || later
+      ? null
+      : inService <= 0
+        ? "None in service"
+        : quantity > inService
+          ? `Only ${inService} in service`
+          : numberProblem(quantity, { min: 1, integer: true });
+  // It's opened today, so it can't be back before then.
+  const dueProblem = !later && dueAt !== "" && dueAt < today() ? "Can't be before today" : null;
 
-  const ready = !!item && fault.trim() !== "" && (serialised ? picked.size > 0 : quantity >= 1 && quantity <= inService);
+  const ready = !!item && fault.trim() !== "" && (serialised ? picked.size > 0 : !quantityProblem) && !dueProblem;
 
   async function save() {
     if (!item) return;
@@ -282,7 +296,8 @@ export default function NewRepairModal({
       {item && !serialised && (
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-gray-500">How many ({inService} in service)</span>
-          <NumberInput value={quantity} min={1} max={inService} onChange={(n) => setQuantity(Math.round(n))} className="input py-1.5 w-24" />
+          <NumberInput value={quantity} min={1} max={inService} integer problem={quantityProblem} onChange={setQuantity} className="input py-1.5 w-24" />
+          <Problem>{quantityProblem}</Problem>
         </label>
       )}
 
@@ -328,7 +343,15 @@ export default function NewRepairModal({
         {!later && (
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-gray-500">Expected back (optional)</span>
-            <input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="input py-1.5" />
+            <input
+              type="date"
+              value={dueAt}
+              min={today()}
+              onChange={(e) => setDueAt(e.target.value)}
+              aria-invalid={dueProblem ? true : undefined}
+              className="input py-1.5"
+            />
+            <Problem>{dueProblem}</Problem>
           </label>
         )}
       </div>

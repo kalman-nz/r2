@@ -16,9 +16,14 @@ import {
   type PrintingConfig,
 } from "../lib/printing";
 import NumberInput from "./NumberInput";
+import { numberProblem, type NumberLimits } from "../lib/numbers";
 import PrintAgentsSection, { usePrintAgents } from "./PrintAgentsSection";
 import Switch from "./Switch";
 import { useToast } from "./ToastProvider";
+
+// A label size's width, and its length (or a tape's starting length).
+const WIDTH: NumberLimits = { min: 5, max: 300 };
+const LENGTH: NumberLimits = { min: 5, max: 1000 };
 
 // Settings → Printer setup: the label stock the business uses, each
 // Brother printer with what's loaded in it and where it is, and the print
@@ -38,6 +43,13 @@ export default function PrinterSettings() {
   }, [config, draft]);
 
   const dirty = !!draft && !!config && JSON.stringify(draft) !== JSON.stringify(config);
+  // A size out of range is said beside it and holds back Save.
+  const badSize = draft?.sizes.find((s) => numberProblem(s.widthMm, WIDTH) || numberProblem(s.lengthMm, LENGTH));
+  const sizeProblem = badSize
+    ? `${badSize.name || "A label size"}: ${
+        numberProblem(badSize.widthMm, WIDTH) ? `width has to be ${WIDTH.min} to ${WIDTH.max} mm` : `length has to be ${LENGTH.min} to ${LENGTH.max} mm`
+      }`
+    : null;
 
   async function save() {
     if (!draft) return;
@@ -84,7 +96,7 @@ export default function PrinterSettings() {
 
       {dirty && (
         <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 card shadow-lg px-4 py-2.5">
-          <span className="text-sm text-gray-600">Unsaved changes</span>
+          <span className={`text-sm ${sizeProblem ? "text-fault-ink" : "text-gray-600"}`}>{sizeProblem ?? "Unsaved changes"}</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -95,7 +107,7 @@ export default function PrinterSettings() {
             >
               Discard
             </button>
-            <button onClick={save} disabled={saving} className="btn-primary">
+            <button onClick={save} disabled={saving || !!sizeProblem} className="btn-primary">
               {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -440,8 +452,8 @@ function SizesSection({
                   </Labelled>
                   <Labelled label="Width (mm)">
                     <NumberInput
-                      min={5}
-                      max={300}
+                      min={WIDTH.min}
+                      max={WIDTH.max}
                       value={s.widthMm}
                       onChange={(widthMm) => patch(s.id, { widthMm })}
                       disabled={!!s.brother}
@@ -450,8 +462,8 @@ function SizesSection({
                   </Labelled>
                   <Labelled label={s.continuous ? "Starting length (mm)" : "Length (mm)"}>
                     <NumberInput
-                      min={5}
-                      max={1000}
+                      min={LENGTH.min}
+                      max={LENGTH.max}
                       value={s.lengthMm}
                       onChange={(lengthMm) => patch(s.id, { lengthMm })}
                       disabled={!!s.brother && !s.continuous}

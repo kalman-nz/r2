@@ -29,6 +29,7 @@ function summarizeLogs(rows, opts) {
     for (const d of decoded) {
       if (typeof d.serialId === "string" && d.serialId) serialIds.push(d.serialId);
       if (typeof d.job === "string" && d.job) jobIds.push(d.job);
+      if (typeof d.from === "string" && d.from) jobIds.push(d.from);
     }
     const serials = $app.findRecordsByIds("serials", serialIds).filter(Boolean);
     const itemNames = {};
@@ -105,6 +106,8 @@ function summarizeLogs(rows, opts) {
       summary = [named(false) && "Turned off " + named(false), named(true) && "Turned on " + named(true)].filter(Boolean).join("; ") || "Changed features";
     } else if (entry.type === "job_statuses") {
       summary = "Changed the project statuses: " + (details.names || []).join(", ");
+    } else if (entry.type === "job_copied") {
+      summary = "Copied " + jobLabel(details.from) + " to " + jobLabel(details.job);
     } else if (entry.type === "job_status_tracked") {
       summary = "Set " + jobLabel(details.job) + " to " + details.status + " (everything " + details.step + ")";
     } else if (entry.type === "tracking_steps") {

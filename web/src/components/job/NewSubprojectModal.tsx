@@ -57,9 +57,6 @@ export default function NewSubprojectModal({
 
   return (
     <Modal title="Add a subproject" onClose={saving ? () => {} : onClose}>
-      <p className="text-xs text-gray-500 -mt-2">
-        Part of the project with its own times: its equipment is booked and charged over these, and it's all on the one quote.
-      </p>
       <Field label="Name">
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={200} className="input py-2" placeholder="e.g. Finale stage" />
       </Field>

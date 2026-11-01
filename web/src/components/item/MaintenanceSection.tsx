@@ -4,8 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import { api, type Item, type Serial } from "../../lib/api";
 import { errorText } from "../../lib/errors";
-import { formatDate, nzd, parseDate } from "../../lib/format";
+import { formatDate, nzd } from "../../lib/format";
 import {
+  dayPassed,
   daysUntil,
   describePlan,
   dueLabel,
@@ -65,7 +66,7 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
   const { data: plans = [] } = usePlans();
   const { data: jobs = [], isLoading: jobsLoading } = useMaintenanceJobs(`item = "${item.id}"`, "dueOn", maintenanceOn);
   const { data: repairs = [], isLoading: repairsLoading } = useRepairs(`item = "${item.id}"`, repairsOn);
-  const { isOpen } = useRepairStatuses();
+  const { isOpen, isClosed } = useRepairStatuses();
   const { data: units = [] } = useQuery({
     queryKey: ["serials", item.id],
     queryFn: () => pb.collection("serials").getFullList<Serial>({ filter: pb.filter("item = {:item}", { item: item.id }), sort: "barcode" }),
@@ -85,18 +86,18 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
     }
     return [...byKey].map(([key, list]) => ({ key, jobs: list }));
   }, [scheduled]);
-  const openRepairs = repairs.filter((r) => isOpen(r.status));
+  // Open until a status closes it (the kit may be back in service by then).
+  const openRepairs = repairs.filter((r) => !isClosed(r.status));
   const overdue = scheduled.filter((j) => daysUntil(j.dueOn) < 0);
   const spent = repairs.reduce((sum, r) => sum + (r.cost || 0), 0) + done.reduce((sum, j) => sum + (j.cost || 0), 0);
-  const now = Date.now();
 
   const past = useMemo<Past[]>(
     () =>
       [
         ...done.map((j) => ({ at: j.doneOn, job: j, repair: null }) as Past),
-        ...repairs.filter((r) => !isOpen(r.status)).map((r) => ({ at: (r.closedAt || r.created).slice(0, 10), job: null, repair: r }) as Past),
+        ...repairs.filter((r) => isClosed(r.status)).map((r) => ({ at: (r.closedAt || r.created).slice(0, 10), job: null, repair: r }) as Past),
       ].sort((a, b) => b.at.localeCompare(a.at)),
-    [done, repairs, isOpen],
+    [done, repairs, isClosed],
   );
 
   // Each unit's next due, last done and open repair.
@@ -234,7 +235,8 @@ export default function MaintenanceSection({ item, canRecord }: { item: Item; ca
         <Section title="Open repairs" count={openRepairs.length}>
           <Rows>
             {openRepairs.map((r) => {
-              const late = (parseDate(r.dueAt)?.getTime() ?? Infinity) < now;
+              // Late back only while the kit's still out of service.
+              const late = isOpen(r.status) && dayPassed(r.dueAt);
               return (
                 <Row key={r.id} to={`/maintenance/repairs/${r.id}`}>
                   <span className="font-mono text-xs text-gray-400 w-12 shrink-0">R{r.number}</span>

@@ -18,6 +18,8 @@ import AvailabilityStrip, { freeNow, useItemTimeline } from "../components/Avail
 import ItemPhoto from "../components/item/ItemPhoto";
 import PrintButton from "../components/PrintButton";
 import NumberInput from "../components/NumberInput";
+import { numberProblem } from "../lib/numbers";
+import { Problem } from "../components/Field";
 import { useToast } from "../components/ToastProvider";
 import { useFollowOrg } from "../lib/org";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
@@ -89,20 +91,23 @@ export default function ItemDetail() {
   }
 
   // Deleting is only for items with no project history (never on a project,
-  // never scanned): anything else is archived instead. The server refuses
-  // it too; this just says so up front.
+  // never scanned) and no repairs or maintenance done: anything else is
+  // archived instead. The server refuses it too; this just says so up
+  // front. Scheduled maintenance (repairs booked in for later included) is
+  // deleted with it, so the confirmation says how much.
   const { data: history } = useQuery({
     queryKey: ["item-history", id],
     queryFn: async () => {
       const count = async (collection: string, extra = "") =>
         (await pb.collection(collection).getList(1, 1, { filter: pb.filter("item = {:item}", { item: id }) + extra, skipTotal: false })).totalItems;
-      const [lines, scans, repairs, maintenance] = await Promise.all([
+      const [lines, scans, repairs, maintenance, scheduled] = await Promise.all([
         count("job_lines"),
         count("scans"),
         count("repairs"),
         count("maintenance_jobs", " && status = 'done'"),
+        count("maintenance_jobs", " && status = 'scheduled'"),
       ]);
-      return { lines, scans, repairs, maintenance };
+      return { lines, scans, repairs, maintenance, scheduled };
     },
     enabled: !isNew,
   });
@@ -111,13 +116,16 @@ export default function ItemDetail() {
   async function remove() {
     if (!item) return;
     const kits = links.length;
+    const jobs = history?.scheduled ?? 0;
     const parts = [
-      serialCount > 0 && `its ${serialCount} unit${serialCount === 1 ? "" : "s"}`,
-      kits > 0 && `its ${kits} kit or accessory link${kits === 1 ? "" : "s"}`,
-    ].filter(Boolean);
+      serialCount > 0 && `${serialCount} unit${serialCount === 1 ? "" : "s"}`,
+      kits > 0 && `${kits} kit or accessory link${kits === 1 ? "" : "s"}`,
+      jobs > 0 && `${jobs} scheduled maintenance job${jobs === 1 ? "" : "s"}`,
+    ].filter((p): p is string => !!p);
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
     const ok = await confirm({
       title: "Delete item",
-      message: `Delete ${item.name}${parts.length ? ` and ${parts.join(" and ")}` : ""}? This can't be undone.`,
+      message: `Delete ${item.name}?${list ? ` Its ${list} will be deleted too.` : ""} This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -368,6 +376,7 @@ function OutOfService({ item, onSaved }: { item: Item; onSaved: (item: Item) => 
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const { showToast } = useToast();
+  const problem = quantity > item.stockQty ? `There are only ${item.stockQty}` : numberProblem(quantity, { min: 0, integer: true });
 
   async function save() {
     setSaving(true);
@@ -392,10 +401,11 @@ function OutOfService({ item, onSaved }: { item: Item; onSaved: (item: Item) => 
       </div>
       <label className="flex flex-col gap-1">
         <span className="text-gray-500">Out of service (broken, away for repair)</span>
-        <NumberInput value={quantity} min={0} max={item.stockQty} onChange={(n) => setQuantity(Math.round(n))} className="input py-1.5 w-24" />
+        <NumberInput value={quantity} min={0} max={item.stockQty} integer problem={problem} onChange={setQuantity} className="input py-1.5 w-24" />
+        <Problem>{problem}</Problem>
       </label>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's wrong? (optional)" className="input py-1.5" />
-      <button onClick={save} disabled={saving || quantity === item.outOfServiceQty} className="btn-secondary w-fit">
+      <button onClick={save} disabled={saving || quantity === item.outOfServiceQty || !!problem} className="btn-secondary w-fit">
         {saving ? "Saving…" : "Update"}
       </button>
     </section>

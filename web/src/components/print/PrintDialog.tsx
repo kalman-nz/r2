@@ -5,10 +5,12 @@ import { api } from "../../lib/api";
 import { useLocations } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import type { LabelDataContext, LabelTemplateData } from "../../lib/labelSpec";
-import { downloadLabelsPdf, renderForPdf, renderForPrinter, renderPreview, sendToPrinters, type PrintJob } from "../../lib/print";
+import { COPIES, downloadLabelsPdf, renderForPdf, renderForPrinter, renderPreview, sendToPrinters, type PrintJob } from "../../lib/print";
 import { printGeometry, sizeForTemplate, usePrinting } from "../../lib/printing";
 import { useCan } from "../../lib/roles";
 import { useToast } from "../ToastProvider";
+import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
 import { usePrinterChoice } from "./usePrinterChoice";
 
 type Template = LabelTemplateData & { id: string };
@@ -82,6 +84,8 @@ export default function PrintDialog({
 
   const total = count * copies;
   const printing = !!progress && !progress.finished;
+  // Refused, not rounded or bumped up to 1: said beside the box.
+  const copiesProblem = numberProblem(copies, COPIES);
 
   async function print(only?: number[]) {
     if (!template || chain.length === 0) return;
@@ -153,7 +157,7 @@ export default function PrintDialog({
     else if (typing) return;
     else if (e.key === "ArrowLeft") setIndex((i) => Math.max(0, i - 1));
     else if (e.key === "ArrowRight") setIndex((i) => Math.min(count - 1, i + 1));
-    else if (e.key === "Enter" && !progress && chosen && preview) print();
+    else if (e.key === "Enter" && !progress && chosen && preview && !copiesProblem) print();
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => keyRef.current(e);
@@ -314,26 +318,40 @@ export default function PrintDialog({
 
               <Section title="Copies">
                 <div className="flex items-center gap-3">
-                  <div className="inline-flex items-center rounded-md border border-gray-300 bg-white">
-                    <StepButton label="Fewer copies" disabled={copies <= 1 || !!progress} onClick={() => setCopies(copies - 1)}>
+                  <div className={`inline-flex items-center rounded-md border bg-white ${copiesProblem ? "border-fault" : "border-gray-300"}`}>
+                    <StepButton
+                      label="Fewer copies"
+                      disabled={copies <= COPIES.min || !!progress}
+                      onClick={() => setCopies(Math.min(COPIES.max, Math.max(COPIES.min, Math.ceil(copies) - 1)))}
+                    >
                       −
                     </StepButton>
-                    <input
-                      type="number"
-                      min={1}
-                      max={999}
+                    <NumberInput
+                      min={COPIES.min}
+                      max={COPIES.max}
+                      integer
                       value={copies}
                       disabled={!!progress}
-                      onChange={(e) => setCopies(Math.max(1, Math.min(999, Math.floor(Number(e.target.value) || 1))))}
+                      onChange={setCopies}
+                      ariaLabel="Copies"
                       className="w-12 text-center text-sm py-1 bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                      aria-label="Copies"
                     />
-                    <StepButton label="More copies" disabled={copies >= 999 || !!progress} onClick={() => setCopies(copies + 1)}>
+                    <StepButton
+                      label="More copies"
+                      disabled={copies >= COPIES.max || !!progress}
+                      onClick={() => setCopies(Math.max(COPIES.min, Math.min(COPIES.max, Math.floor(copies) + 1)))}
+                    >
                       +
                     </StepButton>
                   </div>
-                  <span className="text-xs text-gray-500">
-                    {count > 1 ? `${count} × ${copies} = ${total} labels` : copies > 1 ? `${total} labels` : "1 label"}
+                  <span className={`text-xs ${copiesProblem ? "text-fault-ink" : "text-gray-500"}`}>
+                    {copiesProblem
+                      ? `Has to be a whole number from ${COPIES.min} to ${COPIES.max}`
+                      : count > 1
+                        ? `${count} × ${copies} = ${total} labels`
+                        : copies > 1
+                          ? `${total} labels`
+                          : "1 label"}
                   </span>
                 </div>
               </Section>
@@ -359,11 +377,11 @@ export default function PrintDialog({
               <button onClick={onClose} className="btn-secondary mr-auto sm:mr-0">
                 Cancel
               </button>
-              <button onClick={downloadPdf} disabled={downloading || !template} className="btn-secondary">
+              <button onClick={downloadPdf} disabled={downloading || !template || !!copiesProblem} className="btn-secondary">
                 {downloading ? "Making PDF…" : "Download PDF"}
               </button>
-              <button onClick={() => print()} disabled={!template || !chosen || !preview} className="btn-primary px-4">
-                {total > 1 ? `Print ${total} labels` : "Print"}
+              <button onClick={() => print()} disabled={!template || !chosen || !preview || !!copiesProblem} className="btn-primary px-4">
+                {total > 1 && !copiesProblem ? `Print ${total} labels` : "Print"}
               </button>
             </div>
           )}

@@ -1,4 +1,5 @@
 import type { JobInfo, JobStatus } from "./api";
+import { COUNT, numberProblem } from "./numbers";
 import { fromLocalInput, toLocalInput } from "./format";
 
 // The job form's working copy: dates as datetime-local strings in the
@@ -90,4 +91,14 @@ export function draftToPayload(d: JobDraft) {
     billingStart: fromLocalInput(d.billingStart),
     billingEnd: fromLocalInput(d.billingEnd),
   };
+}
+
+export const DISCOUNT = { min: 0, max: 100 };
+
+// What's wrong with the project's numbers, if anything: Save waits for it.
+export function jobFieldsProblem(draft: Pick<JobDraft, "discountPct" | "chargeDays">): string | null {
+  const discount = numberProblem(draft.discountPct, DISCOUNT);
+  if (discount) return `Project discount: ${discount.toLowerCase()}`;
+  const days = numberProblem(draft.chargeDays, COUNT);
+  return days ? `Charge for days: ${days.toLowerCase()}` : null;
 }

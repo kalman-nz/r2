@@ -6,6 +6,7 @@ import type { Item, ItemComponent } from "../../lib/api";
 import { errorText } from "../../lib/errors";
 import { InlineNumber } from "../InlineInput";
 import NumberInput from "../NumberInput";
+import { numberProblem } from "../../lib/numbers";
 import { useToast } from "../ToastProvider";
 import { orgFilter, withOrg } from "../../lib/currentOrg";
 
@@ -182,14 +183,14 @@ export default function LinksSection({ item, kind, canEdit }: { item: Item; kind
               </div>
             )}
           </div>
-          <NumberInput value={quantity} min={1} onChange={(n) => setQuantity(Math.max(1, Math.round(n)))} className="input w-16 py-1.5" />
+          <NumberInput value={quantity} min={1} integer onChange={setQuantity} className="input w-16 py-1.5" ariaLabel="Quantity" />
           {kind === "accessory" && (
             <label className="flex items-center gap-1.5 text-xs text-gray-500 py-2">
               <input type="checkbox" checked={chargeable} onChange={(e) => setChargeable(e.target.checked)} />
               Chargeable
             </label>
           )}
-          <button onClick={add} disabled={!childId} className="btn-secondary py-1.5">
+          <button onClick={add} disabled={!childId || !!numberProblem(quantity, { min: 1, integer: true })} className="btn-secondary py-1.5">
             Add
           </button>
         </div>

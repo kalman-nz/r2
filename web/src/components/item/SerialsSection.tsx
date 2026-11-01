@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
 import type { Item, Serial, SerialStatus } from "../../lib/api";
-import { useLocations } from "../../lib/catalog";
+import { unitTitle, useLocations, useSerialNumberTaken } from "../../lib/catalog";
 import { errorText } from "../../lib/errors";
 import { formatDate } from "../../lib/format";
 import type { LabelUnit } from "../../lib/labelSpec";
@@ -189,6 +189,8 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
   const locationName = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations]);
   const rows = useMemo<Row[]>(() => serials.map((s) => ({ ...s, bin: s.bin ?? "", locationName: locationName.get(s.location) ?? "" })), [serials, locationName]);
   const addTo = location || locations[0]?.id || "";
+  // Each serial number is one unit's: a second is refused, so say so first.
+  const taken = useSerialNumberTaken(adding ? serialNumber : "");
 
   function unitFor(serial: Serial): LabelUnit {
     return { serial, item, categoryPath, locationName: [locationName.get(serial.location), serial.bin].filter(Boolean).join(", "), currentJob: "" };
@@ -303,7 +305,12 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
           </label>
           <label className="flex flex-col gap-1 text-xs text-gray-500">
             Manufacturer serial
-            <input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="input py-1.5 w-40" />
+            <input
+              value={serialNumber}
+              onChange={(e) => setSerialNumber(e.target.value)}
+              aria-invalid={taken ? true : undefined}
+              className="input py-1.5 w-40"
+            />
           </label>
           <label className="flex flex-col gap-1 text-xs text-gray-500">
             Name (optional)
@@ -325,12 +332,20 @@ export default function SerialsSection({ item, categoryPath, canAdd }: { item: I
             Shelf / bin
             <input value={bin} onChange={(e) => setBin(e.target.value)} className="input py-1.5 w-28" placeholder="e.g. Bay 3" />
           </label>
-          <button type="submit" disabled={saving} className="btn-primary py-1.5">
+          <button type="submit" disabled={saving || !!taken} className="btn-primary py-1.5">
             {saving ? "Adding…" : "Add"}
           </button>
           <button type="button" onClick={() => setAdding(false)} className="btn-secondary py-1.5">
             Done
           </button>
+          {taken && (
+            <p className="basis-full text-xs text-fault-ink">
+              Serial number {serialNumber.trim()} is already on{" "}
+              <Link to={`/assets/${taken.id}`} className="underline">
+                {unitTitle(taken)}
+              </Link>
+            </p>
+          )}
         </form>
       )}
 
