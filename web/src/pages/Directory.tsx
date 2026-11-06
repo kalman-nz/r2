@@ -12,10 +12,9 @@ import ColumnsMenu from "../components/ColumnsMenu";
 import DataTable, { type TableColumn } from "../components/DataTable";
 import DateCell from "../components/DateCell";
 import { DetailCard, DetailRow, Fact, FactTiles } from "../components/DetailCard";
-import FiltersMenu, { FilterCheck, FilterField, GroupFields, SortList } from "../components/FiltersMenu";
+import FiltersMenu, { FilterCheck, GroupFields, SortList } from "../components/FiltersMenu";
 import Field from "../components/Field";
 import PageViews from "../components/PageViews";
-import Segmented from "../components/Segmented";
 import SelectionBar from "../components/SelectionBar";
 import { JobStatusBadge } from "../components/StatusBadge";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
@@ -25,7 +24,7 @@ import { updateEach } from "../lib/bulk";
 import { orgFilter, withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
 import { readGroups, readSorts, readWidths, sortRows, sortSettings, type GroupOption, type Sort } from "../lib/table";
-import { asBool, asString, asStrings } from "../lib/views";
+import { asBool, asStrings } from "../lib/views";
 import Breadcrumbs from "../components/Breadcrumbs";
 import CustomFieldsCard from "../components/CustomFieldsCard";
 import { customKeysIn, customSortValue, customText, customValueOf, useCustomFields, type CustomTarget } from "../lib/customFields";
@@ -40,8 +39,8 @@ type Draft = Record<string, string>;
 interface FieldSpec {
   key: string;
   label: string;
-  // kind: company or person. address: lookup as you type (components/AddressInput.tsx).
-  type?: "text" | "email" | "tel" | "textarea" | "kind" | "address";
+  // address: lookup as you type (components/AddressInput.tsx).
+  type?: "text" | "email" | "tel" | "textarea" | "address";
   wide?: boolean;
   placeholder?: string;
 }
@@ -81,12 +80,6 @@ interface DirectoryConfig {
   searchKeys: string[];
 }
 
-const KINDS = [
-  { value: "company", label: "Company" },
-  { value: "person", label: "Person" },
-];
-const kindLabel = (v: string) => KINDS.find((k) => k.value === v)?.label ?? "";
-
 const CONTACTS: DirectoryConfig = {
   collection: "contacts",
   customTarget: "contact",
@@ -98,7 +91,6 @@ const CONTACTS: DirectoryConfig = {
   otherField: "venue",
   fields: [
     { key: "name", label: "Name", wide: true, placeholder: "Company or person" },
-    { key: "kind", label: "Type", type: "kind" },
     { key: "contactPerson", label: "Contact person" },
     { key: "email", label: "Email", type: "email" },
     { key: "phone", label: "Phone", type: "tel" },
@@ -106,12 +98,11 @@ const CONTACTS: DirectoryConfig = {
     { key: "notes", label: "Internal notes", type: "textarea", wide: true },
   ],
   sections: [
-    { key: "details", title: "Details", fields: ["name", "kind", "contactPerson"] },
+    { key: "details", title: "Details", fields: ["name", "contactPerson"] },
     { key: "contact", title: "Contact", fields: ["email", "phone", "billingAddress"] },
     { key: "notes", title: "Notes", fields: ["notes"] },
   ],
   columns: [
-    { key: "kind", label: "Type", width: 100, shown: false, format: kindLabel },
     { key: "contactPerson", label: "Contact", width: 170 },
     { key: "email", label: "Email", width: 220 },
     { key: "phone", label: "Phone", width: 140 },
@@ -208,10 +199,8 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
   const confirm = useConfirm();
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [kind, setKind] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const hasKinds = config.collection === "contacts";
   const plural = config.title.toLowerCase();
   const { fields: customFields } = useCustomFields(config.customTarget);
 
@@ -303,18 +292,6 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
 
   const groups = useMemo<GroupOption<Row>[]>(
     () => [
-      ...(hasKinds
-        ? [
-            {
-              key: "kind",
-              label: "Type",
-              value: (r: Row) => {
-                const label = kindLabel(String(r.kind ?? ""));
-                return label ? { id: String(r.kind), label: `${label === "Person" ? "People" : "Companies"}`, order: label } : { id: "", label: "No type", order: "￿" };
-              },
-            },
-          ]
-        : []),
       {
         key: "activity",
         label: "Projects",
@@ -337,30 +314,27 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
           },
         })),
     ],
-    [hasKinds, customFields],
+    [customFields],
   );
   const groupKeys = groups.map((g) => g.key);
 
   const defaults = useMemo<ViewConfig>(
     () => ({
       archived: false,
-      ...(hasKinds ? { kind: "" } : {}),
       columns: columns.filter((c) => c.toggleable && c.shown).map((c) => c.key),
       widths: {},
       groupBy: [],
       ...sortSettings([{ key: "name", dir: "asc" }]),
     }),
-    [columns, hasKinds],
+    [columns],
   );
   const [shown, setShown] = useState<string[]>(defaults.columns as string[]);
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [sorts, setSorts] = useState<Sort[]>([{ key: "name", dir: "asc" }]);
   const [groupBy, setGroupBy] = useState<string[]>([]);
-  const settings: ViewConfig = { archived: showArchived, ...(hasKinds ? { kind } : {}), columns: shown, widths, groupBy, ...sortSettings(sorts) };
+  const settings: ViewConfig = { archived: showArchived, columns: shown, widths, groupBy, ...sortSettings(sorts) };
   function applySettings(s: ViewConfig) {
     setShowArchived(asBool(s.archived));
-    const k = asString(s.kind);
-    setKind(KINDS.some((x) => x.value === k) ? k : "");
     const custom = customKeysIn(s);
     setShown(asStrings(s.columns, [...columnKeys, ...custom]));
     setWidths(readWidths(s));
@@ -392,7 +366,6 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
     const term = search.trim().toLowerCase();
     const out = rows.filter((r) => {
       if (!showArchived && r.archived) return false;
-      if (kind && r.kind !== kind) return false;
       return (
         !term ||
         config.searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(term)) ||
@@ -400,11 +373,11 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
       );
     });
     return sortRows(out, columns, sorts);
-  }, [rows, search, showArchived, kind, config.searchKeys, columns, sorts, customFields]);
+  }, [rows, search, showArchived, config.searchKeys, columns, sorts, customFields]);
 
   const selectedRows = filtered.filter((r) => selected.has(r.id));
-  const searching = search.trim() !== "" || kind !== "";
-  const activeFilters = (showArchived ? 1 : 0) + (kind ? 1 : 0);
+  const searching = search.trim() !== "";
+  const activeFilters = showArchived ? 1 : 0;
 
   // Archiving or restoring the selection. Those already that way are left alone.
   async function archiveSelected(archived: boolean) {
@@ -483,20 +456,8 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
         <div className="ml-auto flex items-center gap-1.5">
           <FiltersMenu
             active={activeFilters}
-            onReset={() => {
-              setShowArchived(false);
-              setKind("");
-            }}
+            onReset={() => setShowArchived(false)}
           >
-            {hasKinds && (
-              <FilterField label="Type">
-                <select value={kind} onChange={(e) => setKind(e.target.value)} className="input">
-                  <option value="">Companies and people</option>
-                  <option value="company">Companies</option>
-                  <option value="person">People</option>
-                </select>
-              </FilterField>
-            )}
             <FilterCheck checked={showArchived} onChange={setShowArchived}>
               Show archived {plural}
             </FilterCheck>
@@ -555,7 +516,6 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
 // A field's value as read on its card. A location's address links to a map.
 function shownValue(f: FieldSpec, value: string, config: DirectoryConfig): ReactNode {
   if (!value) return null;
-  if (f.type === "kind") return kindLabel(value);
   if (f.type === "address")
     return (
       <span className="flex flex-col items-start gap-0.5">
@@ -582,7 +542,6 @@ function shownValue(f: FieldSpec, value: string, config: DirectoryConfig): React
 function FieldInput({ field, value, onChange, autoFocus }: { field: FieldSpec; value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
   if (field.type === "address") return <AddressInput value={value} onChange={onChange} />;
   if (field.type === "textarea") return <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className="input py-1.5 w-full" />;
-  if (field.type === "kind") return <Segmented label={field.label} value={value} options={KINDS} onChange={onChange} />;
   return (
     <input
       type={field.type ?? "text"}
@@ -778,9 +737,7 @@ function ExistingRecord({ config, id }: { config: DirectoryConfig; id: string })
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">{name}</h1>
-          {config.collection === "contacts" && (record.kind || record.contactPerson) && (
-            <p className="text-sm text-gray-500 mt-0.5">{[kindLabel(String(record.kind ?? "")), String(record.contactPerson ?? "")].filter(Boolean).join(" · ")}</p>
-          )}
+          {config.collection === "contacts" && record.contactPerson && <p className="text-sm text-gray-500 mt-0.5">{String(record.contactPerson)}</p>}
           {config.collection === "venues" && record.address && <p className="text-sm text-gray-500 mt-0.5">{oneLineAddress(String(record.address))}</p>}
         </div>
         {can("jobs.create") && !record.archived && (

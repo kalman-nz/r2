@@ -31,7 +31,6 @@ const TARGETS: Record<CsvKind, { key: string; label: string; hint?: string; requ
   ],
   contacts: [
     { key: "name", label: "Name", required: true, aliases: ["name", "company", "companyname", "organisation", "organization", "client"] },
-    { key: "kind", label: "Company or person", aliases: ["type", "kind"] },
     { key: "contactPerson", label: "Contact person", aliases: ["contactperson", "contact", "person", "attn", "contactname"] },
     { key: "email", label: "Email", aliases: ["email", "emailaddress", "mail"] },
     { key: "phone", label: "Phone", aliases: ["phone", "mobile", "phonenumber", "tel", "telephone"] },

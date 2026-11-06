@@ -342,7 +342,6 @@ export interface ItemComponent extends RecordModel {
 export interface Contact extends RecordModel {
   org: string;
   name: string;
-  kind: "company" | "person" | "";
   contactPerson: string;
   email: string;
   phone: string;

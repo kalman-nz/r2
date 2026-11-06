@@ -737,12 +737,10 @@ function importContactRow(app, org, row, counts) {
   ) {
     throw new Error(name + " <" + email + "> already exists");
   }
-  const kind = String(row.kind || "").trim().toLowerCase();
   app.save(
     new Record(app.findCollectionByNameOrId("contacts"), {
       org: org,
       name: name,
-      kind: kind === "person" ? "person" : "company",
       contactPerson: String(row.contactPerson || "").trim(),
       email: email,
       phone: String(row.phone || "").trim(),

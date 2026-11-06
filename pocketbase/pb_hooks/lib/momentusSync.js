@@ -298,7 +298,6 @@ function pullAccount(org, cfg, client, code, run) {
       remoteId: code,
       remote: { name: String(pick(account, f.name) || code).trim(), email: EMAIL.test(email) ? email : "", phone: String(pick(account, f.phone) || "").trim(), billingAddress: address },
       direction: "in",
-      newRecord: { kind: "company" },
     },
     run,
   );

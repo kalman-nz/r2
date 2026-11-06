@@ -18,7 +18,7 @@ test("equipment round-trips Rentman → R2 → Rentman without drifting", () => 
 
 test("only changed fields are sent, under Rentman's names", () => {
   assert.deepEqual(MAPS.items.toRentman({ price: 99, notes: "x" }, refs), { price: 99, internal_remark: "x" });
-  assert.deepEqual(MAPS.contacts.toRentman({ email: "a@b.co", kind: "person" }), { email_1: "a@b.co", type: "private" });
+  assert.deepEqual(MAPS.contacts.toRentman({ email: "a@b.co" }), { email_1: "a@b.co" });
 });
 
 test("a contact's email falls back to its contact person, and junk isn't an email", () => {

@@ -65,7 +65,6 @@ const MAPS = {
       const emails = [c.email_1, c.email_2, person && person.email].map(str);
       return {
         name: str(c.displayname || c.name) || "Rentman contact " + c.id,
-        kind: c.type === "private" ? "person" : "company",
         email: emails.find((e) => EMAIL.test(e)) || "",
         phone: str(c.phone_1 || c.phone_2 || (person && (person.phone || person.mobilephone))),
       };
@@ -73,7 +72,6 @@ const MAPS = {
     toRentman(f) {
       const out = {};
       if ("name" in f) out.name = f.name;
-      if ("kind" in f) out.type = f.kind === "person" ? "private" : "company";
       if ("email" in f) out.email_1 = f.email;
       if ("phone" in f) out.phone_1 = f.phone;
       return out;
