@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type JobLineView } from "../lib/api";
-import { formatDateTime, formatPeriod, oneLineAddress } from "../lib/format";
+import { formatDateTime, formatPeriod, oneLineAddress, placeName } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { useToast } from "../components/ToastProvider";
@@ -61,7 +61,7 @@ export default function PackingList() {
             <h1 className="text-xl font-bold text-gray-900">
               #{job.number} {job.name}
             </h1>
-            <p>{[job.clientInfo?.name, job.venueInfo?.name].filter(Boolean).join(" · ")}</p>
+            <p>{[job.clientInfo?.name, placeName(job.venueInfo?.name, (job.venueInfo?.spaces ?? []).map((sp) => sp.name))].filter(Boolean).join(" · ")}</p>
             {oneLineAddress(job.venueInfo?.address) && <p className="text-gray-600">{oneLineAddress(job.venueInfo?.address)}</p>}
           </div>
           <div className="text-right shrink-0 flex flex-col items-end gap-0.5">

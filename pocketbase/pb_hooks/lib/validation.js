@@ -181,6 +181,7 @@ function validateJob(app, record) {
   if (!record.getString("org")) return;
   sameOrg(app, record, "client", "contacts", "client");
   sameOrg(app, record, "venue", "venues", "location");
+  keepSpacesAtVenue(app, record);
   const prep = toMs(record.getString("prepAt"));
   const ret = toMs(record.getString("returnAt"));
   if (!(prep < ret)) throw new BadRequestError("Return has to be after prep");
@@ -191,6 +192,26 @@ function validateJob(app, record) {
   if (!billingStart && !billingEnd) return;
   if (!billingStart || !billingEnd) throw new BadRequestError("Set both ends of the billing period, or neither");
   if (!(toMs(billingStart) < toMs(billingEnd))) throw new BadRequestError("The billing period has to end after it starts");
+}
+
+// A project's spaces are at its location. Any that aren't (the location
+// changed, or a sync moved it) drop off rather than refusing the save.
+// (Before migration 0055 there are no spaces.)
+function keepSpacesAtVenue(app, record) {
+  if (!record.collection().fields.getByName("spaces")) return;
+  const ids = record.getStringSlice("spaces");
+  if (ids.length === 0) return;
+  const venue = record.getString("venue");
+  const kept = venue ? app.findRecordsByIds("venue_spaces", ids).filter((s) => s && s.getString("venue") === venue).map((s) => s.id) : [];
+  if (kept.length !== ids.length) record.set("spaces", ids.filter((id) => kept.indexOf(id) !== -1));
+}
+
+// A space: named, at a location in the same organisation.
+function validateSpace(app, record) {
+  record.set("name", record.getString("name").trim());
+  if (!record.getString("name")) throw new BadRequestError("The space needs a name");
+  if (!record.getString("org")) return;
+  sameOrg(app, record, "venue", "venues", "location");
 }
 
 // A membership's or invitation's role has to be one of its own
@@ -220,12 +241,27 @@ function sameSubproject(app, record) {
   if (sub.getString("job") !== record.getString("job")) throw new BadRequestError("That subproject is part of another project");
 }
 
+// A schedule item's space, if it has one, is at its project's location.
+function spaceAtJobVenue(app, record) {
+  const id = record.getString("space");
+  if (!id) return;
+  let space;
+  try {
+    space = app.findRecordById("venue_spaces", id);
+  } catch (_) {
+    throw new BadRequestError("That space doesn't exist");
+  }
+  const job = app.findRecordById("jobs", record.getString("job"));
+  if (space.getString("venue") !== job.getString("venue")) throw new BadRequestError("That space isn't at this project's location");
+}
+
 // A schedule period: on a job in the same organisation, ending after it
 // starts.
 function validatePeriod(app, record) {
   if (!record.getString("org")) return;
   sameOrg(app, record, "job", "jobs", "project");
   sameSubproject(app, record);
+  spaceAtJobVenue(app, record);
   const start = toMs(record.getString("start"));
   const end = toMs(record.getString("end"));
   if (!(start < end)) throw new BadRequestError("A period has to end after it starts");
@@ -326,6 +362,7 @@ module.exports = {
   validateCategory,
   validateJob,
   validatePeriod,
+  validateSpace,
   validateMembership,
   validateRole,
   validateCustomField,

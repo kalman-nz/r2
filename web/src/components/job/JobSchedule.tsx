@@ -52,6 +52,7 @@ interface Draft {
   start: string; // datetime-local
   end: string;
   notes: string;
+  space: string;
   // Only when adding: an item's crew needs are changed under it afterwards.
   crew: CrewDraft[];
 }
@@ -59,7 +60,7 @@ interface Draft {
 let crewKey = 0;
 
 function draftOf(p: JobPeriod): Draft {
-  return { kind: p.kind, name: p.name, start: toLocalInput(p.start), end: toLocalInput(p.end), notes: p.notes, crew: [] };
+  return { kind: p.kind, name: p.name, start: toLocalInput(p.start), end: toLocalInput(p.end), notes: p.notes, space: p.space ?? "", crew: [] };
 }
 
 const crewProblem = (crew: CrewDraft[]) => crew.some((c) => !c.role || !!numberProblem(c.quantity, { min: 1, max: 99, integer: true }));
@@ -115,6 +116,16 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     periods.filter((q) => (q.subproject || "") === section && q.id !== except && q.kind !== "other").map((q) => q.kind);
   const onlyOfKind = (p: JobPeriod) =>
     p.kind !== "other" && periods.filter((q) => q.kind === p.kind && (q.subproject || "") === (p.subproject || "")).length === 1;
+  // Where an item can be: the project's spaces (and any an item is already
+  // in), or all the location's when it has the whole place.
+  const venue = job.venueInfo;
+  const inUse = new Set(periods.map((p) => p.space).filter(Boolean));
+  const spaceChoices = !venue
+    ? []
+    : venue.spaces.length === 0
+      ? venue.allSpaces
+      : venue.allSpaces.filter((sp) => inUse.has(sp.id) || venue.spaces.some((v) => v.id === sp.id));
+  const spaceName = (id: string) => venue?.allSpaces.find((sp) => sp.id === id)?.name ?? "";
   // Timeline labels say whose a subproject's periods are.
   const subName = (id: string) => subprojects.find((sp) => sp.id === id)?.name ?? "";
   const timeline = [...main, ...subprojects.flatMap((sp) => sorted.filter((p) => p.subproject === sp.id))].map((p) =>
@@ -130,7 +141,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
   }
 
   async function save(id: string | null, d: Draft, section = "") {
-    const body = { kind: d.kind, name: d.name.trim(), start: fromLocalInput(d.start), end: fromLocalInput(d.end), notes: d.notes.trim() };
+    const body = { kind: d.kind, name: d.name.trim(), start: fromLocalInput(d.start), end: fromLocalInput(d.end), notes: d.notes.trim(), space: d.space };
     setBusy(true);
     try {
       if (id) await pb.collection("job_periods").update(id, body);
@@ -184,7 +195,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     const [start, end] = kind === "other" ? [from, from + 2 * HOUR] : [ms(owner.prepAt), ms(owner.returnAt)];
     const iso = (t: number) => new Date(t).toISOString();
     setEditingId(null);
-    setAdding({ section, draft: { kind, name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "", crew: [] } });
+    setAdding({ section, draft: { kind, name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "", space: "", crew: [] } });
   }
 
   async function renameSubproject(sp: Subproject, name: string) {
@@ -220,6 +231,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
         draft={adding.draft}
         taken={takenIn(section)}
         onChange={(draft) => setAdding({ section, draft })}
+        spaces={spaceChoices}
         crewRoles={crewRoles}
         busy={busy}
         submitLabel="Add period"
@@ -237,6 +249,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
           key={p.id}
           period={p}
           busy={busy}
+          spaces={spaceChoices}
           kindLocked={onlyOfKind(p)}
           taken={takenIn(p.subproject || "", p.id)}
           onCancel={() => setEditingId(null)}
@@ -246,6 +259,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
         <PeriodRow
           key={p.id}
           period={p}
+          space={spaceName(p.space)}
           jobId={job.id}
           canPlan={canEdit}
           canEdit={canEdit && !busy}
@@ -315,7 +329,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
             canEdit={canEdit}
             onCreate={(start, end) => {
               const iso = (t: number) => new Date(t).toISOString();
-              setCalendarAdd({ section: "", draft: { kind: "other", name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "", crew: [] } });
+              setCalendarAdd({ section: "", draft: { kind: "other", name: "", start: toLocalInput(iso(start)), end: toLocalInput(iso(end)), notes: "", space: "", crew: [] } });
             }}
             onOpen={(p) => setCalendarEdit(p)}
             onChange={(p, start, end) =>
@@ -348,6 +362,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
               draft={calendarAdd.draft}
               taken={takenIn(calendarAdd.section)}
               onChange={(draft) => setCalendarAdd({ ...calendarAdd, draft })}
+              spaces={spaceChoices}
               crewRoles={crewRoles}
               busy={busy}
               submitLabel="Add period"
@@ -372,6 +387,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
                 <EditRow
                   period={calendarEdit}
                   busy={busy}
+                  spaces={spaceChoices}
                   kindLocked={onlyOfKind(calendarEdit)}
                   taken={takenIn(calendarEdit.subproject || "", calendarEdit.id)}
                   onCancel={() => setCalendarEdit(null)}
@@ -394,6 +410,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
           ) : (
             <div className="text-sm flex flex-col gap-1">
               <span className="text-gray-900">{formatPeriod(calendarEdit.start, calendarEdit.end)}</span>
+              {spaceName(calendarEdit.space) && <span className="text-gray-700">{spaceName(calendarEdit.space)}</span>}
               {calendarEdit.notes && <span className="text-gray-500 whitespace-pre-line">{calendarEdit.notes}</span>}
             </div>
           )}
@@ -559,6 +576,7 @@ function KindBadge({ kind }: { kind: PeriodKind }) {
 
 function PeriodRow({
   period: p,
+  space,
   jobId,
   canPlan,
   canEdit,
@@ -567,6 +585,8 @@ function PeriodRow({
   onRemove,
 }: {
   period: JobPeriod;
+  // Its space's name, if it has one.
+  space: string;
   jobId: string;
   // Can change who's on it (planners); canEdit is that, when nothing's saving.
   canPlan: boolean;
@@ -585,7 +605,10 @@ function PeriodRow({
             <KindBadge kind={p.kind} />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-sm text-gray-700">{formatPeriod(p.start, p.end)}</span>
+            <span className="text-sm text-gray-700">
+              {formatPeriod(p.start, p.end)}
+              {space && <span className="text-gray-500"> · {space}</span>}
+            </span>
             {p.notes && <span className="text-xs text-gray-500 whitespace-pre-line">{p.notes}</span>}
           </div>
           <span className="text-xs text-gray-500 tabular-nums md:text-right md:pt-0.5">{formatDuration(ms(p.end) - ms(p.start))}</span>
@@ -614,6 +637,7 @@ function PeriodRow({
 function EditRow({
   period,
   busy,
+  spaces,
   kindLocked,
   taken,
   onSave,
@@ -621,6 +645,7 @@ function EditRow({
 }: {
   period: JobPeriod;
   busy: boolean;
+  spaces: { id: string; name: string }[];
   kindLocked: boolean;
   taken: PeriodKind[];
   onSave: (d: Draft) => void;
@@ -632,6 +657,7 @@ function EditRow({
     <PeriodForm
       draft={draft}
       onChange={setDraft}
+      spaces={spaces}
       busy={busy}
       kindLocked={kindLocked}
       taken={taken}
@@ -654,10 +680,13 @@ function PeriodForm({
   onSubmit,
   onCancel,
   crewRoles,
+  spaces = [],
 }: {
   draft: Draft;
   onChange: (d: Draft) => void;
   busy: boolean;
+  // The location's spaces it can be in.
+  spaces?: { id: string; name: string }[];
   kindLocked?: boolean;
   // Kinds this section already has its one of: they can't be picked.
   taken?: PeriodKind[];
@@ -715,6 +744,19 @@ function PeriodForm({
           <input type="datetime-local" value={draft.end} onChange={(e) => set("end", e.target.value)} required className="input py-2" />
         </Field>
       </div>
+      {(spaces.length > 0 || draft.space) && (
+        <Field label="Space">
+          <select value={draft.space} onChange={(e) => set("space", e.target.value)} className="input py-2">
+            <option value="">Not set</option>
+            {spaces.map((sp) => (
+              <option key={sp.id} value={sp.id}>
+                {sp.name}
+              </option>
+            ))}
+            {draft.space && !spaces.some((sp) => sp.id === draft.space) && <option value={draft.space}>(not on this project)</option>}
+          </select>
+        </Field>
+      )}
       <Field label="Notes">
         <input
           value={draft.notes}

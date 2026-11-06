@@ -71,7 +71,7 @@ export default function Dashboard() {
     queryFn: () =>
       pb.collection("jobs").getFullList<ProjectRow>({
         sort: "prepAt",
-        expand: "client,venue",
+        expand: "client,venue,spaces",
         filter: orgFilter("status != 'returned' && status != 'cancelled'"),
       }),
     enabled: needsJobs,

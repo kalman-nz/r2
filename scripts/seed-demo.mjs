@@ -181,9 +181,9 @@ await create("item_components", { parent: items.MIC58.id, child: items.BOOM.id, 
 
 const contacts = {};
 for (const c of [
-  { name: "Kōwhai Events Ltd", kind: "company", contactPerson: "Aroha Example", email: "aroha@example.com", phone: "021 000 001" },
-  { name: "Southern Lights Productions", kind: "company", contactPerson: "Sam Example", email: "sam@example.com" },
-  { name: "Riverbank School", kind: "company", contactPerson: "Office", email: "office@example.com" },
+  { name: "Kōwhai Events Ltd", contactPerson: "Aroha Example", email: "aroha@example.com", phone: "021 000 001" },
+  { name: "Southern Lights Productions", contactPerson: "Sam Example", email: "sam@example.com" },
+  { name: "Riverbank School", contactPerson: "Office", email: "office@example.com" },
 ]) {
   contacts[c.name] = await create("contacts", { ...c, billingAddress: "PO Box 0000\nExampleville" });
 }

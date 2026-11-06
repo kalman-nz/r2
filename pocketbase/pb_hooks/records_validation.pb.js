@@ -37,6 +37,24 @@ onRecordValidate((e) => {
 }, "jobs");
 
 onRecordValidate((e) => {
+  const { validateSpace } = require(`${__hooks}/lib/validation.js`);
+  validateSpace(e.app, e.record);
+  e.next();
+}, "venue_spaces");
+
+// A project moved to another location: its schedule items' spaces from the
+// old one come off (the project's own spaces already have, in validateJob).
+// A no-op when the location didn't change.
+onRecordAfterUpdateSuccess((e) => {
+  e.app
+    .db()
+    .newQuery("UPDATE job_periods SET space = '' WHERE job = {:job} AND space != '' AND space NOT IN (SELECT id FROM venue_spaces WHERE venue = {:venue})")
+    .bind({ job: e.record.id, venue: e.record.getString("venue") })
+    .execute();
+  e.next();
+}, "jobs");
+
+onRecordValidate((e) => {
   const { validateMembership } = require(`${__hooks}/lib/validation.js`);
   validateMembership(e.app, e.record);
   e.next();

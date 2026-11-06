@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type DocumentField, type DocumentTemplate, type JobLineView, type JobSummary } from "../lib/api";
 import { pb } from "../lib/pocketbase";
-import { formatDateTime, formatPeriod, oneLineAddress } from "../lib/format";
+import { formatDateTime, formatPeriod, oneLineAddress, placeName } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { linesByHeading } from "../lib/documents";
 import Breadcrumbs from "../components/Breadcrumbs";
@@ -102,7 +102,7 @@ function DocumentHeader({ title, businessName, summary }: { title: string; busin
         <h1 className="text-xl font-bold text-gray-900">
           #{job.number} {job.name}
         </h1>
-        <p>{[client?.name, venue?.name].filter(Boolean).join(" · ")}</p>
+        <p>{[client?.name, placeName(venue?.name, (venue?.spaces ?? []).map((sp) => sp.name))].filter(Boolean).join(" · ")}</p>
         {oneLineAddress(venue?.address) && <p className="text-gray-600">{oneLineAddress(venue?.address)}</p>}
         {contacts.map((c) => (
           <p key={c as string} className="text-gray-600">

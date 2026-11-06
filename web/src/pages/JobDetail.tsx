@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
 import { api, type JobPricing, type JobStatus, type JobSummary } from "../lib/api";
-import { formatDate, formatDateTime, formatPeriod, nzd, oneLineAddress } from "../lib/format";
+import { formatDate, formatDateTime, formatPeriod, nzd, oneLineAddress, placeName } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { useCan, useFeature, useRole } from "../lib/roles";
 import JobFields from "../components/job/JobFields";
@@ -19,7 +19,8 @@ import { useConfirm } from "../components/ConfirmProvider";
 import { withOrg } from "../lib/currentOrg";
 import { useFollowOrg } from "../lib/org";
 import { useRepairs } from "../lib/maintenance";
-import { useContacts, useVenues } from "../lib/catalog";
+import { useContacts } from "../lib/catalog";
+import LocationPicker from "../components/LocationPicker";
 import { useJobCrew, useJobCrewNeeds } from "../lib/crew";
 import { useJobStatuses } from "../lib/workflow";
 import { COUNT, numberProblem } from "../lib/numbers";
@@ -162,7 +163,7 @@ function ScheduleOverview({ summary, onOpen }: { summary: JobSummary; onOpen: ()
 // The parts of a project's details that each card saves.
 type Section = "project" | "pricing" | "notes";
 const FIELDS: Record<Section, (keyof JobDraft)[]> = {
-  project: ["name", "client", "venue", "reference"],
+  project: ["name", "client", "venue", "spaces", "reference"],
   pricing: ["discountPct", "chargeDays", "quoteNotes"],
   notes: ["notes"],
 };
@@ -303,7 +304,7 @@ function ExistingJob({ id }: { id: string }) {
             {client && venue && " · "}
             {venue && (
               <Link to={`/locations/${venue.id}`} className="hover:text-gray-900 hover:underline">
-                {venue.name}
+                {placeName(venue.name, venue.spaces.map((s) => s.name))}
               </Link>
             )}
             {(client || venue) && " · "}
@@ -521,7 +522,6 @@ function JobDetailsCards({
   const feature = useFeature();
   const { showToast } = useToast();
   const { data: contacts = [] } = useContacts();
-  const { data: venues = [] } = useVenues();
   const [editing, setEditing] = useState<Section | null>(null);
   const [draft, setDraft] = useState<JobDraft>(() => draftFromJob(job));
   const [saving, setSaving] = useState(false);
@@ -596,20 +596,14 @@ function JobDetailsCards({
                 <Link to={`/locations/${venue.id}`} className="hover:underline w-fit">
                   {venue.name}
                 </Link>
+                {venue.spaces.length > 0 && <span>{venue.spaces.map((s) => s.name).join(", ")}</span>}
                 {venue.address && <span className="text-xs text-gray-500">{oneLineAddress(venue.address)}</span>}
               </span>
             ) : null
           }
           empty="No location"
         >
-          <QuickCreateSelect
-            collection="venues"
-            value={draft.venue}
-            onChange={(id) => set("venue", id)}
-            options={venues.map((v) => ({ id: v.id, name: v.name, archived: v.archived, detail: oneLineAddress(v.address) }))}
-            canCreate={can("venues.create")}
-            placeholder="No location"
-          />
+          <LocationPicker value={{ venue: draft.venue, spaces: draft.spaces }} onChange={(p) => setDraft((d) => ({ ...d, venue: p.venue, spaces: p.spaces }))} />
         </DetailRow>
         <DetailRow label="Client reference" value={job.reference}>
           <input value={draft.reference} onChange={(e) => set("reference", e.target.value)} className="input py-1.5 w-full" />

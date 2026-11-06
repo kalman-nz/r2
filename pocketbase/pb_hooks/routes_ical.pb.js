@@ -49,6 +49,13 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
   }
   const clients = names("contacts", jobs.map((j) => j.getString("client")));
   const venues = names("venues", jobs.map((j) => j.getString("venue")));
+  const spaces = names("venue_spaces", [].concat(...jobs.map((j) => j.getStringSlice("spaces"))));
+  // "Baycourt Theatre › Addison Theatre, Terrace Room"
+  const place = (j) => {
+    const venue = venues[j.getString("venue")] || "";
+    const used = j.getStringSlice("spaces").map((id) => spaces[id]).filter(Boolean);
+    return venue && used.length > 0 ? venue + " › " + used.join(", ") : venue;
+  };
   // The organisation's own status names (Settings → Project statuses).
   const statusNames = names("job_statuses", jobs.map((j) => j.getString("jobStatus")));
   const proto = e.request.header.get("X-Forwarded-Proto") || (e.request.tls ? "https" : "http");
@@ -65,7 +72,7 @@ routerAdd("GET", "/api/ical/{token}/jobs.ics", (e) => {
       start: toMs(j.getString("prepAt")),
       end: toMs(j.getString("returnAt")),
       client: clients[j.getString("client")] || "",
-      venue: venues[j.getString("venue")] || "",
+      venue: place(j),
       updated: toMs(j.getString("updated")),
       url: base + "/projects/" + j.id,
       periods: periodsByJob[j.id] || [],

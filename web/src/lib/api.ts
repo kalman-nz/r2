@@ -342,7 +342,6 @@ export interface ItemComponent extends RecordModel {
 export interface Contact extends RecordModel {
   org: string;
   name: string;
-  kind: "company" | "person" | "";
   contactPerson: string;
   email: string;
   phone: string;
@@ -364,6 +363,16 @@ export interface Venue extends RecordModel {
   custom?: Record<string, unknown> | null;
 }
 
+// A space inside a location (Baycourt Theatre's Terrace Room), managed on
+// the location's page.
+export interface VenueSpace extends RecordModel {
+  org: string;
+  venue: string;
+  name: string;
+  notes: string;
+  sortOrder: number;
+}
+
 export interface Job extends RecordModel {
   org: string;
   number: number;
@@ -374,6 +383,8 @@ export interface Job extends RecordModel {
   jobStatus: string;
   client: string;
   venue: string;
+  // Spaces it uses at its location; none = the whole location.
+  spaces: string[];
   // Derived from the schedule (pb_hooks/lib/periods.js): kit booked over
   // the usage periods, the project over everything, billing over the
   // billing periods.
@@ -449,6 +460,10 @@ export interface VenueInfo {
   address: string;
   contactName: string;
   phone: string;
+  // The spaces the project uses (none: the whole location), and all the
+  // location has, in order.
+  spaces: { id: string; name: string }[];
+  allSpaces: { id: string; name: string }[];
 }
 
 export interface LineAmount {
@@ -491,6 +506,8 @@ export interface JobInfo {
   jobStatus: string;
   client: string;
   venue: string;
+  // Spaces it uses at its location; none = the whole location.
+  spaces: string[];
   // Derived from the schedule (pb_hooks/lib/periods.js): kit booked over
   // the usage periods, the project over everything, billing over the
   // billing periods.
@@ -597,6 +614,8 @@ export interface JobPeriod {
   start: string;
   end: string;
   notes: string;
+  // Where it happens: one of the location's spaces, "" for not said.
+  space: string;
 }
 
 // Part of a project with its own schedule (pb_migrations/0030_subprojects.js):

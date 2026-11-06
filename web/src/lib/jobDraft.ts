@@ -12,6 +12,8 @@ export interface JobDraft {
   status: JobStatus;
   client: string;
   venue: string;
+  // Spaces at the location; none = the whole location.
+  spaces: string[];
   // datetime-local strings in the browser's time zone
   prepAt: string;
   returnAt: string;
@@ -33,6 +35,7 @@ export function draftFromJob(job: JobInfo): JobDraft {
     status: job.status,
     client: job.client,
     venue: job.venue,
+    spaces: job.spaces ?? [],
     prepAt: toLocalInput(job.prepAt),
     returnAt: toLocalInput(job.returnAt),
     billingStart: toLocalInput(job.billingStart),
@@ -61,6 +64,7 @@ export function newJobDraft(): JobDraft {
     status: "" as JobStatus,
     client: "",
     venue: "",
+    spaces: [],
     prepAt: toLocalInput(prep.toISOString()),
     returnAt: toLocalInput(ret.toISOString()),
     billingStart: "",
