@@ -23,7 +23,6 @@ function setSetting(org, key, value) {
 // Settings > Pricing, not researched figures (GST at 15% is NZ law).
 const DEFAULTS = {
   printerHost: "",
-  businessName: "",
   businessShortName: "",
   defaultTemplateId: "",
   // Printed in the quote header.
@@ -77,6 +76,9 @@ function publicSettings(org) {
   for (const key of Object.keys(DEFAULTS)) {
     if (all[key] !== undefined) result[key] = all[key];
   }
+  // The business name is the organisation's own name (one name everywhere).
+  const record = $app.findRecordById("organisations", org);
+  result.businessName = record.getString("name");
   result.rentmanApiTokenSet = !!all.rentmanApiToken;
   // "Find photo" needs a vision model this server can reach (lib/photoSearch.js).
   result.photoSearch = !!$os.getenv("R2_OLLAMA_URL");

@@ -45,7 +45,13 @@ routerAdd(
         throw new BadRequestError(String(err.message || err));
       }
     }
+    const renaming = data.businessName !== undefined;
+    if (renaming && (typeof data.businessName !== "string" || !data.businessName.trim())) throw new BadRequestError("The business needs a name");
     for (const key of keys) setSetting(ctx.orgId, key, data[key].trim());
+    if (renaming) {
+      ctx.org.set("name", data.businessName.trim());
+      $app.save(ctx.org);
+    }
     return e.json(200, publicSettings(ctx.orgId));
   },
   $apis.requireAuth("users"),

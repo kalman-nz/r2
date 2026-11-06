@@ -7,6 +7,7 @@ import AddressInput from "./AddressInput";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
 import { useFeature } from "../lib/roles";
+import { useOrg } from "../lib/org";
 
 type BusinessKeys =
   | "businessName"
@@ -38,6 +39,7 @@ export default function GeneralSettings() {
   const [draft, setDraft] = useState<Pick<Settings, BusinessKeys> | null>(null);
   // Only what the organisation prints on: quotes need prices, packing lists projects.
   const feature = useFeature();
+  const { refresh: refreshOrg } = useOrg();
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function GeneralSettings() {
     setSaving(true);
     try {
       await api.updateSettings(draft);
-      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), refreshOrg()]);
       showToast("success", "Saved");
     } catch (err) {
       showToast("error", `Couldn't save: ${errorText(err)}`);
@@ -111,7 +113,7 @@ export default function GeneralSettings() {
           </Field>
         </div>
         <div className="pt-1 border-t border-gray-100">
-          <button onClick={save} disabled={saving} className="btn-primary py-2 w-fit mt-3">
+          <button onClick={save} disabled={saving || !draft.businessName.trim()} className="btn-primary py-2 w-fit mt-3">
             {saving ? "Saving…" : "Save"}
           </button>
         </div>

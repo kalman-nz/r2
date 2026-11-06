@@ -95,21 +95,8 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// Renaming the organisation (what people see in the organisation switcher).
-routerAdd(
-  "PATCH",
-  "/api/orgs/{id}",
-  (e) => {
-    const { requireMember } = require(`${__hooks}/lib/orgs.js`);
-    const ctx = requireMember(e, e.request.pathValue("id"), "settings.edit");
-    const name = String((e.requestInfo().body || {}).name || "").trim();
-    if (!name) throw new BadRequestError("The organisation needs a name");
-    ctx.org.set("name", name);
-    $app.save(ctx.org);
-    return e.json(200, { ok: true });
-  },
-  $apis.requireAuth("users"),
-);
+// The organisation is renamed from its business details: PUT
+// /api/app-settings with businessName (routes_app_settings.pb.js).
 
 // An organisation's features are the platform admin's to set (what it's
 // paying for): PATCH /api/admin/orgs/{id}/features in routes_admin.pb.js.

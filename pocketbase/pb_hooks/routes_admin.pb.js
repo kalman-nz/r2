@@ -49,7 +49,6 @@ routerAdd(
   (e) => {
     const { invite } = require(`${__hooks}/lib/members.js`);
     const { createDefaultRoles } = require(`${__hooks}/lib/permissions.js`);
-    const { setSetting } = require(`${__hooks}/lib/settings.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const body = e.requestInfo().body || {};
@@ -59,7 +58,6 @@ routerAdd(
     const org = new Record($app.findCollectionByNameOrId("organisations"), { name: name, suspended: false, features: features, createdBy: e.auth.id });
     $app.save(org);
     const roles = createDefaultRoles($app, org.id);
-    setSetting(org.id, "businessName", name);
     logEvent("", "org_created", whoName(e.auth), { org: org.id, name: name });
     let result = { invitation: null, emailed: false };
     if (String(body.adminEmail || "").trim()) result = invite($app, org, body.adminEmail, roles.Admin.id, e.auth, null);

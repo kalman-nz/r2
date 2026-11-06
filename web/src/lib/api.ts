@@ -1427,7 +1427,6 @@ export const api = {
     request<InviteResult>(`/api/orgs/${orgId}/invitations`, json("POST", { email, roleId })),
   revokeInvitation: (orgId: string, invitationId: string) =>
     request<{ ok: true }>(`/api/orgs/${orgId}/invitations/${invitationId}`, json("DELETE")),
-  renameOrg: (orgId: string, name: string) => request<{ ok: true }>(`/api/orgs/${orgId}`, json("PATCH", { name })),
 
   // Roles — see routes_roles.pb.js.
   permissions: () => request<PermissionCatalogue>("/api/permissions"),

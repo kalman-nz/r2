@@ -9,10 +9,9 @@ routerAdd("GET", "/api/setup", (e) => {
   return e.json(200, { needed: $app.countRecords("users") === 0 });
 });
 
-// body: { name, email, password, businessName? }
+// body: { name, email, password, businessName? } (the organisation's name)
 routerAdd("POST", "/api/setup", (e) => {
   const { validateNewAccount } = require(`${__hooks}/lib/users.js`);
-  const { setSetting } = require(`${__hooks}/lib/settings.js`);
   const { createDefaultRoles } = require(`${__hooks}/lib/permissions.js`);
   const { logEvent } = require(`${__hooks}/lib/log.js`);
   const body = e.requestInfo().body || {};
@@ -21,7 +20,6 @@ routerAdd("POST", "/api/setup", (e) => {
   // What it'll be used for (lib/features.js PRESETS): everything, to start with.
   const features = body.preset ? require(`${__hooks}/lib/features.js`).presetFeatures(String(body.preset)) : {};
 
-  let orgId = "";
   $app.runInTransaction((tx) => {
     if (tx.countRecords("users") > 0) throw new ForbiddenError("R2 is already set up — sign in instead");
     const user = new Record(tx.findCollectionByNameOrId("users"), {
@@ -40,9 +38,7 @@ routerAdd("POST", "/api/setup", (e) => {
     tx.save(org);
     const roles = createDefaultRoles(tx, org.id);
     tx.save(new Record(tx.findCollectionByNameOrId("memberships"), { org: org.id, user: user.id, role: roles.Admin.id }));
-    orgId = org.id;
   });
-  setSetting(orgId, "businessName", orgName);
   logEvent("", "setup", data.name, { email: data.email });
   return e.json(200, { ok: true });
 });

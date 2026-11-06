@@ -1,4 +1,3 @@
-import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Invitation, type Member } from "../lib/api";
 import { useOrg } from "../lib/org";
@@ -14,15 +13,13 @@ import { InvitationList, MemberList } from "./TeamLists";
 // and invitations. You can only hand out roles your own role covers. People join by signing up with the invited address and
 // accepting on their Organisations page.
 export default function MembersSettings() {
-  const { org, refresh } = useOrg();
+  const { org } = useOrg();
   const me = useAuthRecord();
   const { can, isAdmin } = useRole();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const orgId = org?.id ?? "";
-  const [name, setName] = useState(org?.name ?? "");
-  const [renaming, setRenaming] = useState(false);
 
   const { data: members = [], isLoading } = useQuery({ queryKey: ["members"], queryFn: () => api.listMembers(orgId), enabled: !!orgId });
   const { data: invitations = [] } = useQuery({ queryKey: ["invitations"], queryFn: () => api.listInvitations(orgId), enabled: !!orgId });
@@ -68,20 +65,6 @@ export default function MembersSettings() {
     }
   }
 
-  async function rename(e: FormEvent) {
-    e.preventDefault();
-    setRenaming(true);
-    try {
-      await api.renameOrg(orgId, name.trim());
-      await refresh();
-      showToast("success", "Renamed");
-    } catch (err) {
-      showToast("error", errorText(err));
-    } finally {
-      setRenaming(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <section className="card p-4 flex flex-col gap-3">
@@ -101,20 +84,6 @@ export default function MembersSettings() {
         <p className="text-gray-500 text-sm">Loading…</p>
       ) : (
         <MemberList members={members} grantable={grantable} editable={editable} selfId={me?.id} onRole={changeRole} onRemove={remove} />
-      )}
-
-      {can("settings.edit") && (
-        <form onSubmit={rename} className="card p-4 flex flex-col gap-1">
-          <label htmlFor="org-name" className="text-sm text-gray-500">
-            Organisation name
-          </label>
-          <div className="flex gap-2">
-            <input id="org-name" required value={name} onChange={(e) => setName(e.target.value)} className="input py-2 flex-1 min-w-0" />
-            <button type="submit" disabled={renaming || !name.trim() || name.trim() === org?.name} className="btn-secondary">
-              Rename
-            </button>
-          </div>
-        </form>
       )}
     </div>
   );
