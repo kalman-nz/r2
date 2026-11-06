@@ -1,9 +1,13 @@
 import { useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "./pocketbase";
-import type { CrewMember, CrewNeed, CrewPerson, CrewRole, Job, JobPeriod } from "./api";
+import type { CrewMember, CrewNeed, CrewPerson, CrewRole } from "./api";
 import { orgFilter, withOrg } from "./currentOrg";
-import { parseDate } from "./format";
+import { clashesFor, clashLabel, fitFor, levelOf, levelsOf, overlaps, skillName, skillNames } from "./crewLogic";
+import type { Booking } from "./crewLogic";
+
+export { clashesFor, clashLabel, fitFor, levelOf, levelsOf, overlaps, skillName, skillNames };
+export type { Booking };
 
 // Crew rostering (pb_migrations/0041_crew_rostering.js): the organisation's
 // crew roles, everyone who can be rostered, what each schedule item needs
@@ -47,10 +51,6 @@ export function useJobCrew(jobId: string) {
   });
 }
 
-// Someone's slot somewhere, with when and where, for spotting double
-// bookings.
-export type Booking = CrewMember & { expand?: { need?: CrewNeed & { expand?: { role?: CrewRole; period?: JobPeriod } }; job?: Job } };
-
 // Every slot filled between from and to (ISO), across all projects.
 export function useCrewBookings(from: string, to: string, enabled = true) {
   return useQuery({
@@ -62,24 +62,6 @@ export function useCrewBookings(from: string, to: string, enabled = true) {
       }),
     enabled: enabled && !!from && !!to,
   });
-}
-
-const ms = (value: string) => parseDate(value)?.getTime() ?? NaN;
-
-export function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  return ms(aStart) < ms(bEnd) && ms(bStart) < ms(aEnd);
-}
-
-// Where else someone is while a need's on: "#1042 Pack in" for each
-// overlapping slot that isn't this need.
-export function clashesFor(bookings: Booking[], personId: string, need: Pick<CrewNeed, "id" | "start" | "end">): Booking[] {
-  return bookings.filter((b) => b.person === personId && b.need !== need.id && b.expand?.need && overlaps(b.expand.need.start, b.expand.need.end, need.start, need.end));
-}
-
-export function clashLabel(b: Booking): string {
-  const job = b.expand?.job;
-  const what = b.expand?.need?.expand?.period?.name ?? b.expand?.need?.expand?.role?.name ?? "";
-  return [job ? `#${job.number} ${job.name}` : "another project", what].filter(Boolean).join(" · ");
 }
 
 // Adding people to slots (or the whole project) and taking them off.
@@ -97,38 +79,4 @@ export function useRosterActions() {
     },
     refresh,
   };
-}
-
-// Skill levels (migration 0051): a role's levels lowest first, someone's
-// level at a role, and how well someone fits a slot that asks for one.
-export function levelsOf(role?: CrewRole | null): string[] {
-  return Array.isArray(role?.levels) ? role.levels.filter((l): l is string => typeof l === "string" && l !== "") : [];
-}
-
-export function levelOf(person: CrewPerson, roleId: string): string {
-  const levels = person.skillLevels;
-  return levels && typeof levels === "object" && typeof levels[roleId] === "string" ? levels[roleId] : "";
-}
-
-// "Driver 4F" (or just "Driver").
-export function skillName(role: CrewRole, level: string): string {
-  return level ? `${role.name} ${level}` : role.name;
-}
-
-// Each of someone's skills, with their level, in the organisation's order.
-export function skillNames(person: CrewPerson, roleById: Map<string, CrewRole>): string[] {
-  return person.skills
-    .map((id) => roleById.get(id))
-    .filter((r): r is CrewRole => !!r)
-    .map((r) => skillName(r, levelOf(person, r.id)));
-}
-
-// How someone fits a slot: "fits" (the role, at the level or above), "below"
-// (the role, but a lower level or none set) or "no" (not the role).
-export function fitFor(person: CrewPerson, role: CrewRole | undefined, level: string): "fits" | "below" | "no" {
-  if (!role || !person.skills.includes(role.id)) return "no";
-  if (!level) return "fits";
-  const levels = levelsOf(role);
-  const theirs = levels.indexOf(levelOf(person, role.id));
-  return theirs !== -1 && theirs >= levels.indexOf(level) ? "fits" : "below";
 }
