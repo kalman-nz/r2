@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb } from "../lib/pocketbase";
@@ -50,7 +50,7 @@ export default function MaintenancePage() {
   const canRecord = can("units.flag");
   const canPlan = can("maintenance.plans");
 
-  // For the summary and tab counts: what needs attention.
+  // For the tab counts: what needs attention.
   const { data: counts } = useQuery({
     queryKey: ["maintenance-jobs", "counts", today()],
     queryFn: async () => {
@@ -76,39 +76,11 @@ export default function MaintenancePage() {
     return <p className="text-sm text-gray-500">Repairs and maintenance plans aren&apos;t part of your R2.</p>;
   }
 
-  // "2 overdue · 5 due this week · 3 out for repair", the first and last
-  // opening their tab.
-  const summary: ReactNode[] = [];
-  if (counts && maintenanceOn) {
-    summary.push(
-      counts.overdue > 0 ? (
-        <button key="overdue" onClick={() => openTab("due")} className="text-fault-ink font-medium hover:underline">
-          {counts.overdue} overdue
-        </button>
-      ) : (
-        <span key="overdue">Nothing overdue</span>
-      ),
-      <span key="week">{counts.week > 0 ? `${counts.week} due in the next 7 days` : "Nothing due this week"}</span>,
-    );
-  }
-  if (counts && repairsOn) {
-    summary.push(
-      <button key="repairs" onClick={() => openTab("repairs")} className="hover:underline">
-        {counts.repairs === 0 ? "Nothing out for repair" : `${counts.repairs} out for repair`}
-      </button>,
-    );
-  }
-
   return (
     <div className="w-full h-full flex flex-col gap-3 min-h-0">
       <div className="flex items-start justify-between gap-3 flex-wrap shrink-0">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Maintenance</h1>
-          <p className="text-xs text-gray-500">
-            {summary.length === 0
-              ? " "
-              : summary.flatMap((el, i) => (i === 0 ? [el] : [<span key={`dot${i}`} className="text-gray-300"> · </span>, el]))}
-          </p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {tab === "due" && canRecord && (
