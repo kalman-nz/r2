@@ -195,6 +195,12 @@ function validateNeed(app, record) {
     const filled = app.findRecordsByFilter("job_crew", "need = {:id}", "", 0, 0, { id: record.id }).length;
     if (filled > record.getInt("quantity")) throw new BadRequestError(filled + " people are on it already: take some off first");
   }
+  if (!record.isNew() && !needMatches(record.original(), record)) {
+    const matches = app
+      .findRecordsByFilter("crew_needs", "job = {:job}", "", 0, 0, { job: record.getString("job") })
+      .some((need) => need.id !== record.id && needMatches(need, record));
+    if (matches) throw new BadRequestError("That change would create a matching crew need; edit the existing need instead");
+  }
 }
 
 function needMatches(a, b) {

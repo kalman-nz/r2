@@ -4,7 +4,8 @@ const { syncNeedTimes, validateCrew, validateNeed } = require("../pb_hooks/lib/c
 
 global.BadRequestError = class BadRequestError extends Error {};
 
-function record(fields) {
+function record(fields, originalFields = fields) {
+  const original = { ...originalFields };
   return {
     id: fields.id || "",
     get: (key) => fields[key],
@@ -12,6 +13,7 @@ function record(fields) {
     getBool: (key) => fields[key] === true,
     getInt: (key) => fields[key] || 0,
     isNew: () => !fields.id,
+    original: () => ({ getString: (key) => original[key] || "" }),
     set: (key, value) => {
       fields[key] = value;
     },
@@ -39,10 +41,13 @@ function rosterFixture(existingCrew, quantity = 1) {
   return { app, records };
 }
 
-function needFixture(fields = {}) {
+function needFixture(fields = {}, otherNeeds = [], originalFields = fields, assignments = []) {
   const records = {
     jobs: { "job-1": record({ id: "job-1", org: "org-1" }) },
-    crew_roles: { "role-1": record({ id: "role-1", org: "org-1", name: "Audio operator", levels: '["Basic","Advanced"]' }) },
+    crew_roles: {
+      "role-1": record({ id: "role-1", org: "org-1", name: "Audio operator", levels: '["Basic","Advanced"]' }),
+      "role-2": record({ id: "role-2", org: "org-1", name: "Stage manager", levels: '["Basic","Advanced"]' }),
+    },
     job_periods: {
       "period-1": record({
         id: "period-1",
@@ -50,12 +55,20 @@ function needFixture(fields = {}) {
         start: "2026-11-07 08:00:00.000Z",
         end: "2026-11-07 10:00:00.000Z",
       }),
+      "period-2": record({
+        id: "period-2",
+        job: "job-1",
+        start: "2026-11-07 08:00:00.000Z",
+        end: "2026-11-07 10:00:00.000Z",
+      }),
       "period-other": record({ id: "period-other", job: "job-other" }),
     },
+    crew_needs: [...(originalFields.id ? [record(originalFields)] : []), ...otherNeeds],
+    job_crew: assignments,
   };
   const app = {
     findRecordById: (collection, id) => records[collection]?.[id] ?? null,
-    findRecordsByFilter: () => [],
+    findRecordsByFilter: (collection) => records[collection] || [],
   };
   const need = record({
     org: "org-1",
@@ -67,7 +80,7 @@ function needFixture(fields = {}) {
     start: "",
     end: "",
     ...fields,
-  });
+  }, originalFields);
   return { app, need, records };
 }
 
@@ -94,6 +107,153 @@ test("a crew need without custom times follows its schedule item", () => {
 
   assert.equal(need.getString("start"), records.job_periods["period-1"].getString("start"));
   assert.equal(need.getString("end"), records.job_periods["period-1"].getString("end"));
+});
+
+test("editing a crew need to match another need is rejected without changing its assignment", () => {
+  const original = {
+    id: "need-edit",
+    org: "org-1",
+    job: "job-1",
+    period: "period-1",
+    role: "role-1",
+    level: "Advanced",
+    quantity: 2,
+    customTimes: false,
+    start: "2026-11-07 08:00:00.000Z",
+    end: "2026-11-07 10:00:00.000Z",
+    notes: "Original",
+  };
+  const peer = record({
+    ...original,
+    id: "need-peer",
+    level: "Basic",
+    quantity: 1,
+  });
+  const assignment = record({ id: "crew-1", job: "job-1", need: "need-edit", person: "person-1" });
+  const { app, need, records } = needFixture({ ...original, level: "Basic" }, [peer], original, [assignment]);
+
+  assert.throws(() => validateNeed(app, need), /would create a matching crew need/);
+  assert.equal(records.crew_needs[0].getString("level"), "Advanced");
+  assert.equal(records.crew_needs[1].getString("level"), "Basic");
+  assert.equal(records.job_crew[0].getString("need"), "need-edit");
+});
+
+test("editing a crew need to equal another need's effective times is rejected", () => {
+  const original = {
+    id: "need-edit",
+    org: "org-1",
+    job: "job-1",
+    period: "period-1",
+    role: "role-1",
+    level: "Basic",
+    quantity: 2,
+    customTimes: true,
+    start: "2026-11-07 06:00:00.000Z",
+    end: "2026-11-07 07:00:00.000Z",
+    notes: "",
+  };
+  const peer = record({
+    ...original,
+    id: "need-peer",
+    customTimes: false,
+    start: "2026-11-07 08:00:00.000Z",
+    end: "2026-11-07 10:00:00.000Z",
+  });
+  const { app, need } = needFixture(
+    { ...original, start: "2026-11-07T08:00:00+00:00", end: "2026-11-07T10:00:00+00:00" },
+    [peer],
+    original,
+  );
+
+  assert.throws(() => validateNeed(app, need), /would create a matching crew need/);
+});
+
+test("editing a role or schedule item to match another need is rejected", () => {
+  const original = {
+    id: "need-edit",
+    org: "org-1",
+    job: "job-1",
+    period: "period-1",
+    role: "role-1",
+    level: "Basic",
+    quantity: 2,
+    customTimes: false,
+    start: "2026-11-07 08:00:00.000Z",
+    end: "2026-11-07 10:00:00.000Z",
+    notes: "",
+  };
+  const rolePeer = record({ ...original, id: "need-role-peer", role: "role-2" });
+  const { app: roleApp, need: roleEdit } = needFixture({ ...original, role: "role-2" }, [rolePeer], original);
+  assert.throws(() => validateNeed(roleApp, roleEdit), /would create a matching crew need/);
+
+  const periodPeer = record({ ...original, id: "need-period-peer", period: "period-2" });
+  const { app: periodApp, need: periodEdit } = needFixture({ ...original, period: "period-2" }, [periodPeer], original);
+  assert.throws(() => validateNeed(periodApp, periodEdit), /would create a matching crew need/);
+});
+
+test("an edit does not collide with the crew need being edited", () => {
+  const original = {
+    id: "need-edit",
+    org: "org-1",
+    job: "job-1",
+    period: "period-1",
+    role: "role-1",
+    level: "Basic",
+    quantity: 2,
+    customTimes: false,
+    start: "2026-11-07 08:00:00.000Z",
+    end: "2026-11-07 10:00:00.000Z",
+    notes: "Old note",
+  };
+  const { app, need } = needFixture({ ...original, quantity: 3, notes: "Updated note" }, [], original);
+
+  assert.doesNotThrow(() => validateNeed(app, need));
+  assert.equal(need.getInt("quantity"), 3);
+  assert.equal(need.getString("notes"), "Updated note");
+});
+
+test("ordinary edits and edits to unchanged historical duplicates remain valid", () => {
+  const original = {
+    id: "need-edit",
+    org: "org-1",
+    job: "job-1",
+    period: "period-1",
+    role: "role-1",
+    level: "Basic",
+    quantity: 2,
+    customTimes: false,
+    start: "2026-11-07 08:00:00.000Z",
+    end: "2026-11-07 10:00:00.000Z",
+    notes: "Old note",
+  };
+  const assignment = record({ id: "crew-1", job: "job-1", need: "need-edit", person: "person-1" });
+  const { app, need } = needFixture(
+    {
+      ...original,
+      quantity: 3,
+      customTimes: true,
+      start: "2026-11-07 07:00:00.000Z",
+      end: "2026-11-07 11:00:00.000Z",
+      notes: "Updated note",
+    },
+    [],
+    original,
+    [assignment],
+  );
+
+  validateNeed(app, need);
+
+  assert.equal(need.getInt("quantity"), 3);
+  assert.equal(need.getString("start"), "2026-11-07 07:00:00.000Z");
+  assert.equal(need.getString("notes"), "Updated note");
+  assert.equal(assignment.getString("need"), "need-edit");
+
+  const duplicate = record({ ...original, id: "need-duplicate" });
+  const legacy = needFixture({ ...original, quantity: 3, notes: "Historical note" }, [duplicate], original, [assignment]);
+  assert.doesNotThrow(() => validateNeed(legacy.app, legacy.need));
+  assert.equal(legacy.need.getString("notes"), "Historical note");
+  assert.equal(legacy.records.crew_needs[1].id, "need-duplicate");
+  assert.equal(legacy.records.crew_needs[1].getString("notes"), "Old note");
 });
 
 test("a crew need with custom times keeps its own schedule", () => {
