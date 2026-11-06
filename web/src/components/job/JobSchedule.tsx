@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { pb } from "../../lib/pocketbase";
-import type { CrewRole, JobPeriod, JobSummary, PeriodKind, Subproject } from "../../lib/api";
+import { api, type CrewRole, type JobPeriod, type JobSummary, type PeriodKind, type Subproject } from "../../lib/api";
 import { formatDateTime, formatDuration, formatPeriod, fromLocalInput, parseDate, toLocalInput } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { withOrg } from "../../lib/currentOrg";
@@ -19,6 +19,7 @@ import NumberInput from "../NumberInput";
 import { numberProblem } from "../../lib/numbers";
 import { useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
 import { useOrg } from "../../lib/org";
+import { createPeriodWithCrew } from "../../lib/scheduleCrew";
 
 const HOUR = 3600000;
 const VIEW_KEY = "schedule.view";
@@ -146,16 +147,19 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
     try {
       if (id) await pb.collection("job_periods").update(id, body);
       else {
-        const period = await pb.collection("job_periods").create<JobPeriod>(withOrg({ ...body, job: job.id, subproject: section }));
-        // The crew it needs, on its times (rostered on the Crew tab).
-        try {
-          for (const c of d.crew) {
-            await pb.collection("crew_needs").create(withOrg({ job: job.id, period: period.id, role: c.role, level: c.level, quantity: c.quantity, customTimes: false }));
-          }
-        } catch (err) {
-          showToast("error", `Added ${body.name}, but couldn't add all its crew: ${errorText(err)}`);
+        const crewResult = await createPeriodWithCrew({
+          jobId: job.id,
+          crew: d.crew,
+          createPeriod: () => pb.collection("job_periods").create<JobPeriod>(withOrg({ ...body, job: job.id, subproject: section })),
+          addCrewNeeds: api.addCrewNeeds,
+        });
+        if ("crewError" in crewResult) showToast("error", `Added ${body.name}, but couldn't add all its crew: ${errorText(crewResult.crewError)}`);
+        if (d.crew.length > 0) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["crew-needs"] }),
+            queryClient.invalidateQueries({ queryKey: ["job-crew"] }),
+          ]);
         }
-        if (d.crew.length > 0) await queryClient.invalidateQueries({ queryKey: ["crew-needs"] });
       }
       await refresh();
       return true;
