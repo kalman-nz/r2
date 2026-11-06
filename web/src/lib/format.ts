@@ -123,6 +123,13 @@ export function addressLines(address: string | null | undefined): string[] {
 }
 
 // On one line, for lists and headers: "12 Main Street, Mount Maunganui 3116".
+// "Baycourt Theatre › Addison Theatre, Terrace Room"; just the location
+// when the project has the whole place.
+export function placeName(venue: string | null | undefined, spaces: string[] = []): string {
+  if (!venue) return "";
+  return spaces.length > 0 ? `${venue} › ${spaces.join(", ")}` : venue;
+}
+
 export function oneLineAddress(address: string | null | undefined): string {
   return addressLines(address).join(", ");
 }

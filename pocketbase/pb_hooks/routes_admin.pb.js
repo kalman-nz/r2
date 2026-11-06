@@ -163,6 +163,7 @@ routerAdd(
         "memberships",
         "roles",
         "contacts",
+        "venue_spaces",
         "venues",
         "locations",
         "categories",

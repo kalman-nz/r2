@@ -73,14 +73,22 @@ function contactInfo(contact) {
   };
 }
 
-function venueInfo(venue) {
+// The project's location, with the spaces it uses there (none: the whole
+// location) and every space the location has, in order.
+function venueInfo(app, venue, used) {
   if (!venue) return null;
+  const all = app.findRecordsByFilter("venue_spaces", "venue = {:venue}", "sortOrder,name", 0, 0, { venue: venue.id }).map((s) => ({
+    id: s.id,
+    name: s.getString("name"),
+  }));
   return {
     id: venue.id,
     name: venue.getString("name"),
     address: venue.getString("address"),
     contactName: venue.getString("contactName"),
     phone: venue.getString("phone"),
+    spaces: all.filter((s) => used.indexOf(s.id) !== -1),
+    allSpaces: all,
   };
 }
 
@@ -100,6 +108,7 @@ function jobInfo(app, job) {
     jobStatus: job.getString("jobStatus"),
     client: job.getString("client"),
     venue: job.getString("venue"),
+    spaces: job.getStringSlice("spaces"),
     prepAt: job.getString("prepAt"),
     returnAt: job.getString("returnAt"),
     startAt: job.getString("startAt"),
@@ -117,7 +126,7 @@ function jobInfo(app, job) {
     created: job.getString("created"),
     updated: job.getString("updated"),
     clientInfo: contactInfo(findOrNull(app, "contacts", job.getString("client"))),
-    venueInfo: venueInfo(findOrNull(app, "venues", job.getString("venue"))),
+    venueInfo: venueInfo(app, findOrNull(app, "venues", job.getString("venue")), job.getStringSlice("spaces")),
   };
 }
 
@@ -364,6 +373,7 @@ function buildSummary(app, jobId, show) {
       start: p.getString("start"),
       end: p.getString("end"),
       notes: p.getString("notes"),
+      space: p.getString("space"),
     })),
     lines: lineViews,
     // In order. What each is charged is only there with prices.
@@ -776,6 +786,7 @@ function copyJob(jobId, body, who) {
       name: name,
       client: src.getString("client"),
       venue: src.getString("venue"),
+      spaces: src.getStringSlice("spaces"),
       discountPct: src.getFloat("discountPct"),
       chargeDays: src.getInt("chargeDays"),
       quoteNotes: src.getString("quoteNotes"),
@@ -822,6 +833,7 @@ function copyJob(jobId, body, who) {
         start: shift(p.getString("start")),
         end: shift(p.getString("end")),
         notes: p.getString("notes"),
+        space: p.getString("space"),
       }).id;
     }
 

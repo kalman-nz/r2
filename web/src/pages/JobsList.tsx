@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pb, useAuthRecord } from "../lib/pocketbase";
-import { api, type Contact, type CrewMember, type CrewPerson, type Job, type JobStatus, type Venue, type ViewConfig } from "../lib/api";
-import { formatDateTimeYear, MONTHS, num, parseDate, WEEKDAYS } from "../lib/format";
+import { api, type Contact, type CrewMember, type CrewPerson, type Job, type JobStatus, type Venue, type VenueSpace, type ViewConfig } from "../lib/api";
+import { formatDateTimeYear, MONTHS, num, parseDate, placeName, WEEKDAYS } from "../lib/format";
 import { useRole } from "../lib/roles";
 import { JobStatusBadge, OverdueBadge } from "../components/StatusBadge";
 import { overdueReason } from "../lib/overdue";
@@ -25,13 +25,15 @@ import SelectionBar from "../components/SelectionBar";
 import DateCell from "../components/DateCell";
 import { customKeysIn, customSortValue, customText, customValueOf, useCustomFields } from "../lib/customFields";
 
-type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue } };
+type JobWithExpand = Job & { expand?: { client?: Contact; venue?: Venue; spaces?: VenueSpace[] } };
 type CrewWithPerson = CrewMember & { expand?: { person?: CrewPerson } };
 
 // A project plus what the table shows that isn't on the record itself.
 interface Row extends JobWithExpand {
   clientName: string;
   venueName: string;
+  // The location with the spaces it uses there: "Baycourt Theatre › Terrace Room".
+  placeLabel: string;
   statusName: string;
   // Where its status sits in the organisation's list, for sorting.
   statusOrder: number;
@@ -89,9 +91,9 @@ const COLUMNS: Column[] = [
     shown: true,
     width: 170,
     minWidth: 80,
-    sortValue: (j) => j.venueName.toLowerCase() || "￿",
-    title: (j) => j.venueName,
-    render: (j) => text(j.venueName),
+    sortValue: (j) => j.placeLabel.toLowerCase() || "￿",
+    title: (j) => j.placeLabel,
+    render: (j) => text(j.placeLabel),
   },
   {
     key: "status",
@@ -334,7 +336,7 @@ export default function JobsList() {
     error,
   } = useQuery({
     queryKey: ["jobs", "list"],
-    queryFn: () => pb.collection("jobs").getFullList<JobWithExpand>({ sort: "startAt", expand: "client,venue", filter: orgFilter() }),
+    queryFn: () => pb.collection("jobs").getFullList<JobWithExpand>({ sort: "startAt", expand: "client,venue,spaces", filter: orgFilter() }),
   });
   const { data: crew = [] } = useQuery({
     queryKey: ["job-crew", "all"],
@@ -365,6 +367,7 @@ export default function JobsList() {
       ...j,
       clientName: j.expand?.client?.name ?? "",
       venueName: j.expand?.venue?.name ?? "",
+      placeLabel: placeName(j.expand?.venue?.name, (j.expand?.spaces ?? []).map((sp) => sp.name)),
       statusName: byId.get(j.jobStatus)?.name ?? JOB_STAGES.find((s) => s.value === j.status)?.label ?? j.status,
       statusOrder: order.get(j.jobStatus) ?? stageOrder(j.status),
       crewNames: crewOf.get(j.id) ?? [],
@@ -389,16 +392,25 @@ export default function JobsList() {
     return [...names].sort((a, b) => a[1].localeCompare(b[1]));
   }, [crew]);
 
-  // The clients and locations the projects have, for the filters.
+  // The clients and locations the projects have, for the filters, each
+  // location followed by the spaces projects use there ("space:<id>").
   const choices = useMemo(() => {
     const clients = new Map<string, string>();
     const venues = new Map<string, string>();
+    const spacesAt = new Map<string, Map<string, VenueSpace>>();
     for (const j of rows) {
       if (j.client) clients.set(j.client, j.clientName || "(deleted)");
       if (j.venue) venues.set(j.venue, j.venueName || "(deleted)");
+      for (const sp of j.expand?.spaces ?? []) spacesAt.set(sp.venue, (spacesAt.get(sp.venue) ?? new Map()).set(sp.id, sp));
     }
     const sorted = (m: Map<string, string>) => [...m].sort((a, b) => a[1].localeCompare(b[1]));
-    return { clients: sorted(clients), venues: sorted(venues) };
+    const places: { id: string; name: string; space: boolean }[] = [];
+    for (const [id, name] of sorted(venues)) {
+      places.push({ id, name, space: false });
+      const here = [...(spacesAt.get(id)?.values() ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
+      for (const sp of here) places.push({ id: `space:${sp.id}`, name: sp.name, space: true });
+    }
+    return { clients: sorted(clients), places };
   }, [rows]);
 
   const counts = useMemo(() => {
@@ -460,11 +472,11 @@ export default function JobsList() {
       if (statusId ? j.jobStatus !== statusId : !inView(j, view, mine)) return false;
       if (!happens(j, when, now)) return false;
       if (client && j.client !== client) return false;
-      if (venue && j.venue !== venue) return false;
+      if (venue && (venue.startsWith("space:") ? !(j.spaces ?? []).includes(venue.slice(6)) : j.venue !== venue)) return false;
       if (crewUser && !onCrew.get(crewUser)?.has(j.id)) return false;
       if (
         term &&
-        ![String(j.number), j.name, j.reference, j.clientName, j.venueName, j.statusName, ...j.crewNames, ...customFields.map((f) => customText(f, customValueOf(j, f)))].some(
+        ![String(j.number), j.name, j.reference, j.clientName, j.placeLabel, j.statusName, ...j.crewNames, ...customFields.map((f) => customText(f, customValueOf(j, f)))].some(
           (v) => v.toLowerCase().includes(term),
         )
       ) {
@@ -667,9 +679,9 @@ export default function JobsList() {
             <FilterField label="Location">
               <select value={venue} onChange={(e) => setVenue(e.target.value)} className="input">
                 <option value="">Any location</option>
-                {choices.venues.map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
+                {choices.places.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.space ? `\u00a0\u00a0\u00a0› ${p.name}` : p.name}
                   </option>
                 ))}
               </select>

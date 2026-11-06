@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pb } from "./pocketbase";
-import type { Category, Contact, CustomField, Item, Location, Serial, Venue } from "./api";
+import type { Category, Contact, CustomField, Item, Location, Serial, Venue, VenueSpace } from "./api";
 import { orgFilter } from "./currentOrg";
 
 // Shared react-query hooks for the small lists most pages need (dropdowns,
@@ -42,6 +42,14 @@ export function useVenues() {
   return useQuery({
     queryKey: ["venues"],
     queryFn: () => pb.collection("venues").getFullList<Venue>({ filter: orgFilter(), sort: "name" }),
+  });
+}
+
+// Every location's spaces, in each location's order.
+export function useVenueSpaces() {
+  return useQuery({
+    queryKey: ["venue_spaces"],
+    queryFn: () => pb.collection("venue_spaces").getFullList<VenueSpace>({ filter: orgFilter(), sort: "sortOrder,name" }),
   });
 }
 

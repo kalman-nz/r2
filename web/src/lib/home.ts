@@ -47,7 +47,7 @@ export function panelAllowed(panel: PanelInfo, can: (p: string) => boolean, feat
   return (!panel.permission || can(panel.permission)) && (!panel.feature || feature(panel.feature));
 }
 
-export type ProjectRow = Job & { expand?: { client?: Contact; venue?: Venue } };
+export type ProjectRow = Job & { expand?: { client?: Contact; venue?: Venue; spaces?: { name: string }[] } };
 
 // The local calendar day of a stored datetime ("2026-10-22"), "" if none.
 export function dayOf(value: string): string {

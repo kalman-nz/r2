@@ -27,6 +27,8 @@ import { readGroups, readSorts, readWidths, sortRows, sortSettings, type GroupOp
 import { asBool, asStrings } from "../lib/views";
 import Breadcrumbs from "../components/Breadcrumbs";
 import CustomFieldsCard from "../components/CustomFieldsCard";
+import SpacesCard from "../components/SpacesCard";
+import { useVenueSpaces } from "../lib/catalog";
 import { customKeysIn, customSortValue, customText, customValueOf, useCustomFields, type CustomTarget } from "../lib/customFields";
 
 // Contacts (clients) and locations (venues) are plain records with a list,
@@ -150,9 +152,10 @@ interface JobRef {
   jobStatus: string;
   client: string;
   venue: string;
+  spaces?: string[];
   startAt: string;
   endAt: string;
-  expand?: { client?: { name: string }; venue?: { name: string } };
+  expand?: { client?: { name: string }; venue?: { name: string }; spaces?: { name: string }[] };
 }
 
 const DONE: JobStatus[] = ["returned", "cancelled"];
@@ -170,6 +173,8 @@ function projectFacts(jobs: JobRef[], now: number) {
 }
 
 interface Row extends RecordModel {
+  // A location's spaces, in order.
+  spaceNames: string;
   projects: number;
   next?: JobRef;
   last?: JobRef;
@@ -240,6 +245,21 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
           render: (r: Row) => muted(text(r)),
         };
       }),
+      ...(config.collection === "venues"
+        ? [
+            {
+              key: "spaces",
+              label: "Spaces",
+              toggleable: true,
+              shown: true,
+              width: 220,
+              minWidth: 100,
+              sortValue: (r: Row) => r.spaceNames.toLowerCase() || "￿",
+              title: (r: Row) => r.spaceNames,
+              render: (r: Row) => muted(r.spaceNames),
+            },
+          ]
+        : []),
       {
         key: "projects",
         label: "Projects",
@@ -348,6 +368,7 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
     queryFn: () => pb.collection(config.collection).getFullList<RecordModel>({ filter: orgFilter(), sort: "name" }),
   });
   const { data: jobs = [] } = useJobRefs();
+  const { data: spaces = [] } = useVenueSpaces();
 
   const rows = useMemo<Row[]>(() => {
     const byRecord = new Map<string, JobRef[]>();
@@ -358,9 +379,10 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
     const now = Date.now();
     return records.map((r) => {
       const facts = projectFacts(byRecord.get(r.id) ?? [], now);
-      return { ...r, projects: facts.count, next: facts.next, last: facts.last };
+      const spaceNames = config.collection === "venues" ? spaces.filter((s) => s.venue === r.id).map((s) => s.name).join(", ") : "";
+      return { ...r, spaceNames, projects: facts.count, next: facts.next, last: facts.last };
     });
-  }, [records, jobs, config.jobField]);
+  }, [records, jobs, spaces, config.jobField, config.collection]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -369,6 +391,7 @@ function DirectoryList({ config }: { config: DirectoryConfig }) {
       return (
         !term ||
         config.searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(term)) ||
+        r.spaceNames.toLowerCase().includes(term) ||
         customFields.some((f) => customText(f, customValueOf(r, f)).toLowerCase().includes(term))
       );
     });
@@ -642,8 +665,8 @@ function ExistingRecord({ config, id }: { config: DirectoryConfig; id: string })
     queryFn: () =>
       pb.collection("jobs").getFullList<JobRef>({
         filter: pb.filter(`${config.jobField} = {:id}`, { id }),
-        expand: config.otherField,
-        fields: `id,number,name,status,jobStatus,client,venue,startAt,endAt,expand.${config.otherField}.name`,
+        expand: config.collection === "venues" ? `${config.otherField},spaces` : config.otherField,
+        fields: `id,number,name,status,jobStatus,client,venue,spaces,startAt,endAt,expand.${config.otherField}.name,expand.spaces.name`,
         sort: "-startAt",
       }),
   });
@@ -803,6 +826,7 @@ function ExistingRecord({ config, id }: { config: DirectoryConfig; id: string })
               />
             </div>
             <div className="flex flex-col gap-4 min-w-0">
+              {config.collection === "venues" && <SpacesCard venueId={id} canEdit={canEdit} />}
               {notes && card(notes)}
               <ProjectsCard title="Coming up" jobs={facts.coming.slice(0, 5)} config={config} empty="Nothing booked." more={facts.coming.length > 5 ? () => openTab("projects") : undefined} />
             </div>
@@ -856,13 +880,15 @@ function ProjectsCard({ title, jobs, config, empty, more }: { title: string; job
         <div className="flex flex-col divide-y divide-gray-100 -mx-4">
           {jobs.map((j) => {
             const other = j.expand?.[config.otherField]?.name ?? "";
+            // At a location: which of its spaces.
+            const spaces = config.collection === "venues" ? (j.expand?.spaces ?? []).map((sp) => sp.name).join(", ") : "";
             return (
               <Link key={j.id} to={`/projects/${j.id}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
                 <span className="flex flex-col min-w-0">
                   <span className="text-gray-900 truncate">
                     <span className="text-gray-400 tabular-nums">#{j.number}</span> {j.name}
                   </span>
-                  <span className="text-xs text-gray-500 truncate">{[formatRange(j.startAt, j.endAt), other].filter(Boolean).join(" · ")}</span>
+                  <span className="text-xs text-gray-500 truncate">{[formatRange(j.startAt, j.endAt), other, spaces].filter(Boolean).join(" · ")}</span>
                 </span>
                 <JobStatusBadge status={j.status} jobStatus={j.jobStatus} />
               </Link>

@@ -1,6 +1,6 @@
 import { DISCOUNT, type JobDraft } from "../../lib/jobDraft";
-import { oneLineAddress } from "../../lib/format";
-import { useContacts, useVenues } from "../../lib/catalog";
+import { useContacts, useVenues, useVenueSpaces } from "../../lib/catalog";
+import LocationPicker from "../LocationPicker";
 import Field from "../Field";
 import QuickCreateSelect from "../QuickCreateSelect";
 import { useJobStatuses } from "../../lib/workflow";
@@ -29,6 +29,7 @@ export default function JobFields({
   const statusId = draft.jobStatus || (draft.status ? (statuses.find((s) => s.stage === draft.status)?.id ?? "") : defaultId);
   const { data: contacts = [] } = useContacts();
   const { data: venues = [] } = useVenues();
+  const { data: allSpaces = [] } = useVenueSpaces();
   const set = <K extends keyof JobDraft>(key: K, value: JobDraft[K]) => onChange({ ...draft, [key]: value });
   // Out of edit mode the choices read as plain values, not disabled dropdowns.
   const plain = (value: string | undefined, empty: string) => (
@@ -62,16 +63,14 @@ export default function JobFields({
       </Field>
       <Field label="Location">
         {readOnly ? (
-          plain(venues.find((v) => v.id === draft.venue)?.name, "No location")
+          plain(
+            [venues.find((v) => v.id === draft.venue)?.name, allSpaces.filter((sp) => draft.spaces.includes(sp.id)).map((sp) => sp.name).join(", ")]
+              .filter(Boolean)
+              .join(" · "),
+            "No location",
+          )
         ) : (
-          <QuickCreateSelect
-            collection="venues"
-            value={draft.venue}
-            onChange={(id) => set("venue", id)}
-            options={venues.map((v) => ({ id: v.id, name: v.name, archived: v.archived, detail: oneLineAddress(v.address) }))}
-            canCreate={can("venues.create")}
-            placeholder="No location"
-          />
+          <LocationPicker value={{ venue: draft.venue, spaces: draft.spaces }} onChange={(p) => onChange({ ...draft, venue: p.venue, spaces: p.spaces })} />
         )}
       </Field>
       <Field label="Status">

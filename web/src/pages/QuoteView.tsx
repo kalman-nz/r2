@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type QuoteLine, type QuoteStatus } from "../lib/api";
-import { formatDate, formatRange, nzd, MODE_SUFFIX, oneLineAddress, stackedAddress } from "../lib/format";
+import { formatDate, formatRange, nzd, MODE_SUFFIX, oneLineAddress, placeName, stackedAddress } from "../lib/format";
 import { errorText } from "../lib/errors";
 import { saveFile } from "../lib/download";
 import { QuoteStatusBadge } from "../components/StatusBadge";
@@ -157,7 +157,7 @@ export default function QuoteView() {
             {s.job.reference && <p>Your ref: {s.job.reference}</p>}
             {s.venue && (
               <>
-                <p>{s.venue.name}</p>
+                <p>{placeName(s.venue.name, (s.venue.spaces ?? []).map((sp) => sp.name))}</p>
                 {oneLineAddress(s.venue.address) && <p className="text-gray-600">{oneLineAddress(s.venue.address)}</p>}
               </>
             )}

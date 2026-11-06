@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { TrackingStage } from "../../lib/api";
 import type { ProjectRow } from "../../lib/home";
+import { placeName } from "../../lib/format";
 
 // The pieces dashboards are drawn with (pages/Dashboard.tsx).
 
@@ -103,7 +104,7 @@ export function ProjectLine({
   extra?: ReactNode;
   onOpen: () => void;
 }) {
-  const where = [job.expand?.client?.name, job.expand?.venue?.name].filter(Boolean).join(" · ");
+  const where = [job.expand?.client?.name, placeName(job.expand?.venue?.name, (job.expand?.spaces ?? []).map((sp) => sp.name))].filter(Boolean).join(" · ");
   return (
     <Row onOpen={onOpen}>
       <span className={`w-24 shrink-0 text-xs tabular-nums ${late ? "text-fault-ink font-medium" : "text-gray-600"}`}>{when}</span>
