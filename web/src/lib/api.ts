@@ -1052,6 +1052,9 @@ export interface CrewNeed extends RecordModel {
   sortOrder: number;
 }
 
+export type CrewNeedDraft = Pick<CrewNeed, "period" | "role" | "quantity" | "level" | "customTimes" | "notes"> &
+  Partial<Pick<CrewNeed, "start" | "end">>;
+
 export interface ImportRun extends RecordModel {
   source: "rentman" | "csv";
   status: "running" | "ok" | "failed";
@@ -1219,6 +1222,7 @@ export const api = {
 
   // Jobs
   getJobSummary: (id: string) => request<JobSummary>(`/api/jobs/${id}/summary`),
+  addCrewNeeds: (jobId: string, needs: CrewNeedDraft[]) => request<CrewNeed[]>(`/api/jobs/${jobId}/crew-needs`, json("POST", { needs })),
   addLine: (jobId: string, line: NewLine) => request<JobSummary>(`/api/jobs/${jobId}/lines`, json("POST", line)),
   updateLine: (lineId: string, patch: LinePatch) => request<JobSummary>(`/api/job-lines/${lineId}`, json("PATCH", patch)),
   deleteLine: (lineId: string) => request<JobSummary>(`/api/job-lines/${lineId}`, json("DELETE")),

@@ -52,6 +52,23 @@ onRecordAfterUpdateSuccess((e) => {
   e.next();
 }, "users");
 
+routerAdd(
+  "POST",
+  "/api/jobs/{id}/crew-needs",
+  (e) => {
+    const { requireJob } = require(`${__hooks}/lib/jobs.js`);
+    const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
+    const { requireFeature } = require(`${__hooks}/lib/features.js`);
+    const { addCrewNeeds } = require(`${__hooks}/lib/crew.js`);
+    const job = requireJob($app, e.request.pathValue("id"));
+    const ctx = requireRecordOrg(e, job, "jobs.edit");
+    requireFeature(ctx.org, "crew");
+    const body = e.requestInfo().body || {};
+    return e.json(200, addCrewNeeds($app, ctx.orgId, job.id, body.needs));
+  },
+  $apis.requireAuth("users"),
+);
+
 // Settings → Crew roles.
 routerAdd(
   "PUT",

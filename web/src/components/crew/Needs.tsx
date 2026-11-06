@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { api } from "../../lib/api";
 import { pb } from "../../lib/pocketbase";
 import type { CrewMember, CrewNeed, CrewPerson, CrewRole, JobPeriod } from "../../lib/api";
 import { withOrg } from "../../lib/currentOrg";
@@ -140,12 +141,14 @@ export function NeedForm({
   period,
   need,
   roles,
+  addViaCrewOperation = false,
   onDone,
 }: {
   jobId: string;
   period: JobPeriod;
   need?: CrewNeed;
   roles: CrewRole[];
+  addViaCrewOperation?: boolean;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -162,7 +165,11 @@ export function NeedForm({
     notes: need?.notes ?? "",
   }));
   const set = <K extends keyof NeedDraft>(key: K, value: NeedDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["crew-needs"] });
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["crew-needs"] }),
+      ...(addViaCrewOperation ? [queryClient.invalidateQueries({ queryKey: ["job-crew"] })] : []),
+    ]);
 
   async function save() {
     setSaving(true);
@@ -177,6 +184,7 @@ export function NeedForm({
     };
     try {
       if (need) await pb.collection("crew_needs").update(need.id, body);
+      else if (addViaCrewOperation) await api.addCrewNeeds(jobId, [{ ...body, period: period.id }]);
       else await pb.collection("crew_needs").create(withOrg({ ...body, job: jobId, period: period.id }));
       await refresh();
       onDone();
