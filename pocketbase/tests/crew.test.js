@@ -310,7 +310,7 @@ test("moving a schedule item updates its linked crew needs but not custom times"
   const saved = [];
   const app = {
     findRecordsByFilter: () => needs.filter((need) => !need.getBool("customTimes")),
-    save: (need) => saved.push(need.id),
+    saveNoValidate: (need) => saved.push(need.id),
   };
   const period = record({ id: "period-1", start, end });
 
@@ -321,4 +321,48 @@ test("moving a schedule item updates its linked crew needs but not custom times"
   assert.equal(needs[1].getString("start"), "2026-11-07 07:00:00.000Z");
   assert.equal(needs[1].getString("end"), "2026-11-07 11:00:00.000Z");
   assert.deepEqual(saved, ["need-linked"]);
+});
+
+test("moving a schedule item syncs duplicate linked needs even when a custom need now matches", () => {
+  const original = {
+    id: "need-linked",
+    org: "org-1",
+    job: "job-1",
+    period: "period-1",
+    role: "role-1",
+    level: "Basic",
+    quantity: 2,
+    customTimes: false,
+    start: "2026-11-07 08:00:00.000Z",
+    end: "2026-11-07 10:00:00.000Z",
+    notes: "",
+  };
+  const second = record({ ...original, id: "need-linked-2" });
+  const custom = record({
+    ...original,
+    id: "need-custom",
+    customTimes: true,
+    start: "2026-11-07 12:00:00.000Z",
+    end: "2026-11-07 14:00:00.000Z",
+  });
+  const { app, records } = needFixture(original, [second, custom], original);
+  const findRecordsByFilter = app.findRecordsByFilter;
+  app.findRecordsByFilter = (collection, filter, ...args) => {
+    const matches = findRecordsByFilter(collection, filter, ...args);
+    return filter === "period = {:id} && customTimes = false"
+      ? matches.filter((candidate) => !candidate.getBool("customTimes"))
+      : matches;
+  };
+  app.save = (candidate) => validateNeed(app, candidate);
+  const saved = [];
+  app.saveNoValidate = (candidate) => saved.push(candidate.id);
+  const period = records.job_periods["period-1"];
+  period.set("start", "2026-11-07 12:00:00.000Z");
+  period.set("end", "2026-11-07 14:00:00.000Z");
+
+  assert.doesNotThrow(() => syncNeedTimes(app, period));
+  assert.deepEqual(saved, ["need-linked", "need-linked-2"]);
+  assert.equal(records.crew_needs[0].getString("start"), period.getString("start"));
+  assert.equal(second.getString("end"), period.getString("end"));
+  assert.equal(custom.getString("start"), "2026-11-07 12:00:00.000Z");
 });

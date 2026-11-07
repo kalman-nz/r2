@@ -316,7 +316,7 @@ function syncNeedTimes(app, period) {
     if (n.getString("start") === period.getString("start") && n.getString("end") === period.getString("end")) continue;
     n.set("start", period.getString("start"));
     n.set("end", period.getString("end"));
-    app.save(n);
+    app.saveNoValidate(n);
   }
 }
 
