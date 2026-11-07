@@ -966,8 +966,8 @@ const crewPeople = (await planner.ok("GET", `/api/collections/crew_people/record
 const techPerson = crewPeople.find((p) => p.user === techUser.id);
 assert.ok(techPerson && techPerson.name, "members are on the crew list");
 const bossPersonB = (await bossB.ok("GET", `/api/collections/crew_people/records?filter=${encodeURIComponent(`user = "${bossUser.id}"`)}`)).items[0];
-await planner.create("job_crew", { job: jobA.id, person: techPerson.id, function: "Sound op" });
-await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, person: techPerson.id }, 400, /already on the project/);
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, person: techPerson.id }, 400, /crew need/);
+await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobA.id, person: techPerson.id, need: "" }, 400, /crew need/);
 await planner.fails("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, person: bossPersonB.id }, 400, /another organisation/);
 assert.ok((await tech.call("POST", "/api/collections/job_crew/records", { org: orgA, job: jobB.id, person: techPerson.id })).status >= 400, "techs don't plan crew");
 assert.ok((await tech.call("POST", "/api/collections/crew_people/records", { org: orgA, name: "Nope" })).status >= 400, "techs don't add freelancers");
@@ -977,6 +977,10 @@ await planner.fails("POST", "/api/collections/crew_people/records", { org: orgA,
 const crewRoles = await admin.ok("PUT", "/api/crew-roles", { roles: [{ name: "Audio operator" }, { name: "Technical labour" }] });
 assert.deepEqual(crewRoles.map((r) => r.name), ["Audio operator", "Technical labour"]);
 const [audioRole, labourRole] = crewRoles;
+const earlierWork = await planner.create("job_periods", { job: jobA.id, kind: "other", name: "Pre-production", start: "2029-03-01 08:00:00Z", end: "2029-03-01 12:00:00Z" });
+const earlierNeed = await planner.create("crew_needs", { job: jobA.id, period: earlierWork.id, role: audioRole.id, quantity: 1 });
+const earlierAssignment = await planner.create("job_crew", { job: jobA.id, person: techPerson.id, need: earlierNeed.id });
+await planner.fails("PATCH", `/api/collections/job_crew/records/${earlierAssignment.id}`, { need: "" }, 400, /crew need/);
 await planner.fails("PUT", "/api/crew-roles", { roles: [] }, 403);
 const freelancer = await planner.create("crew_people", { name: "  Fran Freelance ", phone: "021 555 0101", skills: [labourRole.id] });
 assert.equal(freelancer.name, "Fran Freelance");
