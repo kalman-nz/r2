@@ -1,8 +1,9 @@
-import { useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine, type PriceMode, type TrackingStep } from "../../lib/api";
 import { formatPeriod, nzd, MODE_SUFFIX } from "../../lib/format";
 import { errorText } from "../../lib/errors";
+import { useDropdown } from "../../lib/dropdown";
 import { InlineNumber, InlineText } from "../InlineInput";
 import ItemPicker from "../ItemPicker";
 import Modal from "../Modal";
@@ -15,14 +16,14 @@ import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import NewSubprojectModal from "./NewSubprojectModal";
 import { DragHandle } from "../DragReorder";
-import SelectionBar from "../SelectionBar";
 
 // Done jobs don't hold stock, so availability isn't worked out for them.
 function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boolean }) {
   if (line.lineType === "custom" || jobDone) return <span className="text-gray-300">—</span>;
   if (line.item?.kind === "kit") {
     return line.componentsShort ? (
-      <span className="text-fault-ink font-medium" title="One or more of this kit's contents is short — see the lines below">
+      <span className="inline-flex items-center gap-1.5 text-fault-ink font-medium" title="One or more of this kit's contents is short">
+        <span className="status-dot bg-fault" />
         Contents short
       </span>
     ) : (
@@ -150,13 +151,40 @@ interface Section {
   subtotal?: number;
 }
 
+// What's drawn, worked out once per render: each part, its headings, and
+// the rows showing under each (after search and folding).
+interface GroupModel {
+  name: string;
+  key: string;
+  // Lines under this heading, a kit's contents included, in order.
+  lines: JobLineView[];
+  top: JobLineView[];
+  // Rows drawn, in order: top-level lines and any open kits' contents.
+  rows: JobLineView[];
+  // Has its own heading row ("" only does when the part has named ones).
+  header: boolean;
+  collapsed: boolean;
+  short: number;
+  subtotal: number;
+}
+interface SectionModel {
+  section: Section;
+  key: string;
+  collapsed: boolean;
+  groups: GroupModel[];
+  count: number;
+  short: number;
+  empty: boolean;
+}
 
 // Dragging lines and headings into order. Each row says what it is, so
 // hovering it works out where the dragged thing would land: a line before
 // another line (in any heading or part of the project), or a heading before
 // another heading in its part. An orange line shows where, as in
-// components/DragReorder.tsx; nothing moves until it's dropped.
+// components/DragReorder.tsx; a folded heading lights up instead. Nothing
+// moves until it's dropped. Headings in the outline take lines too.
 type RowDesc =
+  | { type: "section"; section: string }
   | { type: "heading"; section: string; group: string }
   | { type: "line"; section: string; group: string; line: JobLineView }
   | { type: "child"; section: string; group: string; parent: string }
@@ -165,12 +193,19 @@ type RowDesc =
 type Dragging = { kind: "line"; line: JobLineView } | { kind: "heading"; section: string; name: string };
 type Drop = { kind: "line"; section: string; group: string; before: string | null } | { kind: "heading"; section: string; before: string | null };
 
+const sectionKey = (section: string) => `s:${section}`;
 const headingKey = (section: string, group: string) => `h:${section}:${group}`;
 const emptyKey = (section: string, group: string) => `e:${section}:${group}`;
 const LINE_ABOVE = "[&>td]:shadow-[inset_0_2px_0_var(--color-signal)]";
 const LINE_BELOW = "[&>td]:shadow-[inset_0_-2px_0_var(--color-signal)]";
+const INTO = "[&>td]:bg-signal-soft!";
+// Hidden until the row's hovered, where there's a mouse.
+// Edit-in-place boxes that only look like boxes when pointed at, so the
+// list reads as a list.
+const QUIET = "py-0! border-transparent bg-transparent hover:border-gray-300 hover:bg-white focus:bg-white text-[13px]";
+const ON_HOVER = "opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100";
 
-export interface Dnd {
+interface Dnd {
   row: (desc: RowDesc) => {
     draggable: boolean;
     onDragStart: (e: DragEvent) => void;
@@ -178,8 +213,40 @@ export interface Dnd {
     onDrop: (e: DragEvent) => void;
     onDragEnd: () => void;
   };
+  // Lines dropped onto a heading in the outline go to its end.
+  target: (section: string, group: string) => {
+    onDragOver: (e: DragEvent) => void;
+    onDragLeave: () => void;
+    onDrop: (e: DragEvent) => void;
+  };
+  over: string | null;
   cls: (key: string, parent?: string) => string;
   handle: (key: string) => { onMouseDown: () => void; onMouseUp: () => void };
+}
+
+// Which headings and parts are folded, kept per project in this browser.
+function useFolded(jobId: string) {
+  const storeKey = `r2.equipment.folded.${jobId}`;
+  const load = () => {
+    try {
+      return new Set<string>(JSON.parse(localStorage.getItem(storeKey) ?? "[]"));
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const [state, setState] = useState(() => ({ key: storeKey, set: load() }));
+  if (state.key !== storeKey) setState({ key: storeKey, set: load() });
+  const update = (fn: (prev: Set<string>) => Set<string>) =>
+    setState((s) => {
+      const set = fn(s.set);
+      try {
+        localStorage.setItem(storeKey, JSON.stringify([...set]));
+      } catch {
+        // Folding still works for this visit.
+      }
+      return { key: s.key, set };
+    });
+  return [state.set, update] as const;
 }
 
 export default function JobLines({
@@ -199,6 +266,9 @@ export default function JobLines({
   const [addingHeading, setAddingHeading] = useState<string | null>(null);
   const [headingName, setHeadingName] = useState("");
   const [addingSubproject, setAddingSubproject] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
   const confirm = useConfirm();
   const { job, lines, subprojects = [] } = summary;
@@ -209,6 +279,9 @@ export default function JobLines({
   const { feature } = useOrg();
   const { steps: trackingSteps } = useTrackingSteps();
   const steps = feature("scanning") && trackingSteps.length > 0 && summary.packing.scanCount > 0 ? trackingSteps : null;
+  const [folded, setFolded] = useFolded(job.id);
+  // Kits whose contents show the other way to usual (shut, or open when short).
+  const [kitFlipped, setKitFlipped] = useState<Set<string>>(new Set());
 
   const sections: Section[] = [
     {
@@ -221,6 +294,7 @@ export default function JobLines({
     },
     ...subprojects,
   ];
+  const split = subprojects.length > 0;
   const sectionById = (id: string) => sections.find((s) => s.id === id) ?? sections[0];
 
   async function run(action: () => Promise<JobSummary>, failure: string) {
@@ -285,6 +359,11 @@ export default function JobLines({
     setHeadingName("");
     setAddingHeading(null);
   }
+  const startHeading = (section: string) => {
+    setHeadingName("");
+    setAddingHeading(section);
+    unfold(sectionKey(section));
+  };
 
   // A section's headings in order: lines with no heading, then the listed
   // headings (even empty ones), then any others its lines use.
@@ -298,18 +377,116 @@ export default function JobLines({
     return [...new Set(names)].map((name) => ({ name, lines: byName.get(name) ?? [] }));
   }
 
-  // ---- Ticked lines (top-level only; a kit's contents go with it), in order.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const picked = lines.filter((l) => !l.parentLine && selected.has(l.id));
-  const toggle = (id: string) =>
-    setSelected((prev) => {
+  // ---- Folding
+  function unfold(...keys: string[]) {
+    setFolded((prev) => {
+      if (!keys.some((k) => prev.has(k))) return prev;
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      for (const k of keys) next.delete(k);
       return next;
     });
-  const topLines = lines.filter((l) => !l.parentLine);
-  const allPicked = topLines.length > 0 && picked.length === topLines.length;
+  }
+  const toggleFold = (key: string) =>
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  // ---- What's drawn
+  const q = query.trim().toLowerCase();
+  const searching = q !== "";
+  const matches = (l: JobLineView) => [l.name, l.description, l.item?.code ?? ""].some((s) => s.toLowerCase().includes(q));
+  const isShort = (l: JobLineView) => l.componentsShort || (l.availability?.short ?? 0) > 0;
+  const shortInside = new Set(lines.filter((l) => l.parentLine && (l.availability?.short ?? 0) > 0).map((l) => l.parentLine));
+  const kitOpen = (l: JobLineView) => (l.componentsShort || shortInside.has(l.id)) !== kitFlipped.has(l.id);
+
+  const model: SectionModel[] = (split ? sections : sections.slice(0, 1)).map((section) => {
+    const own = lines.filter((l) => (l.subproject || "") === section.id);
+    const raw = sectionGroups(section.id, own);
+    const named = raw.some((g) => g.name !== "");
+    const sKey = sectionKey(section.id);
+    const sCollapsed = split && !searching && folded.has(sKey);
+    const groups = raw.map((g): GroupModel => {
+      const key = headingKey(section.id, g.name);
+      const header = g.name !== "" || named;
+      const collapsed = header && !searching && folded.has(key);
+      const top = g.lines.filter((l) => !l.parentLine);
+      const rows: JobLineView[] = [];
+      if (!collapsed && !sCollapsed) {
+        for (const t of top) {
+          const kids = g.lines.filter((l) => l.parentLine === t.id);
+          const kidHits = searching && kids.some(matches);
+          if (searching && !matches(t) && !kidHits) continue;
+          rows.push(t);
+          // What came with it (kit contents, accessories) folds away.
+          if (kitOpen(t) || kidHits) rows.push(...kids);
+        }
+      }
+      return {
+        name: g.name,
+        key,
+        lines: g.lines,
+        top,
+        rows,
+        header,
+        collapsed,
+        short: top.filter(isShort).length,
+        subtotal: g.lines.reduce((sum, l) => sum + (l.amount?.net ?? 0), 0),
+      };
+    });
+    const shownGroups = searching ? groups.filter((g) => g.rows.length > 0) : groups;
+    return {
+      section,
+      key: sKey,
+      collapsed: sCollapsed,
+      groups: shownGroups,
+      count: own.filter((l) => !l.parentLine).length,
+      short: own.filter((l) => !l.parentLine && isShort(l)).length,
+      empty: own.length === 0,
+    };
+  });
+  const shownModel = searching ? model.filter((s) => s.groups.length > 0) : model;
+  const visibleTop = shownModel.flatMap((s) => s.groups.flatMap((g) => g.rows.filter((l) => !l.parentLine)));
+  const foldable = model.flatMap((s) => [...(split ? [s.key] : []), ...s.groups.filter((g) => g.header).map((g) => g.key)]);
+  const allFolded = foldable.length > 0 && foldable.every((k) => folded.has(k));
+  const hasOutline = split || model.some((s) => s.groups.some((g) => g.name !== ""));
+
+  // ---- Ticked lines (top-level only; a kit's contents go with it), in order.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const picked = lines.filter((l) => !l.parentLine && selected.has(l.id));
+  // Shift-click ticks everything between it and the last one ticked.
+  function tick(id: string, e: MouseEvent) {
+    const at = visibleTop.findIndex((l) => l.id === id);
+    const from = anchor ? visibleTop.findIndex((l) => l.id === anchor) : -1;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const on = !prev.has(id);
+      if (e.shiftKey && from >= 0 && at >= 0) {
+        for (const l of visibleTop.slice(Math.min(from, at), Math.max(from, at) + 1)) {
+          if (on) next.add(l.id);
+          else next.delete(l.id);
+        }
+      } else if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    setAnchor(id);
+  }
+  function tickAll(ids: string[]) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const all = ids.every((id) => prev.has(id));
+      for (const id of ids) {
+        if (all) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+  const allPicked = visibleTop.length > 0 && visibleTop.every((l) => selected.has(l.id));
   const [discount, setDiscount] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -317,6 +494,7 @@ export default function JobLines({
   const [grabbed, setGrabbed] = useState<string | null>(null);
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [drop, setDrop] = useState<Drop | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const sectionOf = (l: JobLineView) => l.subproject || "";
   // Top-level lines of a heading, in order, leaving out the one being dragged.
   const siblingsOf = (section: string, group: string, except?: string) =>
@@ -335,8 +513,18 @@ export default function JobLines({
   const movingIds = new Set(moving.map((l) => l.id));
 
   // Where the dragged thing would land if dropped on this row, or null.
-  function dropFor(desc: RowDesc, upper: boolean): Drop | null {
+  function dropFor(row: RowDesc, upper: boolean): Drop | null {
     if (!dragging) return null;
+    // A part's own band: the top of its first heading (lines), or before
+    // its first heading (headings).
+    const desc: Exclude<RowDesc, { type: "section" }> =
+      row.type === "section"
+        ? {
+            type: "heading",
+            section: row.section,
+            group: dragging.kind === "line" ? (sectionGroups(row.section, lines.filter((l) => sectionOf(l) === row.section))[0]?.name ?? "") : "",
+          }
+        : row;
     if (dragging.kind === "line") {
       const self = dragging.line.id;
       const after = (id: string) => {
@@ -440,10 +628,9 @@ export default function JobLines({
     setDiscount("");
     setBusy(false);
   }
-  async function movePicked(target: string) {
-    const [section, group] = target.split("\u0000");
+  async function moveTo(move: JobLineView[], section: string, group: string) {
     setBusy(true);
-    await dropLines(picked, section, group, null);
+    await dropLines(move, section, group, null);
     setBusy(false);
   }
 
@@ -465,31 +652,49 @@ export default function JobLines({
     setDragging(null);
     setDrop(null);
     setGrabbed(null);
+    setOver(null);
   };
 
-  // The row that shows the orange line: above the line or heading it goes
-  // before, or below the last row of where it goes at the end.
-  const lastRowOf = (section: string, group: string) => {
-    const own = lines.filter((l) => sectionOf(l) === section && (l.parentLine ? lines.find((p) => p.id === l.parentLine)?.group : l.group) === group);
-    return own.length > 0 ? own[own.length - 1].id : emptyKey(section, group);
-  };
+  // Which row shows where it'll land: an orange line above the line or
+  // heading it goes before, or below the last row showing where it goes at
+  // the end; a folded heading or part lights up instead.
   let above: string | null = null;
   let below: string | null = null;
-  if (drop?.kind === "line") {
-    if (drop.before) above = drop.before;
-    else below = lastRowOf(drop.section, drop.group);
+  let into: string | null = null;
+  const groupModel = (section: string, group: string) => model.find((s) => s.section.id === section)?.groups.find((g) => g.name === group);
+  const sectionModel = (section: string) => model.find((s) => s.section.id === section);
+  function endOf(section: string, group: string, asLine: boolean) {
+    const s = sectionModel(section);
+    const g = groupModel(section, group);
+    if (s?.collapsed) into = s.key;
+    else if (!g) below = emptyKey(section, group);
+    else if (g.collapsed) {
+      if (asLine) into = g.key;
+      else below = g.key;
+    } else if (g.rows.length > 0) below = g.rows[g.rows.length - 1].id;
+    else if (g.lines.length === 0) below = emptyKey(section, group);
+    else below = g.key;
+  }
+  if (drop?.kind === "line" && !over) {
+    const s = sectionModel(drop.section);
+    const g = groupModel(drop.section, drop.group);
+    if (!drop.before) endOf(drop.section, drop.group, true);
+    else if (s?.collapsed) into = s.key;
+    else if (g && g.rows.some((l) => l.id === drop.before)) above = drop.before;
+    else if (g) into = g.key;
   } else if (drop?.kind === "heading") {
-    if (drop.before) above = headingKey(drop.section, drop.before);
+    const s = sectionModel(drop.section);
+    if (s?.collapsed) into = s.key;
+    else if (drop.before) above = headingKey(drop.section, drop.before);
     else {
       const names = namedHeadings(drop.section);
-      below = lastRowOf(drop.section, names[names.length - 1] ?? "");
+      endOf(drop.section, names[names.length - 1] ?? "", false);
     }
   }
 
   const dnd: Dnd = {
     row: (desc) => {
-      const key =
-        desc.type === "line" ? desc.line.id : desc.type === "heading" ? headingKey(desc.section, desc.group) : "";
+      const key = desc.type === "line" ? desc.line.id : desc.type === "heading" ? headingKey(desc.section, desc.group) : "";
       return {
         draggable: !!key && grabbed === key,
         onDragStart: (e) => {
@@ -506,6 +711,7 @@ export default function JobLines({
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
           }
+          if (over) setOver(null);
           if (JSON.stringify(next) !== JSON.stringify(drop)) setDrop(next);
         },
         onDrop: (e) => {
@@ -520,237 +726,364 @@ export default function JobLines({
         onDragEnd: endDrag,
       };
     },
+    target: (section, group) => ({
+      onDragOver: (e) => {
+        if (dragging?.kind !== "line") return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const key = headingKey(section, group);
+        if (over !== key) {
+          setOver(key);
+          setDrop({ kind: "line", section, group, before: null });
+        }
+      },
+      onDragLeave: () => setOver(null),
+      onDrop: (e) => {
+        e.preventDefault();
+        const move = moving;
+        endDrag();
+        if (move.length > 0) dropLines(move, section, group, null);
+      },
+    }),
+    over,
     cls: (key, parent) => {
       const faded =
         (dragging?.kind === "line" && (movingIds.has(key) || (!!parent && movingIds.has(parent)))) ||
         (dragging?.kind === "heading" && headingKey(dragging.section, dragging.name) === key);
-      return `${faded ? "opacity-40" : ""} ${above === key ? LINE_ABOVE : ""} ${below === key ? LINE_BELOW : ""}`;
+      return `${faded ? "opacity-40" : ""} ${above === key ? LINE_ABOVE : ""} ${below === key ? LINE_BELOW : ""} ${into === key ? INTO : ""}`;
     },
     handle: (key) => ({ onMouseDown: () => setGrabbed(key), onMouseUp: () => setGrabbed(null) }),
   };
 
-  const groupNames = [...new Set([...lines.map((l) => l.group), ...(job.headings ?? []).map((h) => h.name)].filter(Boolean))];
-  const columns = (showPrices ? 7 : 3) + (steps ? 1 : 0);
-  const split = subprojects.length > 0;
-  const addButtons = (section: string) =>
-    canEdit && (
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={() => {
-            setHeadingName("");
-            setAddingHeading(section);
-          }}
-          className="btn-secondary"
-        >
-          Add heading
-        </button>
-        <button onClick={() => setAddingCustom({ section })} className="btn-secondary">
-          Custom line
-        </button>
-        <button onClick={() => setPicking({ section })} className="btn-primary">
-          Add equipment
-        </button>
-      </div>
+  // ---- Getting around
+  // Where a line can be moved to: every part's headings.
+  const destinations = (split ? sections : sections.slice(0, 1)).map((sec) => ({
+    section: sec,
+    groups: ["", ...namedHeadings(sec.id)],
+  }));
+
+  function jumpTo(key: string, section: string) {
+    unfold(sectionKey(section), key);
+    setQuery("");
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = rootRef.current?.querySelector(`[data-row="${CSS.escape(key)}"]`);
+        el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      }),
     );
+  }
+
+  // The heading at the top of the screen, lit up in the outline.
+  const [current, setCurrent] = useState<string | null>(null);
+  useEffect(() => {
+    const main = rootRef.current?.closest("main");
+    if (!main || !hasOutline) return;
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const top = main.getBoundingClientRect().top + 100;
+        let at: string | null = null;
+        for (const el of rootRef.current?.querySelectorAll<HTMLElement>("[data-row^='h:'], [data-row^='s:']") ?? []) {
+          if (el.getBoundingClientRect().top <= top) at = el.dataset.row ?? null;
+          else break;
+        }
+        setCurrent(at);
+      });
+    };
+    onScroll();
+    main.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      main.removeEventListener("scroll", onScroll);
+    };
+  }, [hasOutline, lines.length, folded]);
+
+  // "/" finds.
+  useEffect(() => {
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Enter saves and goes down to the same box on the next line, Shift+Enter up.
+  function onTableKey(e: KeyboardEvent) {
+    if (e.key !== "Enter") return;
+    const input = e.target as HTMLElement;
+    const col = input.closest<HTMLElement>("td[data-col]")?.dataset.col;
+    if (!col || input.tagName !== "INPUT") return;
+    const all = [...(rootRef.current?.querySelectorAll<HTMLInputElement>(`td[data-col="${col}"] input`) ?? [])];
+    const next = all[all.indexOf(input as HTMLInputElement) + (e.shiftKey ? -1 : 1)];
+    if (!next) return;
+    e.preventDefault();
+    next.focus();
+    next.select();
+  }
+
+  const groupNames = [...new Set([...lines.map((l) => l.group), ...(job.headings ?? []).map((h) => h.name)].filter(Boolean))];
+  const columns = (canEdit ? 2 : 0) + 3 + (steps ? 1 : 0) + (showPrices ? 3 : 0);
+  const cols: Cols = { count: columns, lead: canEdit, steps: !!steps, prices: showPrices, actions: canEdit };
   const pickingSection = picking === null ? null : sectionById(picking.section);
+  const addFor = (section: string, group?: string) => ({
+    onEquipment: () => setPicking({ section, group }),
+    onCustom: () => setAddingCustom({ section, group }),
+    onHeading: () => startHeading(section),
+  });
 
   return (
-    <section className="card overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2 flex-wrap">
-        <h2 className="eyebrow text-gray-500">Equipment & services</h2>
-        <div className="flex items-center gap-1.5">
-          {canEdit && (
-            <button onClick={() => setAddingSubproject(true)} className="btn-secondary">
-              Add subproject
-            </button>
-          )}
-          {!split && addButtons("")}
-        </div>
-      </div>
-
-      {canEdit && picked.length > 0 && (
-        <div className="px-4 pb-2">
-          <SelectionBar count={picked.length} onClear={() => setSelected(new Set())}>
-            <select value="" onChange={(e) => movePicked(e.target.value)} disabled={busy} className="input w-auto py-1.5" aria-label="Move to a heading">
-              <option value="" disabled>
-                Move to…
-              </option>
-              {sections.map((sec) => {
-                if (!split && sec.id !== "") return null;
-                const options = ["", ...namedHeadings(sec.id)].map((h) => (
-                  <option key={h || "(none)"} value={`${sec.id}\u0000${h}`}>
-                    {h || "No heading"}
-                  </option>
-                ));
-                return split ? (
-                  <optgroup key={sec.id || "main"} label={sec.name}>
-                    {options}
-                  </optgroup>
-                ) : (
-                  options
-                );
-              })}
-            </select>
-            {showPrices && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  discountPicked();
-                }}
-                className="flex items-center gap-1"
-              >
-                <input
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="Disc %"
-                  aria-label="Discount for the ticked lines (%)"
-                  className="input py-1.5 w-20"
-                  disabled={busy}
-                />
-                <button type="submit" disabled={busy || discount.trim() === ""} className="btn-secondary py-1.5">
-                  Set discount
-                </button>
-              </form>
-            )}
-            <button onClick={removePicked} disabled={busy} className="btn-secondary py-1.5 hover:text-fault-ink">
-              Remove
-            </button>
-          </SelectionBar>
-        </div>
+    <div ref={rootRef} className={`grid grid-cols-1 gap-4 items-start ${hasOutline ? "xl:grid-cols-[13rem_minmax(0,1fr)]" : ""}`}>
+      {hasOutline && (
+        <Outline
+          model={shownModel}
+          split={split}
+          current={current}
+          dnd={dnd}
+          dragging={dragging?.kind === "line"}
+          onJump={jumpTo}
+        />
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-[13px] border-collapse">
-          <thead>
-            <tr className="border-y border-gray-200 text-left text-gray-500 bg-gray-50/60">
-              <th className={`py-1.5 font-medium ${canEdit ? "pl-1.5 pr-4" : "px-4"}`}>
-                {canEdit ? (
-                  <span className="flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all lines"
-                      checked={allPicked}
-                      onChange={() => setSelected(allPicked ? new Set() : new Set(topLines.map((l) => l.id)))}
+      <section className="card min-w-0">
+        <table className="w-full table-fixed text-[13px] border-collapse" onKeyDownCapture={onTableKey}>
+          <colgroup>
+            {canEdit && <col className="w-12" />}
+            <col />
+            <col className="w-16" />
+            <col className="w-32" />
+            {steps && <col className="w-44" />}
+            {showPrices && (
+              <>
+                <col className="w-24 hidden md:table-column" />
+                <col className="w-[4.5rem] hidden md:table-column" />
+                <col className="w-24" />
+              </>
+            )}
+            {canEdit && <col className="w-14" />}
+          </colgroup>
+          {/* Pulled up over <main>'s top padding so rows can't show above it. */}
+          <thead className="sticky -top-3 md:-top-5 z-20 bg-white shadow-[0_1px_0_var(--color-gray-200)]">
+            <tr>
+              <td colSpan={columns} className="px-3 py-2 border-b border-gray-200 bg-white">
+                {canEdit && picked.length > 0 ? (
+                  <div className="flex items-center gap-2 flex-wrap min-h-9">
+                    <span className="font-medium text-gray-900 mr-1">{picked.length} selected</span>
+                    <MoveMenu
+                      destinations={destinations}
+                      split={split}
+                      disabled={busy}
+                      button={<span className="btn-secondary py-1.5 flex items-center gap-1">Move to<Caret /></span>}
+                      onPick={(section, group) => moveTo(picked, section, group)}
                     />
-                    Item
-                  </span>
+                    {showPrices && (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          discountPicked();
+                        }}
+                        className="flex items-center gap-1"
+                      >
+                        <input
+                          value={discount}
+                          onChange={(e) => setDiscount(e.target.value)}
+                          inputMode="decimal"
+                          placeholder="Disc %"
+                          aria-label="Discount for the ticked lines (%)"
+                          className="input py-1.5 w-20"
+                          disabled={busy}
+                        />
+                        <button type="submit" disabled={busy || discount.trim() === ""} className="btn-secondary py-1.5">
+                          Set discount
+                        </button>
+                      </form>
+                    )}
+                    <button onClick={removePicked} disabled={busy} className="btn-secondary py-1.5 hover:text-fault-ink">
+                      Remove
+                    </button>
+                    <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-900 ml-auto">
+                      Clear selection
+                    </button>
+                  </div>
                 ) : (
-                  "Item"
+                  <div className="flex items-center gap-2 flex-wrap min-h-9">
+                    <div className="relative">
+                      <input
+                        ref={searchRef}
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Escape") return;
+                          setQuery("");
+                          e.currentTarget.blur();
+                        }}
+                        placeholder="Find on this project"
+                        aria-label="Find equipment on this project"
+                        className="input py-1.5 w-56 pr-7"
+                      />
+                      {!query && <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 font-mono pointer-events-none">/</kbd>}
+                    </div>
+                    {searching && (
+                      <span className="text-gray-500">
+                        {visibleTop.length} match{visibleTop.length === 1 ? "" : "es"}
+                      </span>
+                    )}
+                    {foldable.length > 0 && !searching && (
+                      <button
+                        onClick={() => setFolded(() => (allFolded ? new Set() : new Set(foldable)))}
+                        className="text-gray-500 hover:text-gray-900 px-1"
+                      >
+                        {allFolded ? "Expand all" : "Collapse all"}
+                      </button>
+                    )}
+                    {canEdit && (
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <button onClick={() => setAddingSubproject(true)} className="btn-secondary">
+                          Add subproject
+                        </button>
+                        {!split && <AddControls {...addFor("")} />}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </th>
+              </td>
+            </tr>
+            <tr className="text-left text-gray-500 bg-gray-50 [&>th]:border-b [&>th]:border-gray-200">
+              {canEdit && (
+                <th className="pl-2 pr-0 py-1.5 w-12">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all lines"
+                    checked={allPicked}
+                    onChange={() => setSelected(allPicked ? new Set() : new Set(visibleTop.map((l) => l.id)))}
+                  />
+                </th>
+              )}
+              <th className={`py-1.5 font-medium ${canEdit ? "pr-2" : "px-4"}`}>Item</th>
               <th className="px-2 py-1.5 font-medium text-right w-16">Qty</th>
               <th className="px-2 py-1.5 font-medium w-36">Availability</th>
               {steps && <th className="px-2 py-1.5 font-medium w-44">Status</th>}
               {showPrices && (
                 <>
-                  <th className="px-2 py-1.5 font-medium text-right w-24">Rate</th>
-                  <th className="px-2 py-1.5 font-medium text-right w-16">Disc %</th>
+                  <th className="px-2 py-1.5 font-medium text-right w-24 hidden md:table-cell">Rate</th>
+                  <th className="px-2 py-1.5 font-medium text-right w-16 hidden md:table-cell">Disc %</th>
                   <th className="px-2 py-1.5 font-medium text-right w-24">Amount</th>
-                  <th className="px-1 py-1.5 w-14" />
                 </>
               )}
+              {canEdit && <th className="w-16" />}
             </tr>
           </thead>
-          {sections.map((section) => {
-            const own = lines.filter((l) => (l.subproject || "") === section.id);
-            if (!split && section.id !== "") return null;
-            return (
-              <tbody key={section.id || "main"}>
-                {split && (
-                  <tr className="bg-gray-50 border-y border-gray-200">
-                    <td colSpan={columns} className="px-4 py-2">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-semibold text-gray-900">{section.name}</span>
-                          <span className="text-xs text-gray-500">
-                            Booked {formatPeriod(section.prepAt, section.returnAt)}
-                            {section.days !== undefined && ` · charged ${section.days} day${section.days === 1 ? "" : "s"}`}
-                            {showPrices && section.subtotal !== undefined && ` · ${nzd(section.subtotal)}`}
-                          </span>
-                        </div>
-                        {addButtons(section.id)}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                {(() => {
-                  const groups = sectionGroups(section.id, own);
-                  return groups.map((group) => (
-                    <GroupRows
-                      key={group.name || "(none)"}
-                      group={group}
-                      columns={columns}
-                      canEdit={canEdit}
-                      showPrices={showPrices}
-                      jobDone={jobDone}
-                      steps={steps}
-                      section={section.id}
-                      dnd={dnd}
-                      selected={selected}
-                      onToggle={toggle}
-                      onRenameGroup={(from, to) => renameGroup(section.id, from, to)}
-                      onRemoveGroup={() => removeGroup(section.id, group.name, group.lines.filter((l) => !l.parentLine).length)}
-                      onAddTo={() => setPicking({ section: section.id, group: group.name })}
-                      onPatch={patch}
-                      onRemove={remove}
-                    />
-                  ));
-                })()}
-                {addingHeading === section.id && (
-                  <tr>
-                    <td colSpan={columns} className="px-4 py-2">
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          addHeading(section.id);
-                        }}
-                        className="flex items-center gap-2"
-                      >
-                        <input
-                          autoFocus
-                          value={headingName}
-                          onChange={(e) => setHeadingName(e.target.value)}
-                          onKeyDown={(e) => e.key === "Escape" && setAddingHeading(null)}
-                          maxLength={200}
-                          placeholder="e.g. Audio, Lighting, Stage"
-                          className="input py-1.5 w-64"
-                        />
-                        <button type="submit" disabled={!headingName.trim()} className="btn-primary py-1.5">
-                          Add heading
-                        </button>
-                        <button type="button" onClick={() => setAddingHeading(null)} className="btn-secondary py-1.5">
-                          Cancel
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                )}
-                {split && own.length === 0 && (
-                  <tr>
-                    <td colSpan={columns} className="px-4 py-3 text-gray-400 text-sm">
-                      Nothing on {section.id ? "this subproject" : "the main project"} yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            );
-          })}
+          {shownModel.map((s) => (
+            <tbody key={s.key}>
+              {split && (
+                <SectionRow
+                  model={s}
+                  cols={cols}
+                  canEdit={canEdit}
+                  showPrices={showPrices}
+                  dnd={dnd}
+                  onToggle={() => toggleFold(s.key)}
+                  add={addFor(s.section.id)}
+                />
+              )}
+              {!s.collapsed &&
+                s.groups.map((g) => (
+                  <GroupRows
+                    key={g.key}
+                    group={g}
+                    cols={cols}
+                    canEdit={canEdit}
+                    showPrices={showPrices}
+                    jobDone={jobDone}
+                    steps={steps}
+                    section={s.section.id}
+                    split={split}
+                    searching={searching}
+                    dnd={dnd}
+                    selected={selected}
+                    destinations={destinations}
+                    kitOpen={kitOpen}
+                    onKit={(id) =>
+                      setKitFlipped((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      })
+                    }
+                    onTick={tick}
+                    onTickAll={() => tickAll(g.top.map((l) => l.id))}
+                    onToggle={() => toggleFold(g.key)}
+                    onRename={(to) => renameGroup(s.section.id, g.name, to)}
+                    onRemoveGroup={() => removeGroup(s.section.id, g.name, g.top.length)}
+                    add={addFor(s.section.id, g.name)}
+                    onPatch={patch}
+                    onRemove={remove}
+                    onMove={(line, section, group) => moveTo([line], section, group)}
+                  />
+                ))}
+              {!s.collapsed && addingHeading === s.section.id && (
+                <tr>
+                  <td colSpan={columns} className="px-4 py-2">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        addHeading(s.section.id);
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        autoFocus
+                        value={headingName}
+                        onChange={(e) => setHeadingName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Escape" && setAddingHeading(null)}
+                        maxLength={200}
+                        placeholder="e.g. Audio, Lighting, Stage"
+                        className="input py-1.5 w-64"
+                      />
+                      <button type="submit" disabled={!headingName.trim()} className="btn-primary py-1.5">
+                        Add heading
+                      </button>
+                      <button type="button" onClick={() => setAddingHeading(null)} className="btn-secondary py-1.5">
+                        Cancel
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              )}
+              {split && !s.collapsed && s.groups.length === 0 && !searching && (
+                <tr
+                  {...dnd.row({ type: "empty", section: s.section.id, group: "" })}
+                  data-row={emptyKey(s.section.id, "")}
+                  className={dnd.cls(emptyKey(s.section.id, ""))}
+                >
+                  <td colSpan={columns} className="px-4 py-3 text-gray-400 text-sm">
+                    Nothing on {s.section.id ? "this subproject" : "the main project"} yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          ))}
         </table>
         {lines.length === 0 && !split && <p className="px-4 py-8 text-gray-500 text-sm text-center">Nothing on this project yet.</p>}
-      </div>
+        {searching && shownModel.length === 0 && <p className="px-4 py-8 text-gray-500 text-sm text-center">Nothing matches “{query.trim()}”.</p>}
 
-      {showPrices && summary.pricing && lines.length > 0 && (
-        <div className="flex items-center justify-end gap-5 px-4 py-2.5 border-t border-gray-200 text-sm tabular-nums">
-          <span className="text-gray-500">
-            {summary.pricing.days} day{summary.pricing.days === 1 ? "" : "s"}
-          </span>
-          {summary.pricing.totals.jobDiscount !== 0 && (
-            <span className="text-gray-500">Project discount −{nzd(summary.pricing.totals.jobDiscount)}</span>
-          )}
-          <span className="font-semibold text-gray-900">Total ex GST {nzd(summary.pricing.totals.exGst)}</span>
-        </div>
-      )}
+        {showPrices && summary.pricing && lines.length > 0 && (
+          <div className="flex items-center justify-end gap-5 px-4 py-2.5 border-t border-gray-200 text-sm tabular-nums">
+            <span className="text-gray-500">
+              {summary.pricing.days} day{summary.pricing.days === 1 ? "" : "s"}
+            </span>
+            {summary.pricing.totals.jobDiscount !== 0 && (
+              <span className="text-gray-500">Project discount −{nzd(summary.pricing.totals.jobDiscount)}</span>
+            )}
+            <span className="font-semibold text-gray-900">Total ex GST {nzd(summary.pricing.totals.exGst)}</span>
+          </div>
+        )}
+      </section>
 
       {pickingSection && (
         <ItemPicker jobId={job.id} start={pickingSection.prepAt} end={pickingSection.returnAt} onAdd={addItem} onClose={() => setPicking(null)} />
@@ -765,7 +1098,7 @@ export default function JobLines({
         />
       )}
       {addingSubproject && <NewSubprojectModal summary={summary} onSaved={onSummary} onClose={() => setAddingSubproject(false)} />}
-    </section>
+    </div>
   );
 }
 
@@ -784,179 +1117,592 @@ function groupsOf(lines: JobLineView[]) {
   return groups;
 }
 
+// ---- Small parts
+
+function Caret({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" className={`w-4 h-4 text-gray-400 shrink-0 ${className}`} aria-hidden>
+      <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FoldButton({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
+      className="w-5 h-5 shrink-0 flex items-center justify-center rounded text-gray-400 hover:text-gray-800 hover:bg-gray-100"
+    >
+      <Caret className={`text-current transition-transform ${open ? "" : "-rotate-90"}`} />
+    </button>
+  );
+}
+
+// Shuts the menu, then does it.
+const then = (close: () => void, fn: () => void) => () => {
+  close();
+  fn();
+};
+
+const menuItem = "w-full text-left block px-3 py-1.5 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-transparent";
+
+// A "⋯" button and its dropdown.
+function MoreMenu({ label, children, className = "" }: { label: string; children: (close: () => void) => ReactNode; className?: string }) {
+  const { open, setOpen, ref } = useDropdown();
+  return (
+    <div ref={ref} className={`relative inline-block ${open ? "opacity-100!" : ""} ${className}`}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="w-7 h-6 flex items-center justify-center rounded text-gray-400 hover:text-gray-800 hover:bg-gray-100"
+      >
+        <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor" aria-hidden>
+          <circle cx="4.5" cy="10" r="1.5" />
+          <circle cx="10" cy="10" r="1.5" />
+          <circle cx="15.5" cy="10" r="1.5" />
+        </svg>
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-1 w-64 max-w-[calc(100vw-1.5rem)] max-h-[60vh] overflow-y-auto card shadow-lg py-1 z-30 text-sm text-left font-normal">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type Destinations = { section: Section; groups: string[] }[];
+
+// Every part and heading, to send lines to.
+function MoveList({
+  destinations,
+  split,
+  here,
+  onPick,
+}: {
+  destinations: Destinations;
+  split: boolean;
+  here?: { section: string; group: string };
+  onPick: (section: string, group: string) => void;
+}) {
+  return (
+    <>
+      {destinations.map((d) => (
+        <div key={d.section.id || "main"} className="py-0.5">
+          {split && <div className="px-3 pt-1.5 pb-0.5 text-xs font-semibold text-gray-500 truncate">{d.section.name}</div>}
+          {d.groups.map((g) => {
+            const isHere = here?.section === d.section.id && here.group === g;
+            return (
+              <button key={g || "(none)"} disabled={isHere} onClick={() => onPick(d.section.id, g)} className={`${menuItem} ${split ? "pl-5" : ""} truncate`}>
+                {g || <span className="text-gray-500">No heading</span>}
+                {isHere && <span className="text-xs text-gray-400 ml-1.5">here</span>}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function MoveMenu({
+  destinations,
+  split,
+  disabled,
+  button,
+  onPick,
+}: {
+  destinations: Destinations;
+  split: boolean;
+  disabled?: boolean;
+  button: ReactNode;
+  onPick: (section: string, group: string) => void;
+}) {
+  const { open, setOpen, ref } = useDropdown();
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} disabled={disabled} aria-haspopup="menu" aria-expanded={open} className="disabled:opacity-50">
+        {button}
+      </button>
+      {open && (
+        <div role="menu" className="absolute left-0 top-full mt-1 w-64 max-w-[calc(100vw-1.5rem)] max-h-[60vh] overflow-y-auto card shadow-lg py-1 z-30 text-sm">
+          <MoveList
+            destinations={destinations}
+            split={split}
+            onPick={(s, g) => {
+              setOpen(false);
+              onPick(s, g);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "Add equipment", with custom lines and headings in the menu beside it.
+function AddControls({ onEquipment, onCustom, onHeading }: { onEquipment: () => void; onCustom: () => void; onHeading: () => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      <button onClick={onEquipment} className="btn-primary">
+        Add equipment
+      </button>
+      <MoreMenu label="More to add">
+        {(close) => (
+          <>
+            <button onClick={then(close, () => onCustom())} className={menuItem}>
+              Custom line
+            </button>
+            <button onClick={then(close, () => onHeading())} className={menuItem}>
+              Heading
+            </button>
+          </>
+        )}
+      </MoreMenu>
+    </div>
+  );
+}
+
+function ShortCount({ n }: { n: number }) {
+  if (n === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-fault-ink font-medium whitespace-nowrap">
+      <span className="status-dot bg-fault" />
+      {n} short
+    </span>
+  );
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// ---- The outline down the side
+
+function Outline({
+  model,
+  split,
+  current,
+  dnd,
+  dragging,
+  onJump,
+}: {
+  model: SectionModel[];
+  split: boolean;
+  current: string | null;
+  dnd: Dnd;
+  dragging: boolean;
+  onJump: (key: string, section: string) => void;
+}) {
+  const item = (key: string, section: string, group: string | null, label: ReactNode, count: number, short: number, top: boolean) => {
+    const target = group !== null ? dnd.target(section, group) : dnd.target(section, model.find((s) => s.section.id === section)?.groups[0]?.name ?? "");
+    const lit = dragging && dnd.over === headingKey(section, group ?? model.find((s) => s.section.id === section)?.groups[0]?.name ?? "");
+    return (
+      <button
+        key={key}
+        onClick={() => onJump(key, section)}
+        {...target}
+        className={`w-full flex items-center gap-2 rounded-md px-2 py-1 text-left ${top ? "font-semibold text-gray-900 mt-1.5 first:mt-0" : "pl-4 text-gray-700"} ${
+          lit ? "bg-signal-soft ring-1 ring-signal" : current === key ? "bg-gray-100" : "hover:bg-gray-50"
+        }`}
+      >
+        <span className="truncate flex-1">{label}</span>
+        {short > 0 && <span className="status-dot bg-fault shrink-0" title={`${short} short`} />}
+        <span className="text-xs text-gray-400 tabular-nums shrink-0">{count}</span>
+      </button>
+    );
+  };
+  return (
+    <nav aria-label="Equipment outline" className="hidden xl:flex flex-col card p-1.5 sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto text-[13px]">
+      {model.map((s) => (
+        <div key={s.key} className="flex flex-col">
+          {split && item(s.key, s.section.id, null, s.section.name, s.count, s.short, true)}
+          {s.groups
+            .filter((g) => g.header)
+            .map((g) =>
+              item(g.key, s.section.id, g.name, g.name || <span className="text-gray-500">No heading</span>, g.top.length, g.short, !split),
+            )}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+// ---- Rows
+
+interface Cols {
+  count: number;
+  lead: boolean;
+  steps: boolean;
+  prices: boolean;
+  actions: boolean;
+}
+
+// A subproject's band.
+function SectionRow({
+  model,
+  cols,
+  canEdit,
+  showPrices,
+  dnd,
+  onToggle,
+  add,
+}: {
+  model: SectionModel;
+  cols: Cols;
+  canEdit: boolean;
+  showPrices: boolean;
+  dnd: Dnd;
+  onToggle: () => void;
+  add: { onEquipment: () => void; onCustom: () => void; onHeading: () => void };
+}) {
+  const { section } = model;
+  const cell = "bg-gray-100 border-y border-gray-300 py-2.5";
+  return (
+    <tr {...dnd.row({ type: "section", section: section.id })} data-row={model.key} className={`scroll-mt-24 ${dnd.cls(model.key)}`}>
+      {cols.lead && <td className={`${cell} pl-2`} />}
+      <td colSpan={2} className={`${cell} ${cols.lead ? "" : "pl-3"} pr-2`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <FoldButton open={!model.collapsed} onClick={onToggle} label={section.name} />
+          <div className="flex flex-col min-w-0">
+            <span className="flex items-baseline gap-2 min-w-0">
+              <span className="font-semibold text-[15px] text-gray-900 truncate">{section.name}</span>
+              <span className="text-xs text-gray-500 shrink-0">{plural(model.count, "item")}</span>
+            </span>
+            <span className="text-xs text-gray-500 truncate">
+              {formatPeriod(section.prepAt, section.returnAt)}
+              {section.days !== undefined && ` · charged ${plural(section.days, "day")}`}
+            </span>
+          </div>
+        </div>
+      </td>
+      <td className={`${cell} px-2`}>
+        <ShortCount n={model.short} />
+      </td>
+      {cols.steps && <td className={cell} />}
+      {cols.prices && <td colSpan={2} className={`${cell} hidden md:table-cell`} />}
+      {cols.prices && (
+        <td className={`${cell} px-2 text-right tabular-nums font-semibold text-gray-900 whitespace-nowrap`}>
+          {showPrices && section.subtotal !== undefined ? nzd(section.subtotal) : ""}
+        </td>
+      )}
+      {cols.actions && (
+        <td className={`${cell} pr-2 text-right whitespace-nowrap`}>
+          {canEdit && (
+            <span className="inline-flex items-center">
+              <button onClick={add.onEquipment} className="text-signal-ink hover:text-signal-ink-hover font-medium px-1.5 text-base leading-none" title={`Add equipment to ${section.name}`}>
+                +
+              </button>
+              <MoreMenu label={`${section.name} options`}>
+                {(close) => (
+                  <>
+                    <button onClick={then(close, () => add.onEquipment())} className={menuItem}>
+                      Add equipment
+                    </button>
+                    <button onClick={then(close, () => add.onCustom())} className={menuItem}>
+                      Add custom line
+                    </button>
+                    <button onClick={then(close, () => add.onHeading())} className={menuItem}>
+                      Add heading
+                    </button>
+                  </>
+                )}
+              </MoreMenu>
+            </span>
+          )}
+        </td>
+      )}
+    </tr>
+  );
+}
+
 function GroupRows({
   group,
-  columns,
+  cols,
   canEdit,
   showPrices,
   jobDone,
   steps,
   section,
+  split,
+  searching,
   dnd,
   selected,
+  destinations,
+  kitOpen,
+  onKit,
+  onTick,
+  onTickAll,
   onToggle,
-  onRenameGroup,
+  onRename,
   onRemoveGroup,
-  onAddTo,
+  add,
   onPatch,
   onRemove,
+  onMove,
 }: {
-  group: { name: string; lines: JobLineView[] };
-  columns: number;
+  group: GroupModel;
+  cols: Cols;
   canEdit: boolean;
   showPrices: boolean;
   jobDone: boolean;
   steps: TrackingStep[] | null;
   section: string;
+  split: boolean;
+  searching: boolean;
   dnd: Dnd;
   selected: Set<string>;
-  onToggle: (id: string) => void;
-  onRenameGroup: (from: string, to: string) => void;
+  destinations: Destinations;
+  kitOpen: (line: JobLineView) => boolean;
+  onKit: (id: string) => void;
+  onTick: (id: string, e: MouseEvent) => void;
+  onTickAll: () => void;
+  onToggle: () => void;
+  onRename: (to: string) => void;
   onRemoveGroup: () => void;
-  onAddTo: () => void;
+  add: { onEquipment: () => void; onCustom: () => void; onHeading: () => void };
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
+  onMove: (line: JobLineView, section: string, group: string) => void;
 }) {
-  const subtotal = group.lines.reduce((sum, l) => sum + (l.amount?.net ?? 0), 0);
+  const ticked = group.top.filter((l) => selected.has(l.id)).length;
+  const label = group.name || "No heading";
+  const named = group.name !== "";
+  const cell = "border-b border-gray-200 pt-3 pb-1.5 align-bottom";
   return (
     <>
-      <tr
-        {...dnd.row({ type: "heading", section, group: group.name })}
-        className={`border-b border-gray-100 bg-white ${dnd.cls(headingKey(section, group.name))}`}
-      >
-        <td colSpan={columns} className={`pr-4 pt-3 pb-1 ${canEdit && group.name ? "pl-1.5" : "pl-4"}`}>
-          <div className="flex items-center justify-between gap-3">
-            {canEdit && group.name ? (
-              <span className="flex items-center gap-1.5 min-w-0">
-                <DragHandle {...dnd.handle(headingKey(section, group.name))} />
-                <InlineText
-                value={group.name}
-                onCommit={(to) => onRenameGroup(group.name, to)}
-                className="font-semibold text-gray-800 w-64 border-transparent hover:border-gray-300 bg-transparent"
+      {group.header && (
+        <tr
+          {...dnd.row({ type: "heading", section, group: group.name })}
+          data-row={group.key}
+          className={`group/row scroll-mt-24 bg-white ${dnd.cls(group.key)}`}
+        >
+          {cols.lead && (
+            <td className={`${cell} pl-2`}>
+              <span className="flex items-center gap-0.5">
+                <input
+                  type="checkbox"
+                  aria-label={`Select everything under ${label}`}
+                  checked={group.top.length > 0 && ticked === group.top.length}
+                  ref={(el) => {
+                    if (el) el.indeterminate = ticked > 0 && ticked < group.top.length;
+                  }}
+                  disabled={group.top.length === 0}
+                  onChange={onTickAll}
                 />
+                {named && <DragHandle {...dnd.handle(group.key)} className={ON_HOVER} />}
               </span>
-            ) : (
-              <span className={group.name ? "font-semibold text-gray-800" : "text-gray-400 text-xs uppercase tracking-wide"}>{group.name || "No heading"}</span>
-            )}
-            <span className="flex items-center gap-2">
-              {steps && <TrackingStatus progress={linesProgress(steps, group.lines)} />}
-              {canEdit && group.name && (
-                <span className="inline-flex items-center gap-0.5 text-gray-400 text-xs">
-                  <button onClick={onAddTo} className="text-signal-ink hover:text-signal-ink-hover font-medium px-1" title={`Add equipment under ${group.name}`}>
-                    + Add
-                  </button>
-                  <button onClick={onRemoveGroup} className="hover:text-red-500 px-1 text-base leading-none" title="Remove heading">
-                    ×
-                  </button>
-                </span>
+            </td>
+          )}
+          <td colSpan={2} className={`${cell} ${cols.lead ? "pr-2" : "pl-3 pr-2"}`}>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <FoldButton open={!group.collapsed} onClick={onToggle} label={label} />
+              {canEdit && named ? (
+                <InlineText
+                  value={group.name}
+                  onCommit={onRename}
+                  className="font-semibold text-[14px] text-gray-900 min-w-16 max-w-full field-sizing-content border-transparent hover:border-gray-300 bg-transparent"
+                />
+              ) : (
+                <span className={named ? "font-semibold text-[14px] text-gray-900 truncate px-1.5" : "font-medium text-gray-500 px-1.5"}>{label}</span>
               )}
-              {showPrices && group.lines.length > 0 && <span className="text-xs text-gray-500 tabular-nums">{nzd(subtotal)}</span>}
-            </span>
-          </div>
-        </td>
-      </tr>
-      {group.lines.length === 0 && (
-        <tr {...dnd.row({ type: "empty", section, group: group.name })} className={`border-b border-gray-50 ${dnd.cls(emptyKey(section, group.name))}`}>
-          <td colSpan={columns} className="pl-4 py-1.5 text-xs text-gray-400">
-            Nothing under this heading yet.
+              <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{plural(group.top.length, "item")}</span>
+            </div>
+          </td>
+          <td className={`${cell} px-2`}>
+            <ShortCount n={group.short} />
+          </td>
+          {cols.steps && <td className={`${cell} px-2`}>{steps && <TrackingStatus progress={linesProgress(steps, group.lines)} />}</td>}
+          {cols.prices && (
+            <>
+              <td className={`${cell} hidden md:table-cell`} colSpan={2} />
+              <td className={`${cell} px-2 text-right tabular-nums font-medium text-gray-700 whitespace-nowrap`}>
+                {showPrices && group.lines.length > 0 ? nzd(group.subtotal) : ""}
+              </td>
+            </>
+          )}
+          {cols.actions && (
+            <td className={`${cell} pr-2 text-right whitespace-nowrap`}>
+              <span className="inline-flex items-center">
+                <button onClick={add.onEquipment} className={`text-signal-ink hover:text-signal-ink-hover font-medium px-1.5 text-base leading-none ${ON_HOVER}`} title={`Add equipment under ${label}`}>
+                  +
+                </button>
+                <MoreMenu label={`${label} options`} className={ON_HOVER}>
+                  {(close) => (
+                    <>
+                      <button onClick={then(close, () => add.onEquipment())} className={menuItem}>
+                        Add equipment here
+                      </button>
+                      <button onClick={then(close, () => add.onCustom())} className={menuItem}>
+                        Add custom line here
+                      </button>
+                      {named && (
+                        <button onClick={then(close, () => onRemoveGroup())} className={`${menuItem} text-fault-ink`}>
+                          Remove heading
+                        </button>
+                      )}
+                    </>
+                  )}
+                </MoreMenu>
+              </span>
+            </td>
+          )}
+        </tr>
+      )}
+      {!group.collapsed && group.lines.length === 0 && !searching && (
+        <tr {...dnd.row({ type: "empty", section, group: group.name })} data-row={emptyKey(section, group.name)} className={dnd.cls(emptyKey(section, group.name))}>
+          <td colSpan={cols.count} className={`py-2 text-xs text-gray-400 ${cols.lead ? "pl-[4.75rem]" : "pl-10"}`}>
+            Nothing here yet.
+            {canEdit && (
+              <button onClick={add.onEquipment} className="ml-2 text-signal-ink hover:text-signal-ink-hover font-medium">
+                Add equipment
+              </button>
+            )}
           </td>
         </tr>
       )}
-      {group.lines.map((line) => (
-        <LineRow
-          key={line.id}
-          line={line}
-          canEdit={canEdit}
-          showPrices={showPrices}
-          jobDone={jobDone}
-          steps={steps}
-          kitLines={line.item?.kind === "kit" ? group.lines.filter((l) => l.parentLine === line.id) : undefined}
-          section={section}
-          group={group.name}
-          dnd={dnd}
-          ticked={selected.has(line.id)}
-          onToggle={() => onToggle(line.id)}
-          onPatch={onPatch}
-          onRemove={onRemove}
-        />
-      ))}
+      {group.rows.map((line) => {
+        const kids = line.parentLine ? [] : group.lines.filter((l) => l.parentLine === line.id);
+        const contents = kids;
+        return (
+          <LineRow
+            key={line.id}
+            line={line}
+            cols={cols}
+            canEdit={canEdit}
+            jobDone={jobDone}
+            steps={steps}
+            indent={group.header}
+            kitLines={line.item?.kind === "kit" ? kids : undefined}
+            contents={contents.length}
+            open={contents.length > 0 && (kitOpen(line) || (searching && group.rows.includes(contents[0])))}
+            onKit={() => onKit(line.id)}
+            section={section}
+            group={group.name}
+            split={split}
+            dnd={dnd}
+            destinations={destinations}
+            ticked={selected.has(line.id)}
+            onTick={(e) => onTick(line.id, e)}
+            onPatch={onPatch}
+            onRemove={onRemove}
+            onMove={(s, g) => onMove(line, s, g)}
+          />
+        );
+      })}
     </>
   );
 }
 
 function LineRow({
   line,
+  cols,
   canEdit,
-  showPrices,
   jobDone,
   steps,
+  indent,
   kitLines,
+  contents,
+  open,
+  onKit,
   section,
   group,
+  split,
   dnd,
+  destinations,
   ticked,
-  onToggle,
+  onTick,
   onPatch,
   onRemove,
+  onMove,
 }: {
   line: JobLineView;
+  cols: Cols;
   canEdit: boolean;
-  showPrices: boolean;
   jobDone: boolean;
   steps: TrackingStep[] | null;
+  // Under a heading row, so set in from it.
+  indent: boolean;
   // A kit's contents, whose tracking is the kit's.
   kitLines?: JobLineView[];
+  // How many lines are inside it, and whether they're showing.
+  contents: number;
+  open: boolean;
+  onKit: () => void;
   section: string;
   group: string;
+  split: boolean;
   dnd: Dnd;
+  destinations: Destinations;
   ticked: boolean;
-  onToggle: () => void;
+  onTick: (e: MouseEvent) => void;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
+  onMove: (section: string, group: string) => void;
 }) {
   const isChild = Boolean(line.parentLine);
   const isCustom = line.lineType === "custom";
   const amount = line.amount;
+  const level = (indent ? 1 : 0) + (isChild ? 1 : 0);
+  const pad = (cols.lead ? ["pl-1", "pl-7", "pl-13"] : ["pl-4", "pl-10", "pl-16"])[level];
 
   return (
     <tr
       {...dnd.row(isChild ? { type: "child", section, group, parent: line.parentLine! } : { type: "line", section, group, line })}
-      className={`border-b border-gray-50 ${ticked ? "bg-signal-soft/40" : "bg-white"} hover:bg-gray-50/60 ${isChild ? "text-gray-600" : ""} ${dnd.cls(line.id, line.parentLine || undefined)}`}
+      className={`group/row border-b border-gray-100 ${ticked ? "bg-signal-soft/50" : "bg-white hover:bg-gray-50/70"} ${isChild ? "text-gray-600" : "text-gray-900"} ${dnd.cls(line.id, line.parentLine || undefined)}`}
     >
-      <td className={`py-1.5 pr-2 ${isChild ? (canEdit ? "pl-16" : "pl-9") : canEdit ? "pl-1.5" : "pl-4"}`}>
-        <div className="flex items-center gap-1.5 min-w-0">
+      {cols.lead && (
+        <td className="pl-2 py-1">
           {canEdit && !isChild && (
-            <>
-              <input type="checkbox" checked={ticked} onChange={onToggle} aria-label={`Select ${line.name}`} className="shrink-0" />
-              <DragHandle {...dnd.handle(line.id)} />
-            </>
+            <span className="flex items-center gap-0.5">
+              <input
+                type="checkbox"
+                checked={ticked}
+                onChange={() => {}}
+                onClick={onTick}
+                aria-label={`Select ${line.name}`}
+                className="shrink-0"
+              />
+              <DragHandle {...dnd.handle(line.id)} className={ON_HOVER} />
+            </span>
           )}
-          {isChild && <span className="text-gray-300">↳</span>}
+        </td>
+      )}
+      <td data-col={isCustom ? "desc" : undefined} className={`py-1 pr-2 ${pad}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {isChild && <span className="text-gray-300 shrink-0">↳</span>}
           {isCustom && canEdit ? (
-            <InlineText value={line.description} onCommit={(description) => onPatch(line, { description })} className="flex-1 min-w-40" />
+            <InlineText value={line.description} onCommit={(description) => onPatch(line, { description })} className={`flex-1 min-w-0 -ml-1.5 ${QUIET}`} />
           ) : line.item ? (
-            <Link to={`/inventory/${line.item.id}`} className="truncate hover:underline">
+            <Link to={`/inventory/${line.item.id}`} className={`truncate min-w-8 hover:underline ${isChild ? "" : "font-medium"}`}>
               {line.name}
             </Link>
           ) : (
             <span className="truncate">{line.name}</span>
           )}
-          {line.item?.kind === "kit" && (
-            <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0">Kit</span>
+          {line.item?.code && <span className="text-[11px] text-gray-400 font-mono min-w-0 truncate shrink-[100]">{line.item.code}</span>}
+          {contents > 0 && (
+            <button
+              onClick={onKit}
+              aria-expanded={open}
+              className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 hover:text-gray-900 shrink-0 rounded px-1 hover:bg-gray-100"
+            >
+              <Caret className={`w-3.5 h-3.5 text-current transition-transform ${open ? "" : "-rotate-90"}`} />
+              {line.item?.kind === "kit" ? `Kit · ${plural(contents, "item")}` : `+ ${contents} ${contents === 1 ? "accessory" : "accessories"}`}
+            </button>
           )}
-          {line.lineType === "accessory" && <span className="text-[11px] text-gray-400 shrink-0">accessory</span>}
-          {line.item?.code && <span className="text-[11px] text-gray-400 font-mono shrink-0">{line.item.code}</span>}
-
         </div>
       </td>
-      <td className="px-2 py-1.5 text-right">
+      <td data-col="qty" className="px-2 py-1 text-right">
         {canEdit && !isChild ? (
           <InlineNumber
             value={line.quantity}
             min={isCustom ? 0 : 1}
             step={isCustom ? undefined : 1}
             onCommit={(quantity) => onPatch(line, { quantity })}
-            className="w-14"
+            className={`w-14 ${QUIET}`}
           />
         ) : (
           <span className="tabular-nums" title={isChild ? `${line.perParent} per parent` : undefined}>
@@ -964,51 +1710,71 @@ function LineRow({
           </span>
         )}
       </td>
-      <td className="px-2 py-1.5 whitespace-nowrap">
+      <td className="px-2 py-1 whitespace-nowrap">
         <AvailabilityCell line={line} jobDone={jobDone} />
       </td>
-      {steps && (
-        <td className="px-2 py-1.5">
-          <TrackingStatus
-            progress={kitLines ? linesProgress(steps, kitLines) : line.tracking ? progressOf(steps, line.tracking.at, Math.round(line.quantity)) : null}
-          />
+      {cols.steps && (
+        <td className="px-2 py-1">
+          {steps && (
+            <TrackingStatus
+              progress={kitLines ? linesProgress(steps, kitLines) : line.tracking ? progressOf(steps, line.tracking.at, Math.round(line.quantity)) : null}
+            />
+          )}
         </td>
       )}
-      {showPrices && (
+      {cols.prices && (
         <>
-          <td className="px-2 py-1.5 text-right">
+          <td data-col="rate" className="px-2 py-1 text-right whitespace-nowrap hidden md:table-cell">
             {canEdit && line.lineType !== "component" ? (
-              <InlineNumber value={line.unitPrice ?? 0} step={0.01} onCommit={(unitPrice) => onPatch(line, { unitPrice })} className="w-20" />
+              <InlineNumber value={line.unitPrice ?? 0} step={0.01} onCommit={(unitPrice) => onPatch(line, { unitPrice })} className={`w-20 ${QUIET} ${line.unitPrice ? "" : "text-gray-400"}`} />
             ) : (
               <span className="tabular-nums text-gray-400">{line.unitPrice ? nzd(line.unitPrice) : "incl."}</span>
             )}
             {line.unitPrice ? <span className="ml-0.5 text-[11px] text-gray-400">{MODE_SUFFIX[line.priceMode]}</span> : null}
           </td>
-          <td className="px-2 py-1.5 text-right">
+          <td data-col="disc" className="px-2 py-1 text-right hidden md:table-cell">
             {canEdit && line.lineType !== "component" ? (
               <InlineNumber
                 value={line.discountPct ?? 0}
                 min={0}
                 max={100}
                 onCommit={(discountPct) => onPatch(line, { discountPct })}
-                className="w-14"
+                className={`w-16 ${QUIET} ${line.discountPct ? "" : "text-gray-400"}`}
               />
             ) : null}
           </td>
-          <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+          <td className={`px-2 py-1 text-right tabular-nums whitespace-nowrap ${amount?.net ? "" : "text-gray-400"}`}>
             {amount && amount.discount !== 0 && <span className="text-gray-400 line-through mr-1.5 text-xs">{nzd(amount.gross)}</span>}
             {amount && (amount.net !== 0 || !isChild) ? nzd(amount.net) : ""}
           </td>
-          <td className="px-1 py-1.5 text-right whitespace-nowrap">
-            {canEdit && (
-              <span className="inline-flex items-center text-gray-400">
-                <button onClick={() => onRemove(line)} className="hover:text-red-500 px-1 text-base leading-none" title="Remove">
-                  ×
-                </button>
-              </span>
-            )}
-          </td>
         </>
+      )}
+      {cols.actions && (
+        <td className="pr-2 py-1 text-right whitespace-nowrap">
+          {canEdit && !isChild && (
+            <MoreMenu label={`${line.name} options`} className={ON_HOVER}>
+              {(close) => (
+                <>
+                  <div className="px-3 pt-1.5 pb-0.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">Move to</div>
+                  <MoveList
+                    destinations={destinations}
+                    split={split}
+                    here={{ section, group }}
+                    onPick={(s, g) => {
+                      close();
+                      onMove(s, g);
+                    }}
+                  />
+                  <div className="border-t border-gray-100 mt-1 pt-1">
+                    <button onClick={then(close, () => onRemove(line))} className={`${menuItem} text-fault-ink`}>
+                      Remove
+                    </button>
+                  </div>
+                </>
+              )}
+            </MoreMenu>
+          )}
+        </td>
       )}
     </tr>
   );
