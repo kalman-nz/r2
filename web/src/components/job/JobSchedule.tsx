@@ -300,9 +300,9 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
         </div>
         <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Stat label={subprojects.length > 0 ? "Whole project" : "Project"} value={`${formatDateTime(job.startAt)} → ${formatDateTime(job.endAt)}`} />
-          <Stat label="Equipment booked" value={`${formatDateTime(job.prepAt)} → ${formatDateTime(job.returnAt)}`} bar="bg-data" />
+          <Stat label="Usage period" value={`${formatDateTime(job.prepAt)} → ${formatDateTime(job.returnAt)}`} bar="bg-data" />
           <Stat
-            label="Charged"
+            label="Billing period"
             value={
               pricing
                 ? `${pricing.days} day${pricing.days === 1 ? "" : "s"}${pricing.basis === "override" ? " (set on the project)" : ""}`
@@ -714,7 +714,7 @@ function PeriodForm({
             required
             autoFocus
             maxLength={200}
-            placeholder={draft.kind === "other" ? "e.g. Pack in, Crew call, Rehearsal" : draft.kind === "billing" ? "e.g. Show day 1" : "e.g. Equipment booked"}
+            placeholder={draft.kind === "other" ? "e.g. Pack in, Crew call, Rehearsal" : draft.kind === "billing" ? "e.g. Show day 1" : "e.g. Usage period"}
             className="input py-2"
           />
         </Field>

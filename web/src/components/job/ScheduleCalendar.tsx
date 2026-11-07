@@ -295,11 +295,11 @@ export default function ScheduleCalendar({
         <span className="flex items-center gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1">
             <span className={`w-1 h-3 rounded-full ${BLOCK.usage.bar}`} />
-            Equipment booked
+            Usage period
           </span>
           <span className="flex items-center gap-1">
             <span className={`w-1 h-3 rounded-full ${BLOCK.billing.bar}`} />
-            Charged
+            Billing period
           </span>
         </span>
       </div>
@@ -373,7 +373,7 @@ export default function ScheduleCalendar({
                     const top = ((s.top - s.dayStart) / 3600000) * HOUR_PX;
                     const height = Math.max(6, ((s.bottom - s.top) / 3600000) * HOUR_PX);
                     const section = s.p.subproject ? sectionName(s.p.subproject) : "";
-                    const what = s.p.kind === "usage" ? "Equipment booked" : "Charged";
+                    const what = s.p.kind === "usage" ? "Usage period" : "Billing period";
                     const dragging = drag && drag.mode !== "create" && drag.period.id === s.p.id;
                     return (
                       <div
