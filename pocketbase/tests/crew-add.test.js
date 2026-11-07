@@ -53,7 +53,7 @@ function record(collection, fields) {
 function crewApp(seed = {}, failDeleteId = "") {
   const initial = {
     jobs: [record("jobs", { id: "job-1", org: "org-1" })],
-    job_periods: [record("job_periods", { id: "period-1", job: "job-1", start: periodStart, end: periodEnd })],
+    job_periods: [record("job_periods", { id: "period-1", job: "job-1", kind: "other", start: periodStart, end: periodEnd })],
     crew_roles: [record("crew_roles", { id: "role-1", org: "org-1", name: "Audio operator", levels: '["Basic","Advanced"]' })],
     crew_needs: [],
     job_crew: [],
@@ -410,6 +410,7 @@ test("different levels, roles, schedule items, and time windows stay separate", 
   const periodOther = record("job_periods", {
     id: "period-2",
     job: "job-1",
+    kind: "other",
     start: periodStart,
     end: periodEnd,
   });
@@ -417,7 +418,7 @@ test("different levels, roles, schedule items, and time windows stay separate", 
   const { app, records } = crewApp({
     crew_needs: [base],
     job_periods: [
-      record("job_periods", { id: "period-1", job: "job-1", start: periodStart, end: periodEnd }),
+      record("job_periods", { id: "period-1", job: "job-1", kind: "other", start: periodStart, end: periodEnd }),
       periodOther,
     ],
     crew_roles: [

@@ -141,6 +141,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
       else {
         const crewResult = await createPeriodWithCrew({
           jobId: job.id,
+          kind: d.kind,
           crew: d.crew,
           createPeriod: () => pb.collection("job_periods").create<JobPeriod>(withOrg({ ...body, job: job.id, subproject: section })),
           addCrewNeeds: api.addCrewNeeds,
@@ -410,7 +411,7 @@ export default function JobSchedule({ summary, canEdit }: { summary: JobSummary;
               {calendarEdit.notes && <span className="text-gray-500 whitespace-pre-line">{calendarEdit.notes}</span>}
             </div>
           )}
-          {feature("crew") && (
+          {feature("crew") && calendarEdit.kind === "other" && (
             <div className="pt-3 border-t border-gray-100">
               <ItemCrew jobId={job.id} period={calendarEdit} canEdit={canEdit} />
             </div>
@@ -485,7 +486,7 @@ function ItemCrew({ jobId, period, canEdit }: { jobId: string; period: JobPeriod
   const { roles } = useCrewRoles();
   const { data: needs = [] } = useJobCrewNeeds(jobId, on);
   const { data: crew = [] } = useJobCrew(jobId);
-  if (!on) return null;
+  if (!on || period.kind !== "other") return null;
   return <PeriodNeeds jobId={jobId} period={period} needs={needs} crew={crew} roles={roles} canEdit={canEdit} rosterHref={`/projects/${jobId}?tab=crew`} />;
 }
 
@@ -720,7 +721,10 @@ function PeriodForm({
         <Field label="Does">
           <select
             value={draft.kind}
-            onChange={(e) => set("kind", e.target.value as PeriodKind)}
+            onChange={(e) => {
+              const kind = e.target.value as PeriodKind;
+              onChange({ ...draft, kind, crew: kind === "other" ? draft.crew : [] });
+            }}
             disabled={kindLocked}
             title={kindLocked ? "Every project and subproject has one of these: change its times instead" : kindInfo(draft.kind).hint}
             className="input py-2"
@@ -761,7 +765,7 @@ function PeriodForm({
           maxLength={2000}
         />
       </Field>
-      {crewRoles && crewRoles.length > 0 && <CrewRows roles={crewRoles} crew={draft.crew} onChange={(crew) => set("crew", crew)} />}
+      {draft.kind === "other" && crewRoles && crewRoles.length > 0 && <CrewRows roles={crewRoles} crew={draft.crew} onChange={(crew) => set("crew", crew)} />}
       <div className="flex items-center gap-2">
         <button type="submit" disabled={busy || submitDisabled || backwards || !draft.name.trim() || crewProblem(draft.crew)} className="btn-primary">
           {busy ? "Saving…" : submitLabel}

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { syncNeedTimes, validateCrew, validateNeed } = require("../pb_hooks/lib/crew.js");
+const { validatePeriod } = require("../pb_hooks/lib/validation.js");
 
 global.BadRequestError = class BadRequestError extends Error {};
 
@@ -41,7 +42,7 @@ function rosterFixture(existingCrew, quantity = 1) {
   return { app, records };
 }
 
-function needFixture(fields = {}, otherNeeds = [], originalFields = fields, assignments = []) {
+function needFixture(fields = {}, otherNeeds = [], originalFields = fields, assignments = [], periodKind = "other", needs = []) {
   const records = {
     jobs: { "job-1": record({ id: "job-1", org: "org-1" }) },
     crew_roles: {
@@ -52,18 +53,20 @@ function needFixture(fields = {}, otherNeeds = [], originalFields = fields, assi
       "period-1": record({
         id: "period-1",
         job: "job-1",
+        kind: periodKind,
         start: "2026-11-07 08:00:00.000Z",
         end: "2026-11-07 10:00:00.000Z",
       }),
       "period-2": record({
         id: "period-2",
         job: "job-1",
+        kind: "other",
         start: "2026-11-07 08:00:00.000Z",
         end: "2026-11-07 10:00:00.000Z",
       }),
       "period-other": record({ id: "period-other", job: "job-other" }),
     },
-    crew_needs: [...(originalFields.id ? [record(originalFields)] : []), ...otherNeeds],
+    crew_needs: [...(originalFields.id ? [record(originalFields)] : []), ...otherNeeds, ...needs],
     job_crew: assignments,
   };
   const app = {
@@ -283,6 +286,40 @@ test("a crew need must use a schedule item from its project", () => {
   const { app, need } = needFixture({ period: "period-other" });
 
   assert.throws(() => validateNeed(app, need), /schedule item isn't on this project/);
+});
+
+test("crew needs are accepted only on other schedule items", () => {
+  for (const kind of ["usage", "billing"]) {
+    const { app, need } = needFixture({}, [], undefined, [], kind);
+    assert.throws(() => validateNeed(app, need), /Crew needs can only be added to other schedule items/);
+  }
+
+  const { app, need } = needFixture();
+  assert.doesNotThrow(() => validateNeed(app, need));
+});
+
+test("changing a schedule item with crew needs to usage or billing is rejected", () => {
+  for (const kind of ["usage", "billing"]) {
+    const original = {
+      id: "period-1",
+      org: "org-1",
+      job: "job-1",
+      kind: "other",
+      start: "2026-11-07 08:00:00.000Z",
+      end: "2026-11-07 10:00:00.000Z",
+      subproject: "",
+      space: "",
+    };
+    const period = record({ ...original, kind }, original);
+    const job = record({ id: "job-1", org: "org-1", venue: "" });
+    const need = record({ id: "need-1", period: "period-1" });
+    const app = {
+      findRecordById: (collection) => collection === "jobs" ? job : null,
+      findRecordsByFilter: (collection) => collection === "crew_needs" ? [need] : [],
+    };
+
+    assert.throws(() => validatePeriod(app, period), /Remove its crew needs before changing it to usage or billing/);
+  }
 });
 
 test("a crew need can request one of its role's skill levels", () => {

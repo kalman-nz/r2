@@ -29,19 +29,23 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
   const [wholeRole, setWholeRole] = useState("");
 
   const subName = (id: string) => summary.subprojects?.find((sp) => sp.id === id)?.name ?? "";
-  const periods = useMemo(() => [...summary.periods].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end)), [summary.periods]);
+  const periods = useMemo(
+    () => summary.periods.filter((period) => period.kind === "other").sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end)),
+    [summary.periods],
+  );
+  const eligibleNeeds = useMemo(() => needs.filter((need) => periods.some((period) => period.id === need.period)), [needs, periods]);
 
   // Everyone's slots over this project's crew times, for double bookings.
-  const span = needs.reduce<{ from: string; to: string }>(
+  const span = eligibleNeeds.reduce<{ from: string; to: string }>(
     (s, n) => ({ from: !s.from || n.start < s.from ? n.start : s.from, to: !s.to || n.end > s.to ? n.end : s.to }),
     { from: "", to: "" },
   );
-  const { data: bookings = [] } = useCrewBookings(span.from, span.to, needs.length > 0);
+  const { data: bookings = [] } = useCrewBookings(span.from, span.to, eligibleNeeds.length > 0);
 
-  const slots = needs.reduce((n, x) => n + x.quantity, 0);
-  const filled = needs.reduce((n, x) => n + Math.min(x.quantity, crew.filter((c) => c.need === x.id).length), 0);
+  const slots = eligibleNeeds.reduce((n, x) => n + x.quantity, 0);
+  const filled = eligibleNeeds.reduce((n, x) => n + Math.min(x.quantity, crew.filter((c) => c.need === x.id).length), 0);
   const doubleBooked = crew.filter((c) => {
-    const need = needs.find((n) => n.id === c.need);
+    const need = eligibleNeeds.find((n) => n.id === c.need);
     return need && clashesFor(bookings, c.person, need).length > 0;
   }).length;
   const whole = crew.filter((c) => !c.need);
@@ -78,7 +82,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
       </div>
 
       {periods.map((p) => {
-        const here = needs.filter((n) => n.period === p.id);
+        const here = eligibleNeeds.filter((n) => n.period === p.id);
         return (
           <section key={p.id} className="card px-4 py-3 flex flex-col">
             <div className="flex items-baseline justify-between gap-3 flex-wrap pb-1">
@@ -104,7 +108,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
             <div className="divide-y divide-gray-100">
               {here.map((n) =>
                 editing === n.id ? (
-                  <NeedForm key={n.id} jobId={job.id} period={p} need={n} roles={roles} needs={needs} onDone={() => setEditing(null)} />
+                  <NeedForm key={n.id} jobId={job.id} period={p} need={n} roles={roles} needs={eligibleNeeds} onDone={() => setEditing(null)} />
                 ) : (
                   <NeedSlots
                     key={n.id}
@@ -123,7 +127,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
                   />
                 ),
               )}
-              {adding === p.id && <NeedForm jobId={job.id} period={p} roles={roles} needs={needs} onDone={() => setAdding(null)} />}
+              {adding === p.id && <NeedForm jobId={job.id} period={p} roles={roles} needs={eligibleNeeds} onDone={() => setAdding(null)} />}
               {here.length === 0 && adding !== p.id && <p className="text-xs text-gray-400 py-2">No crew needed.</p>}
             </div>
           </section>
