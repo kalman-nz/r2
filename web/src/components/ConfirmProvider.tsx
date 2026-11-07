@@ -10,6 +10,8 @@ interface ConfirmOptions {
 
 interface ConfirmState extends ConfirmOptions {
   resolve: (value: boolean) => void;
+  // When it opened, so the key press that opened it doesn't also answer it.
+  openedAt: number;
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
@@ -24,7 +26,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 
   const confirm = useCallback<ConfirmFn>((options) => {
     return new Promise<boolean>((resolve) => {
-      setState({ ...options, resolve });
+      setState({ ...options, resolve, openedAt: performance.now() });
     });
   }, []);
 
@@ -47,7 +49,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!state) return;
+    const openedAt = state.openedAt;
     function onKeyDown(e: KeyboardEvent) {
+      if (e.timeStamp <= openedAt) return;
       if (e.key === "Escape") close(false);
       if (e.key === "Enter") close(true);
     }

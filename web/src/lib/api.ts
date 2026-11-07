@@ -1231,7 +1231,7 @@ export const api = {
   deleteLine: (lineId: string) => request<JobSummary>(`/api/job-lines/${lineId}`, json("DELETE")),
   headingAction: (
     jobId: string,
-    body: { action: "add" | "rename" | "remove" | "move"; section: string; name: string; to?: string; direction?: -1 | 1 },
+    body: { action: "add" | "rename" | "remove" | "move"; section: string; name: string; to?: string; direction?: -1 | 1; before?: string },
   ) => request<JobSummary>(`/api/jobs/${jobId}/headings`, json("POST", body)),
   // A copy of a project for a repeat event (lib/jobs.js copyJob).
   copyJob: (jobId: string, body: { name: string; start: string; equipment: boolean; crew: boolean }) =>

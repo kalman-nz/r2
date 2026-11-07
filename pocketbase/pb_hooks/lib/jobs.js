@@ -538,11 +538,13 @@ function addLine(jobId, body) {
       if (item.getBool("archived")) throw new BadRequestError(item.getString("name") + " is archived");
       const qty = positiveWhole(body.quantity === undefined ? 1 : body.quantity, "Quantity");
 
-      // The same item already in the same section gets topped up instead.
+      // The same item already under the same heading in the same section gets
+      // topped up instead; under another heading it's a line of its own.
       // (Compared here: an empty subproject doesn't match a bound "" in the filter.)
+      const group = typeof body.group === "string" ? body.group.trim() : topCategoryName(tx, item.getString("category"));
       const existing = tx
         .findRecordsByFilter("job_lines", "job = {:job} && item = {:item} && lineType = 'item'", "created", 0, 0, { job: job.id, item: item.id })
-        .filter((l) => l.getString("subproject") === subproject)[0];
+        .filter((l) => l.getString("subproject") === subproject && l.getString("group") === group && !l.getString("parentLine"))[0];
       if (existing) {
         setQuantity(tx, existing, Math.round(existing.getFloat("quantity")) + qty);
         return;
@@ -558,7 +560,7 @@ function addLine(jobId, body) {
         unitPrice: unitPrice === undefined ? item.getFloat("price") : unitPrice,
         priceMode: priceModeFor(item),
         discountPct: discountPct || 0,
-        group: typeof body.group === "string" ? body.group.trim() : topCategoryName(tx, item.getString("category")),
+        group: group,
         sortOrder: nextSortOrder(tx, job.id),
       });
       tx.save(line);
@@ -945,8 +947,9 @@ function addSubproject(jobId, body) {
 }
 
 // Changes the job's equipment headings. body: { action, section, name, to?,
-// direction? }:
-//   add     a new, empty heading at the end of its section
+// direction?, before? }:
+//   add     a new, empty heading before the heading named before, or at the
+//           end of its section
 //   rename  name -> to, on the list and on every line under it
 //   remove  off the list; its lines move to no heading
 //   move    up (direction -1) or down (1) the list
@@ -971,7 +974,9 @@ function headingAction(jobId, body) {
 
     if (action === "add") {
       if (index !== -1) throw new BadRequestError("There's already a heading called " + name);
-      headings.push({ section: section, name: name });
+      const at = typeof body.before === "string" && body.before ? headings.findIndex((h) => h.section === section && h.name === body.before) : -1;
+      if (at === -1) headings.push({ section: section, name: name });
+      else headings.splice(at, 0, { section: section, name: name });
     } else if (index === -1) {
       throw new BadRequestError("There's no heading called " + name);
     } else if (action === "rename") {

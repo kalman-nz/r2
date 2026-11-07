@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { pb } from "../../lib/pocketbase";
 import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine, type PriceMode, type TrackingStep } from "../../lib/api";
 import { formatPeriod, nzd, MODE_SUFFIX } from "../../lib/format";
 import { errorText } from "../../lib/errors";
 import { useDropdown } from "../../lib/dropdown";
 import { InlineNumber, InlineText } from "../InlineInput";
-import ItemPicker from "../ItemPicker";
 import Modal from "../Modal";
 import Field from "../Field";
 import NumberInput from "../NumberInput";
@@ -15,6 +15,7 @@ import { linesProgress, progressOf, useTrackingSteps } from "../../lib/tracking"
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import NewSubprojectModal from "./NewSubprojectModal";
+import QuickAdd from "./QuickAdd";
 import { DragHandle } from "../DragReorder";
 
 // Done jobs don't hold stock, so availability isn't worked out for them.
@@ -191,13 +192,36 @@ type RowDesc =
   | { type: "empty"; section: string; group: string };
 
 type Dragging = { kind: "line"; line: JobLineView } | { kind: "heading"; section: string; name: string };
-type Drop = { kind: "line"; section: string; group: string; before: string | null } | { kind: "heading"; section: string; before: string | null };
+// A line dropped on the top half of a heading row comes out of its heading
+// ("above" is the row the orange line shows over).
+type Drop =
+  | { kind: "line"; section: string; group: string; before: string | null; above?: string }
+  | { kind: "heading"; section: string; before: string | null };
+type Marks = { above: string | null; below: string | null; into: string | null };
 
 const sectionKey = (section: string) => `s:${section}`;
 const headingKey = (section: string, group: string) => `h:${section}:${group}`;
 const emptyKey = (section: string, group: string) => `e:${section}:${group}`;
+// What a line's charged, to compare it with others and with its item's usual price.
+const priceOf = (l: JobLineView) => `${l.unitPrice ?? 0}|${l.priceMode}|${l.discountPct ?? 0}`;
+const priceText = (l: JobLineView) => `${nzd(l.unitPrice ?? 0)}${MODE_SUFFIX[l.priceMode]}${l.discountPct ? ` less ${l.discountPct}%` : ""}`;
+const USUAL_MODE: Record<string, PriceMode> = { hour: "per_hour", day: "per_day", week: "per_week", each: "fixed" };
+
+// How a line's charged, as picked beside its rate.
+const MODES: [PriceMode, string][] = [
+  ["per_hour", "/hr"],
+  ["per_day", "/day"],
+  ["per_week", "/week"],
+  ["fixed", "each"],
+];
+const quickKey = (section: string, group: string) => `q:${section}:${group}`;
 const LINE_ABOVE = "[&>td]:shadow-[inset_0_2px_0_var(--color-signal)]";
 const LINE_BELOW = "[&>td]:shadow-[inset_0_-2px_0_var(--color-signal)]";
+// The same, indented to show it goes in under a heading.
+const LINE_IN =
+  "[&>td:nth-child(2)]:bg-[linear-gradient(var(--color-signal),var(--color-signal))] [&>td:nth-child(2)]:bg-no-repeat [&>td:nth-child(2)]:bg-[length:calc(100%-1.75rem)_2px]";
+const LINE_ABOVE_IN = `${LINE_IN} [&>td:nth-child(2)]:bg-[position:right_top] [&>td:nth-child(n+3)]:shadow-[inset_0_2px_0_var(--color-signal)]`;
+const LINE_BELOW_IN = `${LINE_IN} [&>td:nth-child(2)]:bg-[position:right_bottom] [&>td:nth-child(n+3)]:shadow-[inset_0_-2px_0_var(--color-signal)]`;
 const INTO = "[&>td]:bg-signal-soft!";
 // Hidden until the row's hovered, where there's a mouse.
 // Edit-in-place boxes that only look like boxes when pointed at, so the
@@ -258,9 +282,8 @@ export default function JobLines({
   canEdit: boolean;
   onSummary: (summary: JobSummary) => void;
 }) {
-  // Where new lines go: a section ("" for the main project) and, from a
-  // heading's own button, that heading; null when not adding.
-  const [picking, setPicking] = useState<{ section: string; group?: string } | null>(null);
+  // Where a custom line from the menus goes: a section ("" for the main
+  // project) and, from a heading's menu, that heading; null when not adding.
   const [addingCustom, setAddingCustom] = useState<{ section: string; group?: string } | null>(null);
   // The section a new heading is being typed into.
   const [addingHeading, setAddingHeading] = useState<string | null>(null);
@@ -321,11 +344,24 @@ export default function JobLines({
     await run(() => api.deleteLine(line.id), "Couldn't remove");
   }
 
-  async function addItem(itemId: string, quantity: number) {
-    onSummary(
-      await api.addLine(job.id, { itemId, quantity, subproject: picking?.section ?? "", ...(picking?.group !== undefined ? { group: picking.group } : {}) }),
+  const addItemTo = (section: string, group: string) => async (itemId: string, quantity: number) => {
+    // Already under this heading: it'd top that line up, which is easy to miss.
+    const there = lines.find(
+      (l) => !l.parentLine && l.lineType === "item" && l.item?.id === itemId && (l.subproject || "") === section && l.group === group,
     );
-  }
+    if (there) {
+      const ok = await confirm({
+        title: "Already added",
+        message: `${there.name} is already under ${group || (section ? sectionById(section).name : "no heading")}. Add ${quantity} more, making ${there.quantity + quantity}?`,
+        confirmLabel: "Add",
+      });
+      if (!ok) return;
+    }
+    onSummary(await api.addLine(job.id, { itemId, quantity, subproject: section, group }));
+  };
+  const addCustomTo = (section: string, group: string) => async (description: string, quantity: number) => {
+    onSummary(await api.addLine(job.id, { description, quantity, subproject: section, group }));
+  };
 
   async function addCustom(line: NewLine) {
     try {
@@ -351,6 +387,24 @@ export default function JobLines({
       if (!ok) return;
     }
     await heading({ action: "remove", section, name }, "Couldn't remove");
+  }
+  // A subproject goes with its schedule and everything on it.
+  async function removeSubproject(section: Section) {
+    const own = lines.filter((l) => l.subproject === section.id && !l.parentLine);
+    const ok = await confirm({
+      title: "Remove subproject",
+      message: own.length
+        ? `Remove "${section.name}", its schedule and its ${plural(own.length, "item")}?`
+        : `Remove "${section.name}" and its schedule?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    await run(async () => {
+      for (const l of own) await api.deleteLine(l.id);
+      await pb.collection("subprojects").delete(section.id);
+      return api.getJobSummary(job.id);
+    }, "Couldn't remove it");
   }
   async function addHeading(section: string) {
     const name = headingName.trim();
@@ -402,15 +456,30 @@ export default function JobLines({
   const shortInside = new Set(lines.filter((l) => l.parentLine && (l.availability?.short ?? 0) > 0).map((l) => l.parentLine));
   const kitOpen = (l: JobLineView) => (l.componentsShort || shortInside.has(l.id)) !== kitFlipped.has(l.id);
 
+  // Why a line's price stands out: not its item's usual price, or not the
+  // same as another line of that item on the project.
+  const priceNotes = new Map<string, string>();
+  if (showPrices) {
+    for (const l of lines) {
+      if (l.parentLine || l.lineType !== "item" || !l.item) continue;
+      const notes: string[] = [];
+      const usualMode = USUAL_MODE[l.item.priceUnit] ?? "per_day";
+      if ((l.unitPrice ?? 0) !== l.item.price || l.priceMode !== usualMode) notes.push(`Usually ${nzd(l.item.price)}${MODE_SUFFIX[usualMode]}`);
+      if (lines.some((o) => o.id !== l.id && !o.parentLine && o.lineType === "item" && o.item?.id === l.item?.id && priceOf(o) !== priceOf(l)))
+        notes.push(`Priced differently from the other ${l.name} on this project`);
+      if (notes.length) priceNotes.set(l.id, notes.join(". "));
+    }
+  }
+
   const model: SectionModel[] = (split ? sections : sections.slice(0, 1)).map((section) => {
     const own = lines.filter((l) => (l.subproject || "") === section.id);
     const raw = sectionGroups(section.id, own);
-    const named = raw.some((g) => g.name !== "");
     const sKey = sectionKey(section.id);
     const sCollapsed = split && !searching && folded.has(sKey);
     const groups = raw.map((g): GroupModel => {
       const key = headingKey(section.id, g.name);
-      const header = g.name !== "" || named;
+      // Lines without a heading sit at the top, unindented, with no row of their own.
+      const header = g.name !== "";
       const collapsed = header && !searching && folded.has(key);
       const top = g.lines.filter((l) => !l.parentLine);
       const rows: JobLineView[] = [];
@@ -527,6 +596,9 @@ export default function JobLines({
         : row;
     if (dragging.kind === "line") {
       const self = dragging.line.id;
+      if (row.type === "heading" && upper && !moving.every((l) => sectionOf(l) === row.section && l.group === "")) {
+        return { kind: "line", section: row.section, group: "", before: null, above: headingKey(row.section, row.group) };
+      }
       const after = (id: string) => {
         const sibs = siblingsOf(desc.section, desc.group);
         const at = sibs.findIndex((l) => l.id === id);
@@ -560,6 +632,44 @@ export default function JobLines({
   // Sort orders go between the new neighbours, or the heading's renumbered
   // when there's no room.
   async function dropLines(move: JobLineView[], section: string, group: string, before: string | null) {
+    // The same item already under that heading: merge into it, or don't move.
+    const ids0 = new Set(move.map((l) => l.id));
+    const dupes = move
+      .filter((l) => l.lineType === "item" && l.item && !(sectionOf(l) === section && l.group === group))
+      .map((l) => ({ line: l, into: siblingsOf(section, group).find((t) => !ids0.has(t.id) && t.lineType === "item" && t.item?.id === l.item?.id) }))
+      .filter((d): d is { line: JobLineView; into: JobLineView } => !!d.into);
+    if (dupes.length > 0) {
+      const where = group || (section ? sectionById(section).name : "no heading");
+      const one = dupes[0];
+      const differ = showPrices ? dupes.filter((d) => priceOf(d.line) !== priceOf(d.into)) : [];
+      const priceNote =
+        differ.length === 0
+          ? ""
+          : dupes.length === 1
+            ? ` They're priced differently: it keeps ${priceText(one.into)}, not ${priceText(one.line)}.`
+            : ` Some are priced differently: each keeps the price of the one already under ${where}.`;
+      const ok = await confirm({
+        title: "Merge duplicates",
+        message:
+          (dupes.length === 1
+            ? `${one.line.name} is already under ${where}. Merge them into one line of ${one.into.quantity + one.line.quantity}?`
+            : `${dupes.length} of these are already under ${where}. Merge their quantities?`) + priceNote,
+        confirmLabel: "Merge",
+      });
+      if (!ok) return;
+      await run(async () => {
+        let last = summary;
+        for (const d of dupes) {
+          last = await api.updateLine(d.into.id, { quantity: d.into.quantity + d.line.quantity });
+          last = await api.deleteLine(d.line.id);
+        }
+        return last;
+      }, "Couldn't merge them");
+      const merged = new Set(dupes.map((d) => d.line.id));
+      move = move.filter((l) => !merged.has(l.id));
+      if (move.length === 0) return;
+      if (before && merged.has(before)) before = null;
+    }
     const ids = new Set(move.map((l) => l.id));
     const all = siblingsOf(section, group);
     if (before && ids.has(before)) before = all.slice(all.findIndex((l) => l.id === before) + 1).find((l) => !ids.has(l.id))?.id ?? null;
@@ -658,39 +768,49 @@ export default function JobLines({
   // Which row shows where it'll land: an orange line above the line or
   // heading it goes before, or below the last row showing where it goes at
   // the end; a folded heading or part lights up instead.
-  let above: string | null = null;
-  let below: string | null = null;
-  let into: string | null = null;
   const groupModel = (section: string, group: string) => model.find((s) => s.section.id === section)?.groups.find((g) => g.name === group);
   const sectionModel = (section: string) => model.find((s) => s.section.id === section);
-  function endOf(section: string, group: string, asLine: boolean) {
-    const s = sectionModel(section);
-    const g = groupModel(section, group);
-    if (s?.collapsed) into = s.key;
-    else if (!g) below = emptyKey(section, group);
-    else if (g.collapsed) {
-      if (asLine) into = g.key;
-      else below = g.key;
-    } else if (g.rows.length > 0) below = g.rows[g.rows.length - 1].id;
-    else if (g.lines.length === 0) below = emptyKey(section, group);
-    else below = g.key;
-  }
-  if (drop?.kind === "line" && !over) {
-    const s = sectionModel(drop.section);
-    const g = groupModel(drop.section, drop.group);
-    if (!drop.before) endOf(drop.section, drop.group, true);
-    else if (s?.collapsed) into = s.key;
-    else if (g && g.rows.some((l) => l.id === drop.before)) above = drop.before;
-    else if (g) into = g.key;
-  } else if (drop?.kind === "heading") {
-    const s = sectionModel(drop.section);
-    if (s?.collapsed) into = s.key;
-    else if (drop.before) above = headingKey(drop.section, drop.before);
-    else {
-      const names = namedHeadings(drop.section);
-      endOf(drop.section, names[names.length - 1] ?? "", false);
+  function marksFor(d: Drop | null, hovering: boolean): Marks {
+    const m: Marks = { above: null, below: null, into: null };
+    const endOf = (section: string, group: string, asLine: boolean) => {
+      const s = sectionModel(section);
+      const g = groupModel(section, group);
+      // Empty: just under the heading (or at the top of the empty part),
+      // above the box for typing equipment in.
+      if (s?.collapsed) m.into = s.key;
+      else if (!g) m.above = emptyKey(section, group);
+      else if (g.collapsed) {
+        if (asLine) m.into = g.key;
+        else m.below = g.key;
+      } else if (g.rows.length > 0) m.below = g.rows[g.rows.length - 1].id;
+      else if (g.lines.length === 0) {
+        if (g.header) m.below = g.key;
+        else m.above = emptyKey(section, group);
+      }
+      else m.below = g.key;
+    };
+    if (d?.kind === "line" && d.above) m.above = d.above;
+    else if (d?.kind === "line" && !hovering) {
+      const s = sectionModel(d.section);
+      const g = groupModel(d.section, d.group);
+      if (!d.before) endOf(d.section, d.group, true);
+      else if (s?.collapsed) m.into = s.key;
+      else if (g && g.rows.some((l) => l.id === d.before)) m.above = d.before;
+      else if (g) m.into = g.key;
+    } else if (d?.kind === "heading") {
+      const s = sectionModel(d.section);
+      if (s?.collapsed) m.into = s.key;
+      else if (d.before) m.above = headingKey(d.section, d.before);
+      else {
+        const names = namedHeadings(d.section);
+        endOf(d.section, names[names.length - 1] ?? "", false);
+      }
     }
+    return m;
   }
+  const { above, below, into } = marksFor(drop, !!over);
+  // Indented when it's going in under a heading.
+  const indented = drop?.kind === "line" && drop.group !== "";
 
   const dnd: Dnd = {
     row: (desc) => {
@@ -750,7 +870,7 @@ export default function JobLines({
       const faded =
         (dragging?.kind === "line" && (movingIds.has(key) || (!!parent && movingIds.has(parent)))) ||
         (dragging?.kind === "heading" && headingKey(dragging.section, dragging.name) === key);
-      return `${faded ? "opacity-40" : ""} ${above === key ? LINE_ABOVE : ""} ${below === key ? LINE_BELOW : ""} ${into === key ? INTO : ""}`;
+      return `${faded ? "opacity-40" : ""} ${above === key ? (indented ? LINE_ABOVE_IN : LINE_ABOVE) : ""} ${below === key ? (indented ? LINE_BELOW_IN : LINE_BELOW) : ""} ${into === key ? INTO : ""}`;
     },
     handle: (key) => ({ onMouseDown: () => setGrabbed(key), onMouseUp: () => setGrabbed(null) }),
   };
@@ -829,9 +949,43 @@ export default function JobLines({
   const groupNames = [...new Set([...lines.map((l) => l.group), ...(job.headings ?? []).map((h) => h.name)].filter(Boolean))];
   const columns = (canEdit ? 2 : 0) + 3 + (steps ? 1 : 0) + (showPrices ? 3 : 0);
   const cols: Cols = { count: columns, lead: canEdit, steps: !!steps, prices: showPrices, actions: canEdit };
-  const pickingSection = picking === null ? null : sectionById(picking.section);
+  // Goes to the type-to-add box at the end of a heading (the part's last
+  // heading when none's given), opening whatever's folded on the way.
+  function focusAdd(section: string, group?: string) {
+    const s = model.find((m) => m.section.id === section);
+    const g = group ?? s?.groups[s.groups.length - 1]?.name ?? "";
+    setQuery("");
+    unfold(sectionKey(section), headingKey(section, g));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = rootRef.current?.querySelector<HTMLInputElement>(`[data-quickadd="${CSS.escape(quickKey(section, g))}"]`);
+        el?.scrollIntoView({ block: "center", behavior: "smooth" });
+        el?.focus({ preventScroll: true });
+      }),
+    );
+  }
+  const quickAdd = (section: string, group: string) => {
+    const sec = sectionById(section);
+    return (
+      <QuickAdd
+        id={quickKey(section, group)}
+        jobId={job.id}
+        start={sec.prepAt}
+        end={sec.returnAt}
+        placeholder={group ? `+ Add to ${group}` : "+ Add"}
+        onAdd={addItemTo(section, group)}
+        onCustom={addCustomTo(section, group)}
+        onHeading={async (name) => {
+          // In where it was typed: first from the top box, else after this heading.
+          const before = nextHeading(section, group) ?? undefined;
+          await heading({ action: "add", section, name, before }, "Couldn't add the heading");
+          focusAdd(section, name);
+        }}
+      />
+    );
+  };
   const addFor = (section: string, group?: string) => ({
-    onEquipment: () => setPicking({ section, group }),
+    onEquipment: () => focusAdd(section, group),
     onCustom: () => setAddingCustom({ section, group }),
     onHeading: () => startHeading(section),
   });
@@ -859,7 +1013,7 @@ export default function JobLines({
             {steps && <col className="w-44" />}
             {showPrices && (
               <>
-                <col className="w-24 hidden md:table-column" />
+                <col className="w-32 hidden md:table-column" />
                 <col className="w-[4.5rem] hidden md:table-column" />
                 <col className="w-24" />
               </>
@@ -923,9 +1077,8 @@ export default function JobLines({
                         }}
                         placeholder="Find on this project"
                         aria-label="Find equipment on this project"
-                        className="input py-1.5 w-56 pr-7"
+                        className="input py-1.5 w-56"
                       />
-                      {!query && <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 font-mono pointer-events-none">/</kbd>}
                     </div>
                     {searching && (
                       <span className="text-gray-500">
@@ -969,7 +1122,7 @@ export default function JobLines({
               {steps && <th className="px-2 py-1.5 font-medium w-44">Status</th>}
               {showPrices && (
                 <>
-                  <th className="px-2 py-1.5 font-medium text-right w-24 hidden md:table-cell">Rate</th>
+                  <th className="pl-2 pr-[2.875rem] py-1.5 font-medium text-right w-32 hidden md:table-cell">Rate</th>
                   <th className="px-2 py-1.5 font-medium text-right w-16 hidden md:table-cell">Disc %</th>
                   <th className="px-2 py-1.5 font-medium text-right w-24">Amount</th>
                 </>
@@ -988,6 +1141,7 @@ export default function JobLines({
                   dnd={dnd}
                   onToggle={() => toggleFold(s.key)}
                   add={addFor(s.section.id)}
+                  onRemove={s.section.id ? () => removeSubproject(s.section) : undefined}
                 />
               )}
               {!s.collapsed &&
@@ -995,17 +1149,16 @@ export default function JobLines({
                   <GroupRows
                     key={g.key}
                     group={g}
+                    priceNotes={priceNotes}
                     cols={cols}
                     canEdit={canEdit}
                     showPrices={showPrices}
                     jobDone={jobDone}
                     steps={steps}
                     section={s.section.id}
-                    split={split}
                     searching={searching}
                     dnd={dnd}
                     selected={selected}
-                    destinations={destinations}
                     kitOpen={kitOpen}
                     onKit={(id) =>
                       setKitFlipped((prev) => {
@@ -1021,9 +1174,9 @@ export default function JobLines({
                     onRename={(to) => renameGroup(s.section.id, g.name, to)}
                     onRemoveGroup={() => removeGroup(s.section.id, g.name, g.top.length)}
                     add={addFor(s.section.id, g.name)}
+                    quick={canEdit && !searching ? quickAdd(s.section.id, g.name) : null}
                     onPatch={patch}
                     onRemove={remove}
-                    onMove={(line, section, group) => moveTo([line], section, group)}
                   />
                 ))}
               {!s.collapsed && addingHeading === s.section.id && (
@@ -1055,21 +1208,27 @@ export default function JobLines({
                   </td>
                 </tr>
               )}
-              {split && !s.collapsed && s.groups.length === 0 && !searching && (
+              {(split || canEdit) && !s.collapsed && s.groups.length === 0 && !searching && (
                 <tr
                   {...dnd.row({ type: "empty", section: s.section.id, group: "" })}
                   data-row={emptyKey(s.section.id, "")}
                   className={dnd.cls(emptyKey(s.section.id, ""))}
                 >
-                  <td colSpan={columns} className="px-4 py-3 text-gray-400 text-sm">
-                    Nothing on {s.section.id ? "this subproject" : "the main project"} yet.
-                  </td>
+                  {canEdit ? (
+                    <QuickCells cols={cols} indent={false}>
+                      {quickAdd(s.section.id, "")}
+                    </QuickCells>
+                  ) : (
+                    <td colSpan={columns} className="px-4 py-3 text-gray-400 text-sm">
+                      Nothing on {s.section.id ? "this subproject" : "the main project"} yet.
+                    </td>
+                  )}
                 </tr>
               )}
             </tbody>
           ))}
         </table>
-        {lines.length === 0 && !split && <p className="px-4 py-8 text-gray-500 text-sm text-center">Nothing on this project yet.</p>}
+        {lines.length === 0 && !split && !canEdit && <p className="px-4 py-8 text-gray-500 text-sm text-center">Nothing on this project yet.</p>}
         {searching && shownModel.length === 0 && <p className="px-4 py-8 text-gray-500 text-sm text-center">Nothing matches “{query.trim()}”.</p>}
 
         {showPrices && summary.pricing && lines.length > 0 && (
@@ -1085,9 +1244,6 @@ export default function JobLines({
         )}
       </section>
 
-      {pickingSection && (
-        <ItemPicker jobId={job.id} start={pickingSection.prepAt} end={pickingSection.returnAt} onAdd={addItem} onClose={() => setPicking(null)} />
-      )}
       {addingCustom !== null && (
         <CustomLineModal
           groups={groupNames}
@@ -1175,6 +1331,49 @@ function MoreMenu({ label, children, className = "" }: { label: string; children
   );
 }
 
+// The "/day" beside a rate, which opens a menu to charge it another way.
+function ModeMenu({ value, label, onChange }: { value: PriceMode; label: string; onChange: (mode: PriceMode) => void }) {
+  const { open, setOpen, ref } = useDropdown();
+  const short = MODES.find(([m]) => m === value)?.[1] ?? "";
+  return (
+    <div ref={ref} className="relative inline-block align-baseline">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`ml-0.5 w-9 text-center text-[11px] rounded hover:text-gray-900 hover:bg-gray-100 ${open ? "text-gray-900 bg-gray-100" : "text-gray-400"}`}
+      >
+        {short}
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-1 w-28 card shadow-lg py-1 z-30 text-sm text-left font-normal">
+          {MODES.map(([mode, text]) => (
+            <button
+              key={mode}
+              role="menuitemradio"
+              aria-checked={mode === value}
+              onClick={() => {
+                setOpen(false);
+                if (mode !== value) onChange(mode);
+              }}
+              className={`${menuItem} flex items-center justify-between ${mode === value ? "font-medium text-gray-900" : "text-gray-700"}`}
+            >
+              {text}
+              {mode === value && (
+                <svg viewBox="0 0 20 20" className="w-4 h-4 text-signal-ink" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <path d="M4.5 10.5l3.5 3.5 7.5-8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Destinations = { section: Section; groups: string[] }[];
 
 // Every part and heading, to send lines to.
@@ -1244,12 +1443,18 @@ function MoveMenu({
   );
 }
 
-// "Add equipment", with custom lines and headings in the menu beside it.
-function AddControls({ onEquipment, onCustom, onHeading }: { onEquipment: () => void; onCustom: () => void; onHeading: () => void }) {
+interface AddActions {
+  onEquipment: () => void;
+  onCustom: () => void;
+  onHeading: () => void;
+}
+
+// "Add", with custom lines and headings in the menu beside it.
+function AddControls({ onEquipment, onCustom, onHeading }: AddActions) {
   return (
     <div className="flex items-center gap-1">
       <button onClick={onEquipment} className="btn-primary">
-        Add equipment
+        Add
       </button>
       <MoreMenu label="More to add">
         {(close) => (
@@ -1349,6 +1554,7 @@ function SectionRow({
   dnd,
   onToggle,
   add,
+  onRemove,
 }: {
   model: SectionModel;
   cols: Cols;
@@ -1356,7 +1562,9 @@ function SectionRow({
   showPrices: boolean;
   dnd: Dnd;
   onToggle: () => void;
-  add: { onEquipment: () => void; onCustom: () => void; onHeading: () => void };
+  add: AddActions;
+  // Subprojects only; the main project stays.
+  onRemove?: () => void;
 }) {
   const { section } = model;
   const cell = "bg-gray-100 border-y border-gray-300 py-2.5";
@@ -1392,21 +1600,22 @@ function SectionRow({
         <td className={`${cell} pr-2 text-right whitespace-nowrap`}>
           {canEdit && (
             <span className="inline-flex items-center">
-              <button onClick={add.onEquipment} className="text-signal-ink hover:text-signal-ink-hover font-medium px-1.5 text-base leading-none" title={`Add equipment to ${section.name}`}>
-                +
-              </button>
               <MoreMenu label={`${section.name} options`}>
                 {(close) => (
                   <>
-                    <button onClick={then(close, () => add.onEquipment())} className={menuItem}>
-                      Add equipment
-                    </button>
                     <button onClick={then(close, () => add.onCustom())} className={menuItem}>
                       Add custom line
                     </button>
                     <button onClick={then(close, () => add.onHeading())} className={menuItem}>
                       Add heading
                     </button>
+                    {onRemove && (
+                      <div className="border-t border-gray-100 mt-1 pt-1">
+                        <button onClick={then(close, onRemove)} className={`${menuItem} text-fault-ink`}>
+                          Remove subproject
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </MoreMenu>
@@ -1420,17 +1629,16 @@ function SectionRow({
 
 function GroupRows({
   group,
+  priceNotes,
   cols,
   canEdit,
   showPrices,
   jobDone,
   steps,
   section,
-  split,
   searching,
   dnd,
   selected,
-  destinations,
   kitOpen,
   onKit,
   onTick,
@@ -1439,22 +1647,21 @@ function GroupRows({
   onRename,
   onRemoveGroup,
   add,
+  quick,
   onPatch,
   onRemove,
-  onMove,
 }: {
   group: GroupModel;
+  priceNotes: Map<string, string>;
   cols: Cols;
   canEdit: boolean;
   showPrices: boolean;
   jobDone: boolean;
   steps: TrackingStep[] | null;
   section: string;
-  split: boolean;
   searching: boolean;
   dnd: Dnd;
   selected: Set<string>;
-  destinations: Destinations;
   kitOpen: (line: JobLineView) => boolean;
   onKit: (id: string) => void;
   onTick: (id: string, e: MouseEvent) => void;
@@ -1462,10 +1669,11 @@ function GroupRows({
   onToggle: () => void;
   onRename: (to: string) => void;
   onRemoveGroup: () => void;
-  add: { onEquipment: () => void; onCustom: () => void; onHeading: () => void };
+  add: AddActions;
+  // The type-to-add box, when the list can be changed.
+  quick: ReactNode;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
-  onMove: (line: JobLineView, section: string, group: string) => void;
 }) {
   const ticked = group.top.filter((l) => selected.has(l.id)).length;
   const label = group.name || "No heading";
@@ -1526,22 +1734,18 @@ function GroupRows({
           {cols.actions && (
             <td className={`${cell} pr-2 text-right whitespace-nowrap`}>
               <span className="inline-flex items-center">
-                <button onClick={add.onEquipment} className={`text-signal-ink hover:text-signal-ink-hover font-medium px-1.5 text-base leading-none ${ON_HOVER}`} title={`Add equipment under ${label}`}>
-                  +
-                </button>
                 <MoreMenu label={`${label} options`} className={ON_HOVER}>
                   {(close) => (
                     <>
-                      <button onClick={then(close, () => add.onEquipment())} className={menuItem}>
-                        Add equipment here
-                      </button>
                       <button onClick={then(close, () => add.onCustom())} className={menuItem}>
                         Add custom line here
                       </button>
                       {named && (
-                        <button onClick={then(close, () => onRemoveGroup())} className={`${menuItem} text-fault-ink`}>
-                          Remove heading
-                        </button>
+                        <div className="border-t border-gray-100 mt-1 pt-1">
+                          <button onClick={then(close, () => onRemoveGroup())} className={`${menuItem} text-fault-ink`}>
+                            Remove heading
+                          </button>
+                        </div>
                       )}
                     </>
                   )}
@@ -1553,14 +1757,15 @@ function GroupRows({
       )}
       {!group.collapsed && group.lines.length === 0 && !searching && (
         <tr {...dnd.row({ type: "empty", section, group: group.name })} data-row={emptyKey(section, group.name)} className={dnd.cls(emptyKey(section, group.name))}>
-          <td colSpan={cols.count} className={`py-2 text-xs text-gray-400 ${cols.lead ? "pl-[4.75rem]" : "pl-10"}`}>
-            Nothing here yet.
-            {canEdit && (
-              <button onClick={add.onEquipment} className="ml-2 text-signal-ink hover:text-signal-ink-hover font-medium">
-                Add equipment
-              </button>
-            )}
-          </td>
+          {quick ? (
+            <QuickCells cols={cols} indent={group.header}>
+              {quick}
+            </QuickCells>
+          ) : (
+            <td colSpan={cols.count} className={`py-2 text-xs text-gray-400 ${cols.lead ? "pl-[4.75rem]" : "pl-10"}`}>
+              Nothing here yet.
+            </td>
+          )}
         </tr>
       )}
       {group.rows.map((line) => {
@@ -1581,17 +1786,34 @@ function GroupRows({
             onKit={() => onKit(line.id)}
             section={section}
             group={group.name}
-            split={split}
+            priceNote={priceNotes.get(line.id)}
             dnd={dnd}
-            destinations={destinations}
             ticked={selected.has(line.id)}
             onTick={(e) => onTick(line.id, e)}
             onPatch={onPatch}
             onRemove={onRemove}
-            onMove={(s, g) => onMove(line, s, g)}
           />
         );
       })}
+      {quick && !group.collapsed && group.lines.length > 0 && (
+        <tr>
+          <QuickCells cols={cols} indent={group.header}>
+            {quick}
+          </QuickCells>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// The type-to-add box's row, lined up with the item names above it.
+function QuickCells({ cols, indent, children }: { cols: Cols; indent: boolean; children: ReactNode }) {
+  return (
+    <>
+      {cols.lead && <td />}
+      <td colSpan={cols.count - (cols.lead ? 1 : 0)} className={`py-1 ${(cols.lead ? ["pl-1", "pl-7"] : ["pl-4", "pl-10"])[indent ? 1 : 0]}`}>
+        {children}
+      </td>
     </>
   );
 }
@@ -1609,14 +1831,12 @@ function LineRow({
   onKit,
   section,
   group,
-  split,
+  priceNote,
   dnd,
-  destinations,
   ticked,
   onTick,
   onPatch,
   onRemove,
-  onMove,
 }: {
   line: JobLineView;
   cols: Cols;
@@ -1633,14 +1853,13 @@ function LineRow({
   onKit: () => void;
   section: string;
   group: string;
-  split: boolean;
+  // Why its price stands out, if it does.
+  priceNote?: string;
   dnd: Dnd;
-  destinations: Destinations;
   ticked: boolean;
   onTick: (e: MouseEvent) => void;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
-  onMove: (section: string, group: string) => void;
 }) {
   const isChild = Boolean(line.parentLine);
   const isCustom = line.lineType === "custom";
@@ -1725,12 +1944,21 @@ function LineRow({
       {cols.prices && (
         <>
           <td data-col="rate" className="px-2 py-1 text-right whitespace-nowrap hidden md:table-cell">
+            {priceNote && (
+              <span title={priceNote} aria-label={priceNote} className="inline-flex align-middle p-1 cursor-help">
+                <span className="status-dot bg-warn" />
+              </span>
+            )}
             {canEdit && line.lineType !== "component" ? (
-              <InlineNumber value={line.unitPrice ?? 0} step={0.01} onCommit={(unitPrice) => onPatch(line, { unitPrice })} className={`w-20 ${QUIET} ${line.unitPrice ? "" : "text-gray-400"}`} />
+              <InlineNumber value={line.unitPrice ?? 0} step={0.01} onCommit={(unitPrice) => onPatch(line, { unitPrice })} className={`field-sizing-content min-w-8 max-w-20 ${QUIET} ${line.unitPrice ? "" : "text-gray-400"}`} />
             ) : (
               <span className="tabular-nums text-gray-400">{line.unitPrice ? nzd(line.unitPrice) : "incl."}</span>
             )}
-            {line.unitPrice ? <span className="ml-0.5 text-[11px] text-gray-400">{MODE_SUFFIX[line.priceMode]}</span> : null}
+            {canEdit && line.lineType !== "component" ? (
+              <ModeMenu value={line.priceMode} label={`How ${line.name} is charged`} onChange={(priceMode) => onPatch(line, { priceMode })} />
+            ) : (
+              <span className="ml-0.5 inline-block w-9 text-center text-[11px] text-gray-400">{line.unitPrice ? MODE_SUFFIX[line.priceMode] : ""}</span>
+            )}
           </td>
           <td data-col="disc" className="px-2 py-1 text-right hidden md:table-cell">
             {canEdit && line.lineType !== "component" ? (
@@ -1754,23 +1982,9 @@ function LineRow({
           {canEdit && !isChild && (
             <MoreMenu label={`${line.name} options`} className={ON_HOVER}>
               {(close) => (
-                <>
-                  <div className="px-3 pt-1.5 pb-0.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">Move to</div>
-                  <MoveList
-                    destinations={destinations}
-                    split={split}
-                    here={{ section, group }}
-                    onPick={(s, g) => {
-                      close();
-                      onMove(s, g);
-                    }}
-                  />
-                  <div className="border-t border-gray-100 mt-1 pt-1">
-                    <button onClick={then(close, () => onRemove(line))} className={`${menuItem} text-fault-ink`}>
-                      Remove
-                    </button>
-                  </div>
-                </>
+                <button onClick={then(close, () => onRemove(line))} className={`${menuItem} text-fault-ink`}>
+                  Remove
+                </button>
               )}
             </MoreMenu>
           )}
