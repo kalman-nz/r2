@@ -22,5 +22,8 @@ A one-off or weekly recurring interval during which a person cannot take crew wo
 **Availability exception**:
 A skipped or replacement occurrence of a recurring unavailable period. It changes that occurrence only, not other unavailable periods or crew assignments.
 
+**Public availability note**:
+An optional explanation supplied by a crew member and shared with authorised crew planners in all organisations they currently belong to, including organisations joined after the note was saved.
+
 **Unverified crew availability**:
 Availability for a crew person whose identity is not linked to a verified account and therefore cannot be checked across organisations.
