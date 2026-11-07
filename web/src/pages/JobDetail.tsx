@@ -376,7 +376,7 @@ function ExistingJob({ id }: { id: string }) {
                     {cards.project}
                     <JobCustomFields summary={summary} canEdit={canEdit} onSaved={refresh} />
                     <ScheduleOverview summary={summary} onOpen={() => openTab("schedule")} />
-                    <CrewCard summary={summary} canEdit={canEdit} />
+                    {feature("crew") && <CrewCard summary={summary} canEdit={canEdit} />}
                     {cards.notes}
                     {cards.pricing}
                   </>
@@ -425,7 +425,7 @@ function ExistingJob({ id }: { id: string }) {
         <div className="flex flex-col gap-4 min-w-0">
           {tab === "equipment" && <JobLines summary={summary} canEdit={can("jobs.lines")} onSummary={setSummary} />}
           {tab === "schedule" && <JobSchedule summary={summary} canEdit={canEdit} />}
-          {tab === "crew" && <JobCrew summary={summary} canEdit={canEdit} />}
+          {tab === "crew" && feature("crew") && <JobCrew summary={summary} canEdit={canEdit} />}
         </div>
       )}
     </div>
@@ -477,7 +477,7 @@ function KeyFacts({ summary, shortLines }: { summary: JobSummary; shortLines: nu
           value={lines === 0 ? "Nothing yet" : shortLines > 0 ? `${shortLines} of ${lines} short` : `${lines} line${lines === 1 ? "" : "s"}`}
           tone={shortLines > 0 ? "text-fault-ink" : "text-gray-900"}
         />,
-        <Fact
+        rostering && <Fact
           key="crew"
           label="Crew"
           value={

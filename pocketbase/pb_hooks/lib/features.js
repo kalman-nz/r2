@@ -156,7 +156,7 @@ const FEATURE_OF_COLLECTION = {
   jobs: "projects",
   job_periods: "projects",
   subprojects: "projects",
-  job_crew: "projects",
+  job_crew: "crew",
   contacts: "projects",
   venues: "projects",
   crew_needs: "crew",
