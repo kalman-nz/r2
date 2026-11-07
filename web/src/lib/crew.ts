@@ -64,13 +64,14 @@ export function useCrewBookings(from: string, to: string, enabled = true) {
   });
 }
 
-// Adding people to slots (or the whole project) and taking them off.
+// Adding people to crew-need slots and taking them off.
 export function useRosterActions() {
   const queryClient = useQueryClient();
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["job-crew"] });
   return {
-    assign: async (jobId: string, personId: string, needId = "", role = "") => {
-      await pb.collection("job_crew").create(withOrg({ job: jobId, person: personId, need: needId, function: role.trim() }));
+    assign: async (jobId: string, personId: string, needId: string) => {
+      if (!needId.trim()) throw new Error("Choose a crew need for this assignment");
+      await pb.collection("job_crew").create(withOrg({ job: jobId, person: personId, need: needId }));
       await refresh();
     },
     unassign: async (crewId: string) => {

@@ -998,8 +998,8 @@ export interface PageViewsData {
   defaultId: string;
 }
 
-// Someone on a project (job_crew): filling one of its crew needs (a slot),
-// or on the whole project when need is "". user is the person's login, if
+// Someone filling a required crew need on a project (job_crew).
+// user is the person's login, if
 // they're a member ("" for freelancers).
 export interface CrewMember extends RecordModel {
   org: string;
