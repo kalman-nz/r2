@@ -1,0 +1,5 @@
+# Declare unavailable periods in explicit time zones
+
+Crew are available by default unless their own unavailable periods or crew assignments block them; support unavailable periods rather than a separate working-hours mode. Timed one-offs preserve actual instants, while weekly rules and all-day dates retain local meaning in an explicit named time zone, so travel and planner settings cannot silently move them.
+
+Intervals include their start and exclude their end, and unavailable periods combine without overriding assignments. One-off nonexistent local times are rejected and repeated times require disambiguation; recurring rules use the earlier repeated start and later repeated end, snapping nonexistent boundaries to clock resumption. A recurrence whose boundaries collapse covers no real time and must be visible in preview. These conservative rules avoid unintended availability during clock changes; the full recurrence, exception and note decisions are recorded in [Define crew availability defaults and time-window rules](https://github.com/kalman-nz/r2/issues/15).

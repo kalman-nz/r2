@@ -14,7 +14,13 @@ The crew required for one schedule item whose kind is `other`: a crew role, head
 A person assigned to a crew need.
 
 **Declared availability**:
-A person's own statement of when they are available or unavailable for crew work, shared across the organisations they work with.
+A person's own unavailable periods for crew work, shared across the organisations they work with. Time without an unavailable period is available unless a crew assignment blocks it.
+
+**Unavailable period**:
+A one-off or weekly recurring interval during which a person cannot take crew work. Overlapping periods combine; an optional public note may accompany a period.
+
+**Availability exception**:
+A skipped or replacement occurrence of a recurring unavailable period. It changes that occurrence only, not other unavailable periods or crew assignments.
 
 **Unverified crew availability**:
 Availability for a crew person whose identity is not linked to a verified account and therefore cannot be checked across organisations.
