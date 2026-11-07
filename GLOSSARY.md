@@ -8,7 +8,7 @@ This context manages projects, their schedules, equipment, and crew.
 A named period of work on a project's schedule, such as a usage, billing, or other period.
 
 **Crew need**:
-The crew required for one schedule item: a crew role, headcount, optional minimum skill level, and the time when that crew is needed.
+The crew required for one other schedule item: a crew role, headcount, optional minimum skill level, and the time when that crew is needed.
 
 **Crew assignment**:
-A person assigned to a crew need or to a project as a whole.
+A person assigned to a crew need.
