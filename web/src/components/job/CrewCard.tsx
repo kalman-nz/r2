@@ -1,49 +1,34 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { CrewMember, JobSummary } from "../../lib/api";
-import { errorText } from "../../lib/errors";
 import { useOrg } from "../../lib/org";
 import { useAuthRecord } from "../../lib/pocketbase";
-import { useCrewPeople, useCrewRoles, useJobCrew, useJobCrewNeeds, useRosterActions } from "../../lib/crew";
-import PersonPicker from "../crew/PersonPicker";
-import { useToast } from "../ToastProvider";
+import { useCrewPeople, useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
 
 // Who's on a project, beside it: each person once, with what they're doing.
-// With Crew rostering on, they're rostered on the Crew tab (by schedule
-// item and crew role); without it, planners add people to the whole
-// project here. They see it under "My projects" on their dashboards.
+// People are rostered on the Crew tab through crew needs and schedule items.
 export default function CrewCard({ summary, canEdit }: { summary: JobSummary; canEdit: boolean }) {
   const jobId = summary.job.id;
   const me = useAuthRecord();
   const { feature } = useOrg();
   const rostering = feature("crew");
-  const { showToast } = useToast();
-  const { people, byId: personById } = useCrewPeople();
+  const { byId: personById } = useCrewPeople();
   const { byId: roleById } = useCrewRoles();
-  const { data: needs = [] } = useJobCrewNeeds(jobId, rostering);
+  const { data: needs = [] } = useJobCrewNeeds(jobId);
   const { data: crew = [] } = useJobCrew(jobId);
-  const { assign, unassign } = useRosterActions();
-  const [role, setRole] = useState("");
 
   const periodName = (id: string) => summary.periods.find((p) => p.id === id)?.name ?? "";
-  // What someone's doing: their role on each slot, or what they were added as.
+  // What someone's doing: their crew need's role and schedule item.
   const doing = (c: CrewMember) => {
     const need = needs.find((n) => n.id === c.need);
-    if (!need) return c.function;
+    if (!need) return "";
     return [roleById.get(need.role)?.name, periodName(need.period)].filter(Boolean).join(", ");
   };
   const byPerson = new Map<string, CrewMember[]>();
-  for (const c of crew) byPerson.set(c.person, [...(byPerson.get(c.person) ?? []), c]);
+  for (const c of crew) {
+    if (needs.some((n) => n.id === c.need)) byPerson.set(c.person, [...(byPerson.get(c.person) ?? []), c]);
+  }
   const slots = needs.reduce((n, x) => n + x.quantity, 0);
   const open = needs.reduce((n, x) => n + Math.max(0, x.quantity - crew.filter((c) => c.need === x.id).length), 0);
-
-  async function run(work: () => Promise<void>) {
-    try {
-      await work();
-    } catch (err) {
-      showToast("error", errorText(err));
-    }
-  }
 
   return (
     <section className="card p-4 flex flex-col gap-2 text-sm">
@@ -70,32 +55,8 @@ export default function CrewCard({ summary, canEdit }: { summary: JobSummary; ca
               <span className="block text-xs text-gray-500 truncate">{theirs.map(doing).filter(Boolean).join(" · ")}</span>
             )}
           </span>
-          {canEdit && !rostering && (
-            <button
-              onClick={() => run(async () => Promise.all(theirs.map((c) => unassign(c.id))).then(() => undefined))}
-              className="w-6 h-6 rounded text-gray-400 hover:text-fault-ink hover:bg-gray-100 opacity-0 group-hover:opacity-100 focus:opacity-100"
-              aria-label="Take them off the crew"
-            >
-              ×
-            </button>
-          )}
         </div>
       ))}
-      {canEdit && !rostering && (
-        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
-          <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Doing what?" maxLength={60} className="input py-1.5 flex-1 min-w-0" />
-          <PersonPicker
-            people={people}
-            exclude={new Set(crew.filter((c) => !c.need).map((c) => c.person))}
-            onPick={(p) =>
-              run(async () => {
-                await assign(jobId, p.id, "", role);
-                setRole("");
-              })
-            }
-          />
-        </div>
-      )}
     </section>
   );
 }

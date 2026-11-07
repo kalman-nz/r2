@@ -41,12 +41,12 @@ const draftOf = (p?: CrewPerson): Draft => ({
   notes: p?.notes ?? "",
 });
 
-// A slot they fill (or the whole project), with when and what.
+// A crew-need slot they fill, with when and what.
 type Slot = CrewMember & { expand?: { job?: Job; need?: CrewNeed & { expand?: { role?: CrewRole; period?: JobPeriod } } } };
 
 const time = (value: string | undefined) => parseDate(value)?.getTime() ?? 0;
-const startOf = (s: Slot) => s.expand?.need?.start || s.expand?.job?.startAt || "";
-const endOf = (s: Slot) => s.expand?.need?.end || s.expand?.job?.endAt || startOf(s);
+const startOf = (s: Slot) => s.expand?.need?.start || "";
+const endOf = (s: Slot) => s.expand?.need?.end || startOf(s);
 
 export default function CrewPersonPage() {
   const { id = "" } = useParams();
@@ -436,7 +436,7 @@ function SlotsCard({ title, slots, empty, more }: { title: string; slots: Slot[]
           {slots.map((s) => {
             const job = s.expand?.job;
             const need = s.expand?.need;
-            const doing = need ? [need.expand?.role?.name, need.expand?.period?.name].filter(Boolean).join(" · ") : s.function || "Whole project";
+            const doing = [need?.expand?.role?.name, need?.expand?.period?.name].filter(Boolean).join(" · ");
             return (
               <Link key={s.id} to={`/projects/${s.job}?tab=crew`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-gray-50">
                 <span className="flex flex-col min-w-0">

@@ -1,32 +1,23 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { JobSummary } from "../../lib/api";
-import { errorText } from "../../lib/errors";
 import { formatPeriod } from "../../lib/format";
-import { useAuthRecord } from "../../lib/pocketbase";
-import { clashesFor, useCrewBookings, useCrewPeople, useCrewRoles, useJobCrew, useJobCrewNeeds, useRosterActions } from "../../lib/crew";
+import { clashesFor, useCrewBookings, useCrewPeople, useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
 import { NeedForm, NeedSlots } from "../crew/Needs";
-import PersonPicker from "../crew/PersonPicker";
-import { useToast } from "../ToastProvider";
 
 // A project's Crew tab, its rostering window: each schedule item with the
-// crew it needs (3× Technical labour) and who's filling each, then anyone
-// on the whole project (a project manager, say). Planners (jobs.edit) set
+// crew it needs (3× Technical labour) and who's filling each. Planners (jobs.edit) set
 // the needs and roster people; double bookings across projects show as
 // they're made. The Rostering page does the same across every project.
 export default function JobCrew({ summary, canEdit }: { summary: JobSummary; canEdit: boolean }) {
   const { job } = summary;
-  const me = useAuthRecord();
-  const { showToast } = useToast();
   const { roles, byId: roleById } = useCrewRoles();
   const { people, byId: personById } = useCrewPeople();
   const { data: needs = [] } = useJobCrewNeeds(job.id);
   const { data: crew = [] } = useJobCrew(job.id);
-  const { assign, unassign } = useRosterActions();
   // The need being changed, or the schedule item a need's being added to.
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
-  const [wholeRole, setWholeRole] = useState("");
 
   const subName = (id: string) => summary.subprojects?.find((sp) => sp.id === id)?.name ?? "";
   const periods = useMemo(
@@ -48,15 +39,6 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
     const need = eligibleNeeds.find((n) => n.id === c.need);
     return need && clashesFor(bookings, c.person, need).length > 0;
   }).length;
-  const whole = crew.filter((c) => !c.need);
-
-  async function run(work: () => Promise<void>) {
-    try {
-      await work();
-    } catch (err) {
-      showToast("error", errorText(err));
-    }
-  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -133,52 +115,6 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
           </section>
         );
       })}
-
-      <section className="card px-4 py-3 flex flex-col gap-2">
-        <h3 className="text-sm font-semibold text-gray-900">Whole project</h3>
-        {whole.length === 0 && <p className="text-xs text-gray-400">Nobody.</p>}
-        {whole.map((c) => (
-          <div key={c.id} className="group flex items-center gap-2 text-sm">
-            <span className="text-gray-900">
-              <Link to={`/crew/${c.person}`} className="hover:underline">
-                {personById.get(c.person)?.name ?? "Someone"}
-              </Link>
-              {c.user && c.user === me?.id && <span className="text-xs text-gray-400"> (you)</span>}
-            </span>
-            {c.function && <span className="text-xs text-gray-500">{c.function}</span>}
-            {canEdit && (
-              <button
-                onClick={() => run(() => unassign(c.id))}
-                className="w-5 h-5 rounded text-gray-400 hover:text-fault-ink hover:bg-gray-100 opacity-0 group-hover:opacity-100 focus:opacity-100"
-                aria-label="Take them off the project"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-        {canEdit && (
-          <div className="flex items-center gap-2 flex-wrap pt-1">
-            <input
-              value={wholeRole}
-              onChange={(e) => setWholeRole(e.target.value)}
-              placeholder="Doing what? e.g. Project manager"
-              maxLength={60}
-              className="input py-1.5 w-60"
-            />
-            <PersonPicker
-              people={people}
-              exclude={new Set(whole.map((c) => c.person))}
-              onPick={(person) =>
-                run(async () => {
-                  await assign(job.id, person.id, "", wholeRole);
-                  setWholeRole("");
-                })
-              }
-            />
-          </div>
-        )}
-      </section>
     </div>
   );
 }

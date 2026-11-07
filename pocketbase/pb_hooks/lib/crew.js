@@ -321,8 +321,7 @@ function syncNeedTimes(app, period) {
   }
 }
 
-// Someone on a project: on one of its crew needs (a slot), or the whole
-// project when need is "". Each once, and a need takes as many as it asks.
+// Someone fills one of this project's crew needs once, up to its headcount.
 function validateCrew(app, record) {
   const { membershipOf } = require("./orgs.js");
   const org = record.getString("org");
@@ -336,19 +335,16 @@ function validateCrew(app, record) {
   record.set("function", text(record.getString("function"), 60));
 
   const needId = record.getString("need");
-  let need = null;
-  if (needId) {
-    need = find(app, "crew_needs", needId);
-    if (!need || need.getString("job") !== job.id) throw new BadRequestError("That crew need isn't on this project");
-  }
-  // (An empty {:need} doesn't match an empty relation, so say it outright.)
+  if (!needId) throw new BadRequestError("Choose a crew need for this assignment");
+  const need = find(app, "crew_needs", needId);
+  if (!need || need.getString("job") !== job.id) throw new BadRequestError("That crew need isn't on this project");
   const others = app
-    .findRecordsByFilter("job_crew", needId ? "job = {:job} && need = {:need}" : "job = {:job} && need = ''", "", 0, 0, { job: job.id, need: needId })
+    .findRecordsByFilter("job_crew", "job = {:job} && need = {:need}", "", 0, 0, { job: job.id, need: needId })
     .filter((c) => c.id !== record.id);
   if (others.some((c) => c.getString("person") === person.id)) {
-    throw new BadRequestError(person.getString("name") + (need ? " is already on that" : " is already on the project"));
+    throw new BadRequestError(person.getString("name") + " is already on that");
   }
-  if (need && others.length >= need.getInt("quantity")) {
+  if (others.length >= need.getInt("quantity")) {
     const role = find(app, "crew_roles", need.getString("role"));
     throw new BadRequestError("All " + need.getInt("quantity") + " " + (role ? role.getString("name") : "") + " spots are filled");
   }
