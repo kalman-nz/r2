@@ -4,6 +4,7 @@ const port = process.env.PLAYWRIGHT_PORT || "4179";
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: "crew-feature.spec.ts",
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },

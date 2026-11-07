@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:browser": "playwright test",
+    "test:browser:crew-feature": "playwright test --config crew-feature.playwright.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

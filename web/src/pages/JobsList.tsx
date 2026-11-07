@@ -298,7 +298,8 @@ export default function JobsList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { can } = useRole();
-  const { org } = useOrg();
+  const { org, feature } = useOrg();
+  const rostering = feature("crew");
   const me = useAuthRecord();
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -312,7 +313,8 @@ export default function JobsList() {
   const [when, setWhen] = useState<When>("any");
   const [client, setClient] = useState("");
   const [venue, setVenue] = useState("");
-  const [crewUser, setCrewUser] = useState("");
+  const [selectedCrewUser, setCrewUser] = useState("");
+  const crewUser = rostering ? selectedCrewUser : "";
   const [shown, setShown] = useState<string[]>(DEFAULT_VIEW.columns as string[]);
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [sorts, setSorts] = useState<Sort[]>(() => [{ key: "start", dir: newestFirst(view) ? "desc" : "asc" }]);
@@ -338,10 +340,12 @@ export default function JobsList() {
     queryKey: ["jobs", "list"],
     queryFn: () => pb.collection("jobs").getFullList<JobWithExpand>({ sort: "startAt", expand: "client,venue,spaces", filter: orgFilter() }),
   });
-  const { data: crew = [] } = useQuery({
-    queryKey: ["job-crew", "all"],
-    queryFn: () => pb.collection("job_crew").getFullList<CrewWithPerson>({ filter: orgFilter(), sort: "sortOrder,created", expand: "person" }),
+  const { data: activeCrew = [] } = useQuery({
+    queryKey: ["job-crew", "active", "all", rostering],
+    queryFn: () => api.activeCrew<CrewWithPerson>(),
+    enabled: rostering,
   });
+  const crew = useMemo(() => rostering ? activeCrew : [], [rostering, activeCrew]);
   // Kit still out per project, for "Overdue" (returned with kit not back).
   const { data: outstanding = {} } = useQuery({ queryKey: ["jobs", "outstanding"], queryFn: api.outstanding });
   const { data: members = [] } = useQuery({
@@ -431,7 +435,7 @@ export default function JobsList() {
   const { fields: customFields } = useCustomFields("job");
   const allColumns = useMemo<Column[]>(
     () => [
-      ...COLUMNS,
+      ...COLUMNS.filter((c) => rostering || c.key !== "crew"),
       ...customFields.map((f) => ({
         key: `custom:${f.key}`,
         label: f.label,
@@ -444,7 +448,7 @@ export default function JobsList() {
         render: (j: Row) => text(customText(f, customValueOf(j, f))),
       })),
     ],
-    [customFields],
+    [customFields, rostering],
   );
   const sortable = allColumns.filter((c) => c.sortValue);
   const allGroups = useMemo<GroupOption<Row>[]>(
@@ -686,7 +690,7 @@ export default function JobsList() {
                 ))}
               </select>
             </FilterField>
-            <FilterField label="Crew">
+            {rostering && <FilterField label="Crew">
               <select value={crewUser} onChange={(e) => setCrewUser(e.target.value)} className="input">
                 <option value="">Anyone</option>
                 {crewChoices.map(([id, name]) => (
@@ -696,7 +700,7 @@ export default function JobsList() {
                 ))}
                 {crewUser && !crewChoices.some(([id]) => id === crewUser) && <option value={crewUser}>Someone</option>}
               </select>
-            </FilterField>
+            </FilterField>}
             <SortList columns={sortable} sorts={sorts} onChange={setSorts} />
             <GroupFields options={allGroups} groupBy={groupBy} onChange={setGroupBy} />
           </FiltersMenu>
