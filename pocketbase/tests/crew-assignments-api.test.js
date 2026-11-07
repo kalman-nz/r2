@@ -110,6 +110,9 @@ test("assignments require this project's crew need on creates and edits, includi
   const assignment = await api.create("job_crew", { job: job.id, person: person.id, need: need.id });
   const endpoint = `/api/collections/job_crew/records/${assignment.id}`;
   for (const call of [api.call, api.suCall]) {
+    const omitted = await call("POST", "/api/collections/job_crew/records", { org: org.id, job: job.id, person: person.id });
+    assert.equal(omitted.status, 400, JSON.stringify(omitted));
+    assert.match(omitted.body.message, /crew need/i);
     for (const empty of ["", null]) {
       const create = await call("POST", "/api/collections/job_crew/records", { org: org.id, job: job.id, person: person.id, need: empty });
       assert.equal(create.status, 400, JSON.stringify(create));
