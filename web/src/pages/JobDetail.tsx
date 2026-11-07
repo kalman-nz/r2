@@ -39,6 +39,7 @@ import { Problem } from "../components/Field";
 import { DetailCard, DetailRow, Fact, FactTiles } from "../components/DetailCard";
 import CustomFieldsCard from "../components/CustomFieldsCard";
 import { useCustomFields } from "../lib/customFields";
+import ArrowLink from "../components/ArrowLink";
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -139,9 +140,7 @@ function ScheduleOverview({ summary, onOpen }: { summary: JobSummary; onOpen: ()
     <section className="card p-4 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
         <h2 className="eyebrow text-gray-500">Schedule</h2>
-        <button onClick={onOpen} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
-          Open schedule →
-        </button>
+        <ArrowLink onClick={onOpen}>Open schedule</ArrowLink>
       </div>
       <ul className="flex flex-col gap-1.5">
         {periods.map((p) => (

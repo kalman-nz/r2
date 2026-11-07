@@ -3,6 +3,7 @@ import type { CrewMember, JobSummary } from "../../lib/api";
 import { useOrg } from "../../lib/org";
 import { useAuthRecord } from "../../lib/pocketbase";
 import { useCrewPeople, useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
+import ArrowLink from "../ArrowLink";
 
 // Who's on a project, beside it: each person once, with what they're doing.
 // People are rostered on the Crew tab through crew needs and schedule items.
@@ -35,9 +36,7 @@ export default function CrewCard({ summary, canEdit }: { summary: JobSummary; ca
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="eyebrow text-gray-500">Crew</h2>
         {rostering && (
-          <Link to={`/projects/${jobId}?tab=crew`} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
-            {canEdit ? "Roster crew" : "See crew"}
-          </Link>
+          <ArrowLink to={`/projects/${jobId}?tab=crew`}>{canEdit ? "Roster crew" : "See crew"}</ArrowLink>
         )}
       </div>
       {rostering && slots > 0 && <p className={`text-xs ${open > 0 ? "text-amber-700" : "text-gray-500"}`}>{open > 0 ? `${open} of ${slots} slots to fill` : `All ${slots} slots filled`}</p>}

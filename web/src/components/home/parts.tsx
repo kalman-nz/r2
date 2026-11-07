@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { TrackingStage } from "../../lib/api";
 import type { ProjectRow } from "../../lib/home";
 import { placeName } from "../../lib/format";
+import ArrowLink from "../ArrowLink";
 
 // The pieces dashboards are drawn with (pages/Dashboard.tsx).
 
@@ -50,9 +51,7 @@ export function Panel({
           <p className="text-xs text-gray-500 truncate">{sub}</p>
         </div>
         {action && (
-          <Link to={action.to} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover whitespace-nowrap">
-            {action.label}
-          </Link>
+          <ArrowLink to={action.to}>{action.label}</ArrowLink>
         )}
       </div>
       {count === 0 ? <p className="px-4 py-6 text-sm text-gray-500 text-center">{empty}</p> : <div className="divide-y divide-gray-100">{children}</div>}

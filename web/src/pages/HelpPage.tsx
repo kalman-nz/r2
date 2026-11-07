@@ -110,6 +110,25 @@ function Block({ block }: { block: HelpBlock }) {
   return <HelpVisual id={block.ui} caption={block.caption} />;
 }
 
+// Previous / next topic, as quiet buttons like the app's other "go there" links.
+function StepLink({ topic, label }: { topic: HelpTopic; label: "Previous" | "Next" }) {
+  const next = label === "Next";
+  return (
+    <Link
+      to={`/help/${topic.id}`}
+      className={`group flex items-center gap-2 min-w-0 rounded-md border border-gray-200 px-3 py-2.5 hover:bg-gray-50 hover:border-gray-300 transition-colors ${next ? "flex-row-reverse text-right" : ""}`}
+    >
+      <svg viewBox="0 0 20 20" className={`w-4 h-4 shrink-0 text-gray-400 group-hover:text-gray-700 ${next ? "" : "rotate-180"}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M8 5l5 5-5 5" />
+      </svg>
+      <span className="flex flex-col min-w-0">
+        <span className="text-xs text-gray-500">{label}</span>
+        <span className="text-sm font-medium text-gray-900 truncate">{topic.title}</span>
+      </span>
+    </Link>
+  );
+}
+
 function Article({ topic }: { topic: HelpTopic }) {
   const index = TOPICS.findIndex((t) => t.id === topic.id);
   const prev = TOPICS[index - 1];
@@ -123,19 +142,9 @@ function Article({ topic }: { topic: HelpTopic }) {
           <Block key={i} block={b} />
         ))}
       </div>
-      <nav className="flex justify-between gap-4 mt-10 pt-4 border-t border-gray-100 text-sm">
-        {prev ? (
-          <Link to={`/help/${prev.id}`} className="text-gray-500 hover:text-gray-900 min-w-0 truncate">
-            ← {prev.title}
-          </Link>
-        ) : (
-          <span />
-        )}
-        {next && (
-          <Link to={`/help/${next.id}`} className="text-gray-500 hover:text-gray-900 min-w-0 truncate text-right">
-            {next.title} →
-          </Link>
-        )}
+      <nav className="grid grid-cols-2 gap-3 mt-10">
+        {prev ? <StepLink topic={prev} label="Previous" /> : <span />}
+        {next && <StepLink topic={next} label="Next" />}
       </nav>
     </article>
   );
