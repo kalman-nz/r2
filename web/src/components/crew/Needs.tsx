@@ -134,6 +134,39 @@ interface NeedDraft {
   notes: string;
 }
 
+export interface CrewNeedFieldsValue {
+  role: string;
+  level: string;
+  quantity: number;
+}
+
+export function CrewNeedFields({
+  value,
+  roles,
+  onChange,
+  autoFocus = false,
+}: {
+  value: CrewNeedFieldsValue;
+  roles: CrewRole[];
+  onChange: (patch: Partial<CrewNeedFieldsValue>) => void;
+  autoFocus?: boolean;
+}) {
+  return (
+    <>
+      <NumberInput value={value.quantity} onChange={(quantity) => onChange({ quantity })} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
+      <span className="text-gray-500 text-sm">×</span>
+      <select value={value.role} onChange={(e) => onChange({ role: e.target.value, level: "" })} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus={autoFocus}>
+        {roles.map((role) => (
+          <option key={role.id} value={role.id}>
+            {role.name}
+          </option>
+        ))}
+      </select>
+      <LevelSelect role={roles.find((role) => role.id === value.role)} value={value.level} onChange={(level) => onChange({ level })} />
+    </>
+  );
+}
+
 // Adding or changing what a schedule item needs.
 export function NeedForm({
   jobId,
@@ -232,16 +265,7 @@ export function NeedForm({
       className="flex flex-col gap-2 py-2"
     >
       <div className="flex items-center gap-1.5 flex-wrap">
-        <NumberInput value={draft.quantity} onChange={(n) => set("quantity", n)} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
-        <span className="text-gray-500 text-sm">×</span>
-        <select value={draft.role} onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value, level: "" }))} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus>
-          {roles.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-        <LevelSelect role={roles.find((r) => r.id === draft.role)} value={draft.level} onChange={(level) => set("level", level)} />
+        <CrewNeedFields value={draft} roles={roles} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} autoFocus />
         <input value={draft.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Notes, e.g. bring PPE" maxLength={500} className="input py-1.5 flex-1 min-w-40" />
       </div>
       <label className="flex items-center gap-2 text-xs text-gray-600">

@@ -12,10 +12,16 @@ const period: JobPeriod = {
   id: "period-1", subproject: "", kind: "other", name: "Show day",
   start: "2026-11-07T08:00:00Z", end: "2026-11-07T10:00:00Z", notes: "", space: "",
 };
-const roles: CrewRole[] = [{
-  id: "role-1", collectionId: "roles", collectionName: "crew_roles", org: "org-1",
-  name: "Audio operator", levels: [], sortOrder: 0,
-}];
+const roles: CrewRole[] = [
+  {
+    id: "role-1", collectionId: "roles", collectionName: "crew_roles", org: "org-1",
+    name: "Audio operator", levels: ["Basic", "Advanced"], sortOrder: 0,
+  },
+  {
+    id: "role-2", collectionId: "roles", collectionName: "crew_roles", org: "org-1",
+    name: "Lighting operator", levels: ["Junior", "Senior"], sortOrder: 1,
+  },
+];
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 export function Fixture() {

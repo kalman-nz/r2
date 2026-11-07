@@ -54,3 +54,33 @@ test("the schedule modal shows a consolidation error without changing the need",
   await expect(page.getByText("99× Audio operator")).toBeVisible();
   await expect(page.getByRole("button", { name: "Add crew need" })).toBeVisible();
 });
+
+test("changing a crew role resets its level and submits the selected quantity", async ({ page }) => {
+  let submitted: unknown;
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/collections/crew_needs/records" && request.method() === "GET") {
+      await route.fulfill({ json: { page: 1, perPage: 500, totalItems: 0, totalPages: 1, items: [] } });
+    } else if (path === "/api/jobs/job-1/crew-needs" && request.method() === "POST") {
+      submitted = request.postDataJSON();
+      await route.fulfill({ json: [] });
+    } else {
+      await route.abort();
+    }
+  });
+
+  await page.goto("/tests/crew-needs.html");
+  await page.getByRole("button", { name: "+ Crew need" }).click();
+  await page.getByLabel("Audio operator level").selectOption("Advanced");
+  await page.getByLabel("Crew role").selectOption("role-2");
+  await expect(page.getByLabel("Lighting operator level")).toHaveValue("");
+  await page.getByLabel("Lighting operator level").selectOption("Senior");
+  await page.getByLabel("How many").fill("3");
+  await page.getByRole("button", { name: "Add crew need" }).click();
+  await expect(page.getByRole("button", { name: "+ Crew need" })).toBeVisible();
+  expect(submitted).toEqual({ needs: [{
+    role: "role-2", level: "Senior", quantity: 3, customTimes: false,
+    start: "", end: "", notes: "", period: "period-1",
+  }] });
+});

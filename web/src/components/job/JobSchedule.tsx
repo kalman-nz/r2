@@ -14,8 +14,7 @@ import NewSubprojectModal from "./NewSubprojectModal";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Segmented from "../Segmented";
 import Modal from "../Modal";
-import { LevelSelect, PeriodNeeds } from "../crew/Needs";
-import NumberInput from "../NumberInput";
+import { CrewNeedFields, PeriodNeeds } from "../crew/Needs";
 import { numberProblem } from "../../lib/numbers";
 import { useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
 import { useOrg } from "../../lib/org";
@@ -792,16 +791,7 @@ function CrewRows({ roles, crew, onChange }: { roles: CrewRole[]; crew: CrewDraf
       <span className="text-sm text-gray-500">Crew needed</span>
       {crew.map((c) => (
         <div key={c.key} className="flex items-center gap-1.5 flex-wrap">
-          <NumberInput value={c.quantity} onChange={(n) => set(c.key, { quantity: n })} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
-          <span className="text-gray-500 text-sm">×</span>
-          <select value={c.role} onChange={(e) => set(c.key, { role: e.target.value, level: "" })} className="input py-1.5 w-auto" aria-label="Crew role">
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-          <LevelSelect role={roles.find((r) => r.id === c.role)} value={c.level} onChange={(level) => set(c.key, { level })} />
+          <CrewNeedFields value={c} roles={roles} onChange={(patch) => set(c.key, patch)} />
           <button
             type="button"
             onClick={() => onChange(crew.filter((x) => x.key !== c.key))}
