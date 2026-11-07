@@ -178,6 +178,7 @@ function validateNeed(app, record) {
   const job = sameOrgOf(record, find(app, "jobs", record.getString("job")), "project");
   const period = find(app, "job_periods", record.getString("period"));
   if (!period || period.getString("job") !== job.id) throw new BadRequestError("That schedule item isn't on this project");
+  if (period.getString("kind") !== "other") throw new BadRequestError("Crew needs can only be added to other schedule items");
   const role = sameOrgOf(record, find(app, "crew_roles", record.getString("role")), "crew role");
   // The lowest level it takes: one of the role's, or "" for any.
   const level = text(record.getString("level"), 30);

@@ -7,6 +7,7 @@
     "dev:pb": "sh scripts/dev-pocketbase.sh",
     "build:web": "pnpm --filter web build",
     "test": "node --test",
+    "test:crew-api": "node scripts/crew-eligibility-upgrade.mjs",
     "test:crew-feature": "node --test scripts/crew-feature-api.mjs",
     "smoke": "node scripts/smoke-api.mjs",
     "sync:e2e": "node scripts/sync-e2e.mjs",

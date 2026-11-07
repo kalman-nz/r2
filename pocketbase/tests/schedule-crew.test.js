@@ -10,6 +10,7 @@ test("inline crew drafts are submitted together on the saved schedule item's tim
 
   const result = await createPeriodWithCrew({
     jobId: "job-1",
+    kind: "other",
     crew: [
       { role: "audio", level: "2F", quantity: 2 },
       { role: "audio", level: "2F", quantity: 3 },
@@ -44,6 +45,7 @@ test("the schedule item remains available when the batch crew addition fails", a
 
   const result = await createPeriodWithCrew({
     jobId: "job-1",
+    kind: "other",
     crew: [
       { role: "audio", level: "", quantity: 1 },
       { role: "audio", level: "", quantity: 99 },
@@ -68,9 +70,26 @@ test("a schedule item without inline crew needs is saved without a crew submissi
 
   const result = await createPeriodWithCrew({
     jobId: "job-1",
+    kind: "other",
     crew: [],
     createPeriod: async () => period,
     addCrewNeeds: async () => assert.fail("no crew needs should be submitted"),
+  });
+
+  assert.equal(result.period, period);
+  assert.equal(result.crewError, undefined);
+});
+
+test("inline crew drafts are ignored when the new schedule item is not other", async () => {
+  const { createPeriodWithCrew } = await workflow;
+  const period = { id: "period-4", name: "Equipment booked" };
+
+  const result = await createPeriodWithCrew({
+    jobId: "job-1",
+    kind: "usage",
+    crew: [{ role: "audio", level: "", quantity: 1 }],
+    createPeriod: async () => period,
+    addCrewNeeds: async () => assert.fail("ineligible crew drafts must not be submitted"),
   });
 
   assert.equal(result.period, period);
