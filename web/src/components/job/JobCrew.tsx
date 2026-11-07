@@ -104,7 +104,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
             <div className="divide-y divide-gray-100">
               {here.map((n) =>
                 editing === n.id ? (
-                  <NeedForm key={n.id} jobId={job.id} period={p} need={n} roles={roles} onDone={() => setEditing(null)} />
+                  <NeedForm key={n.id} jobId={job.id} period={p} need={n} roles={roles} needs={needs} onDone={() => setEditing(null)} />
                 ) : (
                   <NeedSlots
                     key={n.id}
@@ -123,7 +123,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
                   />
                 ),
               )}
-              {adding === p.id && <NeedForm jobId={job.id} period={p} roles={roles} onDone={() => setAdding(null)} />}
+              {adding === p.id && <NeedForm jobId={job.id} period={p} roles={roles} needs={needs} onDone={() => setAdding(null)} />}
               {here.length === 0 && adding !== p.id && <p className="text-xs text-gray-400 py-2">No crew needed.</p>}
             </div>
           </section>

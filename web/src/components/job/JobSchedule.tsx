@@ -14,7 +14,9 @@ import NewSubprojectModal from "./NewSubprojectModal";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Segmented from "../Segmented";
 import Modal from "../Modal";
-import { CrewNeedFields, PeriodNeeds } from "../crew/Needs";
+import { PeriodNeeds } from "../crew/Needs";
+import CrewRows, { type CrewDraft } from "../crew/CrewRows";
+import { choiceTaken } from "../../lib/crewNeedChoices";
 import { numberProblem } from "../../lib/numbers";
 import { useCrewRoles, useJobCrew, useJobCrewNeeds } from "../../lib/crew";
 import { useOrg } from "../../lib/org";
@@ -37,15 +39,6 @@ const kindInfo = (kind: PeriodKind) => PERIOD_KINDS.find((k) => k.value === kind
 // Usage and billing first, then the rest; each in time order.
 const RANK: Record<PeriodKind, number> = { usage: 0, billing: 1, other: 2 };
 
-// A crew role a new schedule item needs, said while adding it: how many,
-// which role and the lowest level ("" for any).
-interface CrewDraft {
-  key: number;
-  role: string;
-  level: string;
-  quantity: number;
-}
-
 interface Draft {
   kind: PeriodKind;
   name: string;
@@ -57,13 +50,13 @@ interface Draft {
   crew: CrewDraft[];
 }
 
-let crewKey = 0;
-
 function draftOf(p: JobPeriod): Draft {
   return { kind: p.kind, name: p.name, start: toLocalInput(p.start), end: toLocalInput(p.end), notes: p.notes, space: p.space ?? "", crew: [] };
 }
 
-const crewProblem = (crew: CrewDraft[]) => crew.some((c) => !c.role || !!numberProblem(c.quantity, { min: 1, max: 99, integer: true }));
+const crewProblem = (crew: CrewDraft[]) =>
+  crew.some((c) => !c.role || !!numberProblem(c.quantity, { min: 1, max: 99, integer: true }) ||
+    choiceTaken(crew.filter((other) => other.key !== c.key), c.role, c.level));
 
 // A project's schedule. Usage periods book the kit, billing periods are
 // what's charged (each counted on its own), and the rest are named times
@@ -778,37 +771,5 @@ function PeriodForm({
         </button>
       </div>
     </form>
-  );
-}
-
-// The crew a new schedule item needs, said while adding it: 1× Audio
-// operator, 3× Technical labour. They're on the item's times; rostering
-// suggests people by skill, level and who's free.
-function CrewRows({ roles, crew, onChange }: { roles: CrewRole[]; crew: CrewDraft[]; onChange: (crew: CrewDraft[]) => void }) {
-  const set = (key: number, patch: Partial<CrewDraft>) => onChange(crew.map((c) => (c.key === key ? { ...c, ...patch } : c)));
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-sm text-gray-500">Crew needed</span>
-      {crew.map((c) => (
-        <div key={c.key} className="flex items-center gap-1.5 flex-wrap">
-          <CrewNeedFields value={c} roles={roles} onChange={(patch) => set(c.key, patch)} />
-          <button
-            type="button"
-            onClick={() => onChange(crew.filter((x) => x.key !== c.key))}
-            className="w-6 h-6 rounded text-gray-400 hover:text-fault-ink hover:bg-gray-100"
-            aria-label="Remove this crew role"
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...crew, { key: ++crewKey, role: roles[0].id, level: "", quantity: 1 }])}
-        className="self-start text-xs font-medium text-signal-ink hover:text-signal-ink-hover"
-      >
-        + Crew role
-      </button>
-    </div>
   );
 }

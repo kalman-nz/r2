@@ -10,6 +10,7 @@ import { clashesFor, clashLabel, levelsOf, useRosterActions, type Booking } from
 import { useAuthRecord } from "../../lib/pocketbase";
 import NumberInput from "../NumberInput";
 import { numberProblem } from "../../lib/numbers";
+import { availableLevels, choiceTaken, firstCrewChoice, needsAtTime, type CrewNeedChoice } from "../../lib/crewNeedChoices";
 import PersonPicker from "./PersonPicker";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
@@ -145,24 +146,30 @@ export function CrewNeedFields({
   roles,
   onChange,
   autoFocus = false,
+  taken = [],
 }: {
   value: CrewNeedFieldsValue;
   roles: CrewRole[];
   onChange: (patch: Partial<CrewNeedFieldsValue>) => void;
   autoFocus?: boolean;
+  taken?: CrewNeedChoice[];
 }) {
   return (
     <>
       <NumberInput value={value.quantity} onChange={(quantity) => onChange({ quantity })} min={1} max={99} integer className="input py-1.5 w-16" ariaLabel="How many" />
       <span className="text-gray-500 text-sm">×</span>
-      <select value={value.role} onChange={(e) => onChange({ role: e.target.value, level: "" })} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus={autoFocus}>
-        {roles.map((role) => (
+      <select value={value.role} onChange={(e) => {
+        const role = roles.find((r) => r.id === e.target.value);
+        onChange({ role: e.target.value, level: role ? availableLevels(role, taken)[0] ?? "" : "" });
+      }} className="input py-1.5 w-auto" aria-label="Crew role" autoFocus={autoFocus}>
+        {!value.role && <option value="">Select a role</option>}
+        {roles.filter((role) => role.id === value.role || availableLevels(role, taken).length > 0).map((role) => (
           <option key={role.id} value={role.id}>
             {role.name}
           </option>
         ))}
       </select>
-      <LevelSelect role={roles.find((role) => role.id === value.role)} value={value.level} onChange={(level) => onChange({ level })} />
+      <LevelSelect role={roles.find((role) => role.id === value.role)} value={value.level} onChange={(level) => onChange({ level })} taken={taken} />
     </>
   );
 }
@@ -173,12 +180,14 @@ export function NeedForm({
   period,
   need,
   roles,
+  needs,
   onDone,
 }: {
   jobId: string;
   period: JobPeriod;
   need?: CrewNeed;
   roles: CrewRole[];
+  needs: CrewNeed[];
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -186,14 +195,20 @@ export function NeedForm({
   const confirm = useConfirm();
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<NeedDraft>(() => ({
-    role: need?.role ?? roles[0]?.id ?? "",
-    level: need?.level ?? "",
+    role: need?.role ?? firstCrewChoice(roles, needsAtTime(needs, period.id, period.start, period.end))?.role ?? "",
+    level: need?.level ?? firstCrewChoice(roles, needsAtTime(needs, period.id, period.start, period.end))?.level ?? "",
     quantity: need?.quantity ?? 1,
     customTimes: need?.customTimes ?? false,
     start: toLocalInput(need?.customTimes ? need.start : period.start),
     end: toLocalInput(need?.customTimes ? need.end : period.end),
     notes: need?.notes ?? "",
   }));
+  const start = draft.customTimes ? fromLocalInput(draft.start) : period.start;
+  const end = draft.customTimes ? fromLocalInput(draft.end) : period.end;
+  const taken = needsAtTime(needs, period.id, start, end, need?.id);
+  const unchanged = need && draft.role === need.role && draft.level === need.level &&
+    needsAtTime([need], period.id, start, end).length > 0;
+  const duplicate = !unchanged && choiceTaken(taken, draft.role, draft.level);
   const set = <K extends keyof NeedDraft>(key: K, value: NeedDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const refresh = () =>
     Promise.all([
@@ -202,6 +217,10 @@ export function NeedForm({
     ]);
 
   async function save() {
+    if (duplicate || !draft.role) {
+      showToast("error", duplicate ? "That crew need already exists for these times." : "Select a crew role.");
+      return;
+    }
     setSaving(true);
     const body = {
       role: draft.role,
@@ -265,7 +284,7 @@ export function NeedForm({
       className="flex flex-col gap-2 py-2"
     >
       <div className="flex items-center gap-1.5 flex-wrap">
-        <CrewNeedFields value={draft} roles={roles} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} autoFocus />
+        <CrewNeedFields value={draft} roles={roles} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} autoFocus taken={taken} />
         <input value={draft.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Notes, e.g. bring PPE" maxLength={500} className="input py-1.5 flex-1 min-w-40" />
       </div>
       <label className="flex items-center gap-2 text-xs text-gray-600">
@@ -279,8 +298,10 @@ export function NeedForm({
           <input type="datetime-local" value={draft.end} onChange={(e) => set("end", e.target.value)} required className="input py-1.5 w-auto" aria-label="Finish" />
         </div>
       )}
+      {!draft.role && <p className="text-xs text-gray-500">No unused crew role and level is available for these times. Choose different times or edit an existing need.</p>}
+      {duplicate && <p className="text-xs text-fault-ink">That crew need already exists for these times. Change the role, level or times, or edit the existing need.</p>}
       <div className="flex items-center gap-2">
-        <button type="submit" disabled={saving || !draft.role || !!numberProblem(draft.quantity, { min: 1, max: 99, integer: true })} className="btn-primary py-1.5">
+        <button type="submit" disabled={saving || !draft.role || duplicate || !!numberProblem(draft.quantity, { min: 1, max: 99, integer: true })} className="btn-primary py-1.5">
           {saving ? "Saving…" : need ? "Save" : "Add crew need"}
         </button>
         <button type="button" onClick={onDone} className="btn-secondary py-1.5">
@@ -297,13 +318,13 @@ export function NeedForm({
 }
 
 // The lowest level a slot takes, for a role that has levels.
-export function LevelSelect({ role, value, onChange }: { role?: CrewRole; value: string; onChange: (level: string) => void }) {
+export function LevelSelect({ role, value, onChange, taken = [] }: { role?: CrewRole; value: string; onChange: (level: string) => void; taken?: CrewNeedChoice[] }) {
   const levels = levelsOf(role);
   if (levels.length === 0) return null;
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className="input py-1.5 w-auto" aria-label={`${role?.name ?? "Role"} level`}>
-      <option value="">Any level</option>
-      {[...levels, ...(value && !levels.includes(value) ? [value] : [])].map((l) => (
+      {(!choiceTaken(taken, role?.id ?? "", "") || value === "") && <option value="">Any level</option>}
+      {[...levels, ...(value && !levels.includes(value) ? [value] : [])].filter((l) => l === value || !choiceTaken(taken, role?.id ?? "", l)).map((l) => (
         <option key={l} value={l}>
           {l}
           {levels.indexOf(l) !== -1 && levels.indexOf(l) < levels.length - 1 ? " or above" : ""}
@@ -364,7 +385,7 @@ export function PeriodNeeds({
           </Link>
         )}
       </div>
-      {adding && <NeedForm jobId={jobId} period={period} roles={roles} onDone={() => setAdding(false)} />}
+      {adding && <NeedForm jobId={jobId} period={period} roles={roles} needs={needs} onDone={() => setAdding(false)} />}
     </div>
   );
 }
