@@ -42,6 +42,7 @@ For a hosted, multi-organisation install:
 
 ```sh
 pnpm test     # unit tests: availability engine, pricing/GST maths, Xero file, iCal feed, maintenance dates, sync merge and mappings
+pnpm --filter web test:browser # browser interaction tests (first run: pnpm --filter web exec playwright install chromium)
 pnpm smoke    # end-to-end API checks against a running server (needs PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD)
 pnpm sync:e2e # live sync end to end, against the mock Rentman and Momentus servers (see Live sync)
 ```

@@ -123,7 +123,7 @@ export default function JobCrew({ summary, canEdit }: { summary: JobSummary; can
                   />
                 ),
               )}
-              {adding === p.id && <NeedForm jobId={job.id} period={p} roles={roles} addViaCrewOperation onDone={() => setAdding(null)} />}
+              {adding === p.id && <NeedForm jobId={job.id} period={p} roles={roles} onDone={() => setAdding(null)} />}
               {here.length === 0 && adding !== p.id && <p className="text-xs text-gray-400 py-2">No crew needed.</p>}
             </div>
           </section>
