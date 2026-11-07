@@ -10,3 +10,9 @@ pb_data.tar.gz
 
 # Local PocketBase from scripts/dev-pocketbase.sh (binary + data)
 .pb/
+
+# Disposable crew-feature tests
+.crew-feature-test-data/
+.crew-feature-browser-data/
+web/.crew-feature-vite-cache/
+web/test-results/

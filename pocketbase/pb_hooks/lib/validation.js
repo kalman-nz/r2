@@ -271,6 +271,10 @@ function validatePeriod(app, record) {
   // from before the rule with more than one can still be edited.
   const kind = record.getString("kind");
   const becomes = record.isNew() || record.original().getString("kind") !== kind || record.original().getString("subproject") !== record.getString("subproject");
+  if (!record.isNew() && record.original().getString("kind") !== kind && (kind === "usage" || kind === "billing")) {
+    const needs = app.findRecordsByFilter("crew_needs", "period = {:period}", "", 1, 0, { period: record.id });
+    if (needs.length > 0) throw new BadRequestError("Remove its crew needs before changing it to usage or billing");
+  }
   if ((kind === "usage" || kind === "billing") && becomes) {
     // Compared here rather than in the filter: an empty subproject doesn't
     // match a bound "" parameter there. A job only has a few periods.

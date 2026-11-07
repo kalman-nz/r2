@@ -178,6 +178,7 @@ function validateNeed(app, record) {
   const job = sameOrgOf(record, find(app, "jobs", record.getString("job")), "project");
   const period = find(app, "job_periods", record.getString("period"));
   if (!period || period.getString("job") !== job.id) throw new BadRequestError("That schedule item isn't on this project");
+  if (period.getString("kind") !== "other") throw new BadRequestError("Crew needs can only be added to other schedule items");
   const role = sameOrgOf(record, find(app, "crew_roles", record.getString("role")), "crew role");
   // The lowest level it takes: one of the role's, or "" for any.
   const level = text(record.getString("level"), 30);
@@ -195,6 +196,118 @@ function validateNeed(app, record) {
     const filled = app.findRecordsByFilter("job_crew", "need = {:id}", "", 0, 0, { id: record.id }).length;
     if (filled > record.getInt("quantity")) throw new BadRequestError(filled + " people are on it already: take some off first");
   }
+  if (!record.isNew() && !needMatches(record.original(), record)) {
+    const matches = app
+      .findRecordsByFilter("crew_needs", "job = {:job}", "", 0, 0, { job: record.getString("job") })
+      .some((need) => need.id !== record.id && needMatches(need, record));
+    if (matches) throw new BadRequestError("That change would create a matching crew need; edit the existing need instead");
+  }
+}
+
+function needMatches(a, b) {
+  const { toMs } = require("./time.js");
+  return (
+    a.getString("job") === b.getString("job") &&
+    a.getString("period") === b.getString("period") &&
+    a.getString("role") === b.getString("role") &&
+    a.getString("level") === b.getString("level") &&
+    toMs(a.getString("start")) === toMs(b.getString("start")) &&
+    toMs(a.getString("end")) === toMs(b.getString("end"))
+  );
+}
+
+function needNotes(needs, addition) {
+  const notes = [];
+  const seen = new Set();
+  const append = (value) => {
+    for (const note of value.split("\n")) {
+      const trimmed = note.trim();
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        notes.push(trimmed);
+      }
+    }
+  };
+  for (const need of needs) {
+    append(need.getString("notes"));
+  }
+  append(addition);
+  const combined = notes.join("\n");
+  if (combined.length > 500) throw new BadRequestError("Combined crew notes cannot exceed 500 characters");
+  return combined;
+}
+
+function oldestFirst(a, b) {
+  return a.getString("created").localeCompare(b.getString("created")) || a.id.localeCompare(b.id);
+}
+
+function addCrewNeeds(app, orgId, jobId, drafts) {
+  if (!Array.isArray(drafts) || drafts.length === 0) throw new BadRequestError("Add at least one crew need");
+  const ids = [];
+  app.runInTransaction((tx) => {
+    for (const draft of drafts) {
+      if (!draft || typeof draft !== "object") throw new BadRequestError("Each crew need must be an object");
+      const quantity = draft && draft.quantity;
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+        throw new BadRequestError("Crew quantity must be from 1 to 99");
+      }
+      if (draft.notes !== undefined && draft.notes !== null && typeof draft.notes !== "string") {
+        throw new BadRequestError("Crew notes must be text");
+      }
+      const note = typeof draft.notes === "string" ? draft.notes.trim() : "";
+      const candidate = new Record(tx.findCollectionByNameOrId("crew_needs"), {
+        org: orgId,
+        job: jobId,
+        period: draft.period,
+        role: draft.role,
+        level: draft.level || "",
+        quantity: quantity,
+        customTimes: draft.customTimes === true,
+        start: draft.customTimes === true ? draft.start : "",
+        end: draft.customTimes === true ? draft.end : "",
+        notes: note,
+      });
+      validateNeed(tx, candidate);
+
+      const matches = tx
+        .findRecordsByFilter("crew_needs", "job = {:job}", "created", 0, 0, { job: jobId })
+        .filter((need) => needMatches(need, candidate))
+        .sort(oldestFirst);
+      const combinedQuantity = quantity + matches.reduce((total, need) => total + need.getInt("quantity"), 0);
+      if (combinedQuantity > 99) throw new BadRequestError("Combined crew quantity cannot exceed 99");
+      const notes = needNotes(matches, note);
+
+      let survivor = matches[0] || candidate;
+      survivor.set("quantity", combinedQuantity);
+      survivor.set("notes", notes);
+      tx.save(survivor);
+
+      if (matches.length > 0) {
+        const matchingIds = new Set(matches.map((need) => need.id));
+        const assigned = tx
+          .findRecordsByFilter("job_crew", "job = {:job}", "created", 0, 0, { job: jobId })
+          .filter((crew) => matchingIds.has(crew.getString("need")))
+          .sort(oldestFirst);
+        const people = new Set();
+        for (const crew of assigned) {
+          if (people.has(crew.getString("person"))) {
+            tx.delete(crew);
+            continue;
+          }
+          people.add(crew.getString("person"));
+          if (crew.getString("need") !== survivor.id) {
+            crew.set("need", survivor.id);
+            tx.saveNoValidate(crew);
+          }
+        }
+        for (const need of matches) {
+          if (need.id !== survivor.id) tx.delete(need);
+        }
+      }
+      ids.push(survivor.id);
+    }
+  });
+  return [...new Set(ids)].map((id) => app.findRecordById("crew_needs", id));
 }
 
 // A schedule item's moved: its crew needs move with it (the ones on its
@@ -204,12 +317,11 @@ function syncNeedTimes(app, period) {
     if (n.getString("start") === period.getString("start") && n.getString("end") === period.getString("end")) continue;
     n.set("start", period.getString("start"));
     n.set("end", period.getString("end"));
-    app.save(n);
+    app.saveNoValidate(n);
   }
 }
 
-// Someone on a project: on one of its crew needs (a slot), or the whole
-// project when need is "". Each once, and a need takes as many as it asks.
+// Someone fills one of this project's crew needs once, up to its headcount.
 function validateCrew(app, record) {
   const { membershipOf } = require("./orgs.js");
   const org = record.getString("org");
@@ -223,19 +335,16 @@ function validateCrew(app, record) {
   record.set("function", text(record.getString("function"), 60));
 
   const needId = record.getString("need");
-  let need = null;
-  if (needId) {
-    need = find(app, "crew_needs", needId);
-    if (!need || need.getString("job") !== job.id) throw new BadRequestError("That crew need isn't on this project");
-  }
-  // (An empty {:need} doesn't match an empty relation, so say it outright.)
+  if (!needId) throw new BadRequestError("Choose a crew need for this assignment");
+  const need = find(app, "crew_needs", needId);
+  if (!need || need.getString("job") !== job.id) throw new BadRequestError("That crew need isn't on this project");
   const others = app
-    .findRecordsByFilter("job_crew", needId ? "job = {:job} && need = {:need}" : "job = {:job} && need = ''", "", 0, 0, { job: job.id, need: needId })
+    .findRecordsByFilter("job_crew", "job = {:job} && need = {:need}", "", 0, 0, { job: job.id, need: needId })
     .filter((c) => c.id !== record.id);
   if (others.some((c) => c.getString("person") === person.id)) {
-    throw new BadRequestError(person.getString("name") + (need ? " is already on that" : " is already on the project"));
+    throw new BadRequestError(person.getString("name") + " is already on that");
   }
-  if (need && others.length >= need.getInt("quantity")) {
+  if (others.length >= need.getInt("quantity")) {
     const role = find(app, "crew_roles", need.getString("role"));
     throw new BadRequestError("All " + need.getInt("quantity") + " " + (role ? role.getString("name") : "") + " spots are filled");
   }
@@ -258,6 +367,7 @@ module.exports = {
   renamePeople,
   validatePerson,
   validateNeed,
+  addCrewNeeds,
   syncNeedTimes,
   validateCrew,
   guardPersonDelete,

@@ -1,0 +1,5 @@
+# Consolidate matching crew needs when adding
+
+When a planner adds a crew need to a schedule item, a need with the same role, requested level, and effective time window is the same need: increase its quantity instead of creating another record. If several matching records already exist, keep the oldest, sum their quantities, combine distinct notes, move distinct crew assignments to it, and remove the duplicates; keep one assignment per person. Reject an add that would exceed the 99-person or 500-character notes limits without partially changing the needs. Apply this to supported app add flows, including needs added while creating a schedule item; leave project copies unchanged, reject edits that would create a match, and do not consolidate direct PocketBase record creates. This keeps additions concise without silently changing edits or the faithful-copy behavior.
+
+The app's crew-need selectors omit already-added role, level and time combinations. Planners can edit an existing need's quantity or select a different level or time window. The add operation still consolidates matches when requests race or use stale data.

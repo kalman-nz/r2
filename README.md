@@ -42,11 +42,17 @@ For a hosted, multi-organisation install:
 
 ```sh
 pnpm test     # unit tests: availability engine, pricing/GST maths, Xero file, iCal feed, maintenance dates, sync merge and mappings
+pnpm --filter web test:browser # browser interaction tests (first run: pnpm --filter web exec playwright install chromium)
+pnpm test:crew-feature # public crew feature API lifecycle, disposable PocketBase on 4319
+pnpm --filter web test:browser:crew-feature # real-app feature toggle journey, disposable PocketBase on 5319, Vite on 4199
 pnpm smoke    # end-to-end API checks against a running server (needs PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD)
+pnpm test:crew-api # isolated legacy-database upgrade plus public API write checks (requires CREW_TEST_DATA_DIR, CREW_TEST_BASE_ROOT and PB_EXECUTABLE)
 pnpm sync:e2e # live sync end to end, against the mock Rentman and Momentus servers (see Live sync)
 ```
 
 `pnpm smoke` and `pnpm sync:e2e` create records and leave them, so point them at a throwaway database. The smoke test's PDF checks need the server's Python set up, which `pnpm dev:pb` does.
+
+The crew assignment API/upgrade tests start and remove their own disposable database under `.pb/`, using port 4318 (override with `CREW_API_PORT`). Run `PB_BINARY="$PWD/.pb/pocketbase-0.39.11" node --test pocketbase/tests/crew-assignments-api.test.js`; without `PB_BINARY` these tests are skipped. The upgrade fixture runs the pre-change release at `faa43be`, then starts the current release twice to check persisted cleanup. Browser tests can use an isolated Vite port with `PLAYWRIGHT_PORT` and a local Chrome binary with `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
 
 ## How it fits together
 
@@ -102,12 +108,17 @@ People see what they need rather than one page for everyone: a workshop tech see
 
 ### Crew rostering
 
-Crew are booked by what they do and when, not just "on the project" (`pb_migrations/0041_crew_rostering.js`, `lib/crew.js`). A feature: off, planners just add people to a project with what they're doing.
+Crew are booked by what they do and when, not just "on the project" (`pb_migrations/0041_crew_rostering.js`, `lib/crew.js`). Crew rostering is an all-or-nothing feature for each organisation.
+
+- **Turning rostering off.** Hides crew controls and active rosters everywhere, including project summaries, schedule lists, calendar modals and new schedule item forms. Crew-record creates, edits and deletes are rejected, including direct PocketBase assignment writes. Valid records remain readable under the same authorization and are not deleted by the feature switch. Retained assignments stop populating dashboard My projects and Projects → Mine until rostering is re-enabled; then the same assignments count again, regardless of past or future crew times. Project access and the organisation's other features are unchanged. Active assignment queries use `GET /api/jobs/crew` (`?mine=true` for the signed-in person's assignments); these return an empty list while the owning organisation's crew feature or its Projects prerequisite is off. PocketBase collection reads remain available for retained data.
+
+The crew-feature tests start and stop their own disposable database; they never use an existing data directory. They use `.pb/pocketbase-0.39.11` by default; set `PB_BINARY` to an existing binary when running from a worktree. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use an existing Chrome installation instead of downloading a browser.
 
 - **Crew roles.** Each organisation's own list of what crew are booked to do (Audio operator, Technical labour, Rigger…), in Settings → Crew roles. Not the permission roles in Settings → Users & access. A role can have levels, lowest first (Driver 1F, 2F, 4F; Audio operator Basic, Advanced): people have a level at each role they do, and a slot can ask for a level or above (migration 0051).
 - **The crew list** (Crew, in the sidebar): everyone who can be rostered, each with their own page (details, skills and levels, bookings). Every member is on it under their account's name; freelancers who don't log in are added there (name, phone, email). Skills are the crew roles someone does. "Add freelancers to the crew list and set people's crew skills" is its own permission, Admin's and Planner's to start with. Someone who's been rostered is archived rather than deleted, and members who leave are archived for them.
-- **Crew needs.** A schedule item says what crew it needs: 1× Audio operator and 3× Technical labour for the pack in, set while adding the item or under it afterwards. A need runs over its item's times and moves with it, unless it has its own (audio in an hour early). Removing the item takes its needs, and whoever was on them, with it.
-- **Rostering.** A project's Crew tab lists each schedule item's needs with a slot for each person; picking someone suggests the people with that skill, at the level or above, who are free then; then the rest who do the role (booked elsewhere, or a lower level); then everyone else, saying where anyone's booked at the time. Double bookings are allowed but marked. The Rostering page does the same across every project over a week or more, by day or by person (who's free). Each person fills a slot once, and a need takes no more people than it asks for. People can also be on a whole project (a project manager). `job_crew.user` is filled in from the person, so My projects still reads it.
+- **Crew needs.** Only an "other" schedule item says what crew it needs: 1× Audio operator and 3× Technical labour for the pack in, set while adding the item or under it afterwards. Usage and billing items do not have crew controls. A need runs over its item's times and moves with it, unless it has its own (audio in an hour early). Removing the item takes its needs, and whoever was on them, with it. When upgrading, R2 automatically deletes needs on usage and billing items and the people assigned to those needs, across all organisations and project history; there is no manual relocation because a replacement role or time cannot be guessed. This can remove projects from affected people's My projects.
+- **Rostering.** A project's Crew tab lists each schedule item's needs with a slot for each person; picking someone suggests the people with that skill, at the level or above, who are free then; then the rest who do the role (booked elsewhere, or a lower level); then everyone else, saying where anyone's booked at the time. Double bookings are allowed but marked. The Rostering page does the same across every project over a week or more, by day or by person (who's free). Each person fills a slot once, and a need takes no more people than it asks for. Every assignment requires a crew need on the same project, including direct API writes; there is no whole-project assignment interface, even when rostering is disabled. Project crew summaries show people's roles and schedule items from their needs. `job_crew.user` is filled in from the person, so assignments count for My projects regardless of their dates when rostering is enabled.
+- **Whole-project assignment cleanup.** On upgrade, migration `0056_remove_whole_project_crew.js` automatically deletes assignments without crew needs across all organisations, including disabled rostering and historical projects. It preserves need-based assignments and does not invent replacement needs or roles. This is irreversible without an external backup and requires no backup confirmation or manual cleanup; deleted assignments can intentionally remove projects from My projects. Later restarts preserve the surviving assignments.
 
 ### Roles and permissions
 

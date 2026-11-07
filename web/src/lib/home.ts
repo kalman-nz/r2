@@ -25,7 +25,7 @@ export interface PanelInfo {
 export const PANELS: PanelInfo[] = [
   // Without projects, it's the inventory's: maintenance, repairs and units out of service.
   { id: "glance", label: "At a glance", hint: "Going out and due back today, overdue returns, what's out, maintenance and repairs", size: "full" },
-  { id: "mine", label: "My projects", hint: "The projects you're on the crew for, soonest first", size: "wide", feature: "projects" },
+  { id: "mine", label: "My projects", hint: "The projects you're on the crew for, soonest first", size: "wide", feature: "crew" },
   { id: "prep", label: "To prep next", hint: "Confirmed projects in the order they go out, with how much is packed", size: "wide", feature: "projects" },
   { id: "going-out", label: "Going out", hint: "Confirmed projects going out in the next 7 days, by day", size: "wide", feature: "projects" },
   { id: "coming-back", label: "Coming back", hint: "Projects out on hire, due back in the next 7 days", size: "wide", feature: "projects" },

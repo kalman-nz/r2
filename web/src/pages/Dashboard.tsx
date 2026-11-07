@@ -90,13 +90,9 @@ export default function Dashboard() {
   const { data: maintenance = [], isLoading: maintenanceLoading } = useMaintenanceJobs(`status = 'scheduled' && dueOn <= "${inDays(7)}"`, "dueOn", maintenanceOn);
   const { data: repairs = [], isLoading: repairsLoading } = useRepairs(OPEN_REPAIRS_FILTER, repairsOn);
   const { data: crew = [], isLoading: crewLoading } = useQuery({
-    queryKey: ["job-crew", "mine", record?.id],
-    queryFn: () =>
-      pb.collection("job_crew").getFullList<CrewWithJob>({
-        filter: orgFilter(pb.filter("user = {:me} && job.status != 'returned' && job.status != 'cancelled'", { me: record!.id })),
-        expand: "job,job.client,job.venue,need,need.role,need.period",
-      }),
-    enabled: has("mine") && !!record,
+    queryKey: ["job-crew", "active", "mine", record?.id, feature("crew")],
+    queryFn: () => api.activeCrew<CrewWithJob>(true),
+    enabled: has("mine") && !!record && feature("crew"),
   });
   const { data: quotes = [], isLoading: quotesLoading } = useQuery({
     queryKey: ["quotes", "waiting"],
@@ -130,7 +126,7 @@ export default function Dashboard() {
     const byJob = new Map<string, { job: ProjectRow; next?: Next; roles: string[] }>();
     for (const c of crew) {
       const job = c.expand?.job;
-      if (!job) continue;
+      if (!feature("crew") || !job || job.status === "returned" || job.status === "cancelled") continue;
       const entry = byJob.get(job.id) ?? { job, roles: [] };
       const need = c.expand?.need;
       if (need && time(need.end) >= now && (!entry.next || time(need.start) < time(entry.next.start))) {
