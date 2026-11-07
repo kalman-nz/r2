@@ -1222,6 +1222,7 @@ export const api = {
 
   // Jobs
   getJobSummary: (id: string) => request<JobSummary>(`/api/jobs/${id}/summary`),
+  activeCrew: <T extends CrewMember = CrewMember>(mine = false) => request<T[]>(`/api/jobs/crew${mine ? "?mine=true" : ""}`),
   addCrewNeeds: (jobId: string, needs: CrewNeedDraft[]) => request<CrewNeed[]>(`/api/jobs/${jobId}/crew-needs`, json("POST", { needs })),
   addLine: (jobId: string, line: NewLine) => request<JobSummary>(`/api/jobs/${jobId}/lines`, json("POST", line)),
   updateLine: (lineId: string, patch: LinePatch) => request<JobSummary>(`/api/job-lines/${lineId}`, json("PATCH", patch)),

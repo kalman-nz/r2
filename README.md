@@ -43,6 +43,8 @@ For a hosted, multi-organisation install:
 ```sh
 pnpm test     # unit tests: availability engine, pricing/GST maths, Xero file, iCal feed, maintenance dates, sync merge and mappings
 pnpm --filter web test:browser # browser interaction tests (first run: pnpm --filter web exec playwright install chromium)
+pnpm test:crew-feature # public crew feature API lifecycle, disposable PocketBase on 4319
+pnpm --filter web test:browser:crew-feature # real-app feature toggle journey, disposable PocketBase on 5319, Vite on 4199
 pnpm smoke    # end-to-end API checks against a running server (needs PB_URL, PB_SUPERUSER_EMAIL, PB_SUPERUSER_PASSWORD)
 pnpm sync:e2e # live sync end to end, against the mock Rentman and Momentus servers (see Live sync)
 ```
@@ -103,7 +105,11 @@ People see what they need rather than one page for everyone: a workshop tech see
 
 ### Crew rostering
 
-Crew are booked by what they do and when, not just "on the project" (`pb_migrations/0041_crew_rostering.js`, `lib/crew.js`). A feature: off, planners just add people to a project with what they're doing.
+Crew are booked by what they do and when, not just "on the project" (`pb_migrations/0041_crew_rostering.js`, `lib/crew.js`). Crew rostering is an all-or-nothing feature for each organisation.
+
+- **Turning rostering off.** Hides crew controls and active rosters everywhere, including project summaries, schedule lists, calendar modals and new schedule item forms. Crew-record creates, edits and deletes are rejected, including direct PocketBase assignment writes. Valid records remain readable under the same authorization and are not deleted by the feature switch. Retained assignments stop populating dashboard My projects and Projects → Mine until rostering is re-enabled; then the same assignments count again, regardless of past or future crew times. Project access and the organisation's other features are unchanged. Active assignment queries use `GET /api/jobs/crew` (`?mine=true` for the signed-in person's assignments); these return an empty list while the owning organisation's crew feature or its Projects prerequisite is off. PocketBase collection reads remain available for retained data.
+
+The crew-feature tests start and stop their own disposable database; they never use an existing data directory. They use `.pb/pocketbase-0.39.11` by default; set `PB_BINARY` to an existing binary when running from a worktree. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use an existing Chrome installation instead of downloading a browser.
 
 - **Crew roles.** Each organisation's own list of what crew are booked to do (Audio operator, Technical labour, Rigger…), in Settings → Crew roles. Not the permission roles in Settings → Users & access. A role can have levels, lowest first (Driver 1F, 2F, 4F; Audio operator Basic, Advanced): people have a level at each role they do, and a slot can ask for a level or above (migration 0051).
 - **The crew list** (Crew, in the sidebar): everyone who can be rostered, each with their own page (details, skills and levels, bookings). Every member is on it under their account's name; freelancers who don't log in are added there (name, phone, email). Skills are the crew roles someone does. "Add freelancers to the crew list and set people's crew skills" is its own permission, Admin's and Planner's to start with. Someone who's been rostered is archived rather than deleted, and members who leave are archived for them.

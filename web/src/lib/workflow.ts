@@ -72,7 +72,7 @@ export const FEATURES: { key: FeatureKey; label: string; hint: string; off: stri
     needs: "projects",
     label: "Crew rostering",
     hint: "Crew needs on schedule items (2× Audio operator for the pack in), a crew list with skills and freelancers, and rostering people onto them.",
-    off: "Crew are just added to projects, with no crew needs, crew list or rostering.",
+    off: "Crew controls and active rosters are hidden, and crew changes are blocked. Valid records remain readable, but assignments don't count for My projects or Mine until rostering is turned back on.",
   },
   {
     key: "integrations",
