@@ -177,9 +177,9 @@ export default function ItemForm({
             ))}
           </select>
         </Field>
-        <Field label="What is it?">
+        <Field label="Kind">
           <Segmented
-            label="What is it?"
+            label="Kind"
             value={draft.kind}
             onChange={(v) => set("kind", v)}
             disabled={readOnly || hasSerials}
