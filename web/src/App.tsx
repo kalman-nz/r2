@@ -164,10 +164,12 @@ const icons = {
 // Icons only on phones (the scan page needs the width), labels from md up.
 // shrink-0: a sidebar too full for the screen scrolls, rather than
 // squashing Home (the one link sitting straight in the scrolling nav).
+// The active link's orange bar floats inside the highlight, with round ends,
+// so it doesn't bend round the highlight's corners.
 function sidebarLinkClass(isActive: boolean) {
-  return `flex items-center gap-3 mx-2 px-2.5 h-9 shrink-0 rounded-md text-sm font-medium ${
+  return `relative flex items-center gap-3 mx-2 px-2.5 h-9 shrink-0 rounded-md text-sm font-medium ${
     isActive
-      ? "bg-graphite text-white shadow-[inset_2px_0_0_var(--color-signal)]"
+      ? "bg-graphite text-white before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-signal"
       : "text-steel hover:bg-graphite/60 hover:text-white"
   }`;
 }

@@ -57,8 +57,8 @@ function Sidebar() {
       {items.map((i) => (
         <div
           key={i}
-          className={`mx-1.5 px-2 h-8 flex items-center rounded-md text-sm font-medium ${
-            i === active ? "bg-graphite text-white shadow-[inset_2px_0_0_var(--color-signal)]" : "text-steel"
+          className={`relative mx-1.5 px-2 h-8 flex items-center rounded-md text-sm font-medium ${
+            i === active ? "bg-graphite text-white before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-signal" : "text-steel"
           }`}
         >
           {i}
@@ -560,7 +560,7 @@ function Scan() {
 
 function TrackingOffer() {
   return (
-    <div className="card px-4 py-3 w-full max-w-md flex flex-wrap items-center justify-between gap-3 border-l-2 border-l-signal">
+    <div className="card px-4 py-3 w-full max-w-md flex flex-wrap items-center justify-between gap-3 border-signal/40 bg-signal-soft/40">
       <span className="text-sm text-gray-900">
         Everything's <strong>Loaded</strong>. Set the project to <strong>Out</strong>?
       </span>

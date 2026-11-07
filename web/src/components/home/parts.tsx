@@ -14,7 +14,8 @@ export function Stat({ label, value, hint, alert = false, to }: { label: string;
       <span className={`text-xs truncate ${alert ? "text-fault-ink" : "text-gray-500"}`}>{hint}</span>
     </>
   );
-  const className = `card px-3.5 py-3 flex flex-col gap-0.5 min-w-0 ${alert ? "shadow-[inset_3px_0_0_var(--color-fault)]" : ""}`;
+  // An alert gets a red bar that floats inside the card, like the sidebar's active link.
+  const className = `relative card px-3.5 py-3 flex flex-col gap-0.5 min-w-0 ${alert ? "before:absolute before:left-0 before:top-3 before:bottom-3 before:w-[3px] before:rounded-full before:bg-fault" : ""}`;
   return to ? (
     <Link to={to} className={`${className} hover:border-gray-300 hover:bg-gray-50 transition-colors`}>
       {body}
