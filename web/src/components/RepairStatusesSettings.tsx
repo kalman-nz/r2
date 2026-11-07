@@ -8,6 +8,7 @@ import { useRepairStatuses } from "../lib/maintenance";
 import { useToast } from "./ToastProvider";
 import ColourPicker from "./ColourPicker";
 import Segmented from "./Segmented";
+import { DragHandle, moveItem, useDragReorder } from "./DragReorder";
 
 type Row = RepairStatusInput & { key: string };
 
@@ -64,13 +65,7 @@ export default function RepairStatusesSettings() {
   const strip = (r: Row[]) => JSON.stringify(r.map(({ key: _key, ...rest }) => rest));
   const dirty = strip(rows) !== strip(saved);
   const set = (key: string, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const move = (i: number, by: number) =>
-    setRows((prev) => {
-      const next = [...prev];
-      const [row] = next.splice(i, 1);
-      next.splice(i + by, 0, row);
-      return next;
-    });
+  const drag = useDragReorder({ count: rows.length, onMove: (from, to) => setRows((prev) => moveItem(prev, from, to)), gap: 24 });
   // Kit out of service never closes; leaving it, a repair usually does.
   const setKit = (r: Row, stage: RepairStage) =>
     set(r.key, { stage, closes: stage === "open" ? false : r.stage === "open" ? true : r.closes, isDefault: r.isDefault && stage === "open" });
@@ -105,21 +100,9 @@ export default function RepairStatusesSettings() {
           const count = r.id ? (inUse[r.id] ?? 0) : 0;
           const locked = count > 0;
           return (
-            <div key={r.key} className="flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+            <div key={r.key} {...drag.item(i)} className={`flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-0 last:pb-0 bg-white ${drag.cls(i)}`} style={drag.style}>
               <div className="flex items-center gap-2">
-                <span className="flex flex-col">
-                  <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs" aria-label={`Move ${r.name} up`}>
-                    ▲
-                  </button>
-                  <button
-                    onClick={() => move(i, 1)}
-                    disabled={i === rows.length - 1}
-                    className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs"
-                    aria-label={`Move ${r.name} down`}
-                  >
-                    ▼
-                  </button>
-                </span>
+                <DragHandle {...drag.handle(i)} />
                 <ColourPicker value={r.colour || "gray"} onChange={(colour) => set(r.key, { colour })} label={r.name} />
                 <input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder="Name" className="input py-1.5 flex-1 min-w-0" maxLength={60} />
                 {r.stage === "open" && (
@@ -139,7 +122,7 @@ export default function RepairStatusesSettings() {
                   ×
                 </button>
               </div>
-              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap pl-[4.25rem]" title={locked ? "It has repairs in it, so what it does can't change: add a new status instead" : undefined}>
+              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap pl-[4.95rem]" title={locked ? "It has repairs in it, so what it does can't change: add a new status instead" : undefined}>
                 <span className="flex items-center gap-1.5">
                   <span className="text-xs text-gray-500">Kit</span>
                   <Segmented compact label={`What ${r.name} does to the kit`} value={r.stage} options={KIT} disabled={locked} onChange={(stage) => setKit(r, stage)} />

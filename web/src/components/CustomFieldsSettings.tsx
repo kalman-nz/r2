@@ -8,6 +8,7 @@ import { withOrg } from "../lib/currentOrg";
 import { InlineText } from "./InlineInput";
 import { useToast } from "./ToastProvider";
 import { useConfirm } from "./ConfirmProvider";
+import { DragHandle, moveItem, useDragReorder } from "./DragReorder";
 
 export const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -66,10 +67,8 @@ export default function CustomFieldsSettings() {
   }
 
   // Renumbers the whole list, since imported fields all start at 0.
-  function move(index: number, by: -1 | 1) {
-    const order = [...fields];
-    const [field] = order.splice(index, 1);
-    order.splice(index + by, 0, field);
+  function move(from: number, to: number) {
+    const order = moveItem(fields, from, to);
     return run(() =>
       Promise.all(order.map((f, i) => (f.sortOrder === i + 1 ? null : pb.collection("custom_fields").update(f.id, { sortOrder: i + 1 })))),
     );
@@ -85,6 +84,8 @@ export default function CustomFieldsSettings() {
     if (ok) await run(() => pb.collection("custom_fields").delete(field.id));
   }
 
+  const drag = useDragReorder({ count: fields.length, onMove: move, gap: 8 });
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -92,25 +93,8 @@ export default function CustomFieldsSettings() {
       </div>
       <div className="card p-4 flex flex-col gap-2">
         {fields.map((f, i) => (
-          <div key={f.id} className="flex items-center gap-2 flex-wrap">
-            <div className="flex flex-col -my-1">
-              <button
-                onClick={() => move(i, -1)}
-                disabled={i === 0}
-                className="text-gray-400 hover:text-gray-900 disabled:opacity-30 text-xs leading-none px-1"
-                title="Move up"
-              >
-                ▲
-              </button>
-              <button
-                onClick={() => move(i, 1)}
-                disabled={i === fields.length - 1}
-                className="text-gray-400 hover:text-gray-900 disabled:opacity-30 text-xs leading-none px-1"
-                title="Move down"
-              >
-                ▼
-              </button>
-            </div>
+          <div key={f.id} {...drag.item(i)} className={`flex items-center gap-2 flex-wrap bg-white ${drag.cls(i)}`} style={drag.style}>
+            <DragHandle {...drag.handle(i)} />
             <InlineText
               value={f.label}
               onCommit={(v) => v && run(() => pb.collection("custom_fields").update(f.id, { label: v }))}

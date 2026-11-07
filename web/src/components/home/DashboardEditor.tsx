@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type DragEvent, type SetStateAction } from "react";
+import { useState } from "react";
 import { api, type Dashboard } from "../../lib/api";
 import { errorText } from "../../lib/errors";
 import {
@@ -14,52 +14,9 @@ import {
   type ShortcutId,
 } from "../../lib/home";
 import { useOrg } from "../../lib/org";
+import { DragHandle, moveItem, useDragReorder } from "../DragReorder";
 import Modal from "../Modal";
 import { useToast } from "../ToastProvider";
-
-// Drag to reorder a list of ids, with the browser's own drag and drop (like
-// SpacesCard): the dragged one moves to wherever the pointer is, as it goes.
-function useDragOrder<T extends string>(setList: Dispatch<SetStateAction<T[]>>) {
-  const [dragging, setDragging] = useState<T | null>(null);
-  const props = (id: T) => ({
-    draggable: true,
-    onDragStart: (e: DragEvent) => {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", id);
-      setDragging(id);
-    },
-    onDragOver: (e: DragEvent) => {
-      if (!dragging) return;
-      e.preventDefault();
-      if (dragging === id) return;
-      setList((prev) => {
-        const from = prev.indexOf(dragging);
-        const to = prev.indexOf(id);
-        if (from < 0 || to < 0) return prev;
-        const next = [...prev];
-        next.splice(from, 1);
-        next.splice(to, 0, dragging);
-        return next;
-      });
-    },
-    onDrop: (e: DragEvent) => e.preventDefault(),
-    onDragEnd: () => setDragging(null),
-  });
-  return { dragging, props };
-}
-
-function Grip() {
-  return (
-    <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 shrink-0" fill="currentColor" aria-hidden>
-      <circle cx="7" cy="5" r="1.4" />
-      <circle cx="13" cy="5" r="1.4" />
-      <circle cx="7" cy="10" r="1.4" />
-      <circle cx="13" cy="10" r="1.4" />
-      <circle cx="7" cy="15" r="1.4" />
-      <circle cx="13" cy="15" r="1.4" />
-    </svg>
-  );
-}
 
 // Designing a dashboard: its name, which panels it shows in what order, and
 // its shortcut buttons.
@@ -85,8 +42,18 @@ export default function DashboardEditor({
     ((dashboard ? (dashboard.shortcuts ?? DEFAULT_SHORTCUTS) : (start?.shortcuts ?? DEFAULT_SHORTCUTS)) as ShortcutId[]).filter((id) => SHORTCUT_BY_ID.has(id)),
   );
   const [saving, setSaving] = useState(false);
-  const panelDrag = useDragOrder(setPanels);
-  const shortcutDrag = useDragOrder(setShortcuts);
+  // Dragging works on what's shown; panels and buttons for features the
+  // organisation hasn't got stay on the end.
+  const panelsShown = panels.filter((id) => {
+    const f = PANEL_BY_ID.get(id)?.feature;
+    return !f || feature(f);
+  });
+  const panelDrag = useDragReorder({
+    count: panelsShown.length,
+    handle: false,
+    gap: 6,
+    onMove: (from, to) => setPanels((prev) => [...moveItem(panelsShown, from, to), ...prev.filter((id) => !panelsShown.includes(id))]),
+  });
   // Panels for what the organisation hasn't got don't show at all (they're
   // kept on the dashboard for when it has).
   const included = (id: PanelId) => {
@@ -116,6 +83,13 @@ export default function DashboardEditor({
 
   // Shortcuts for what the organisation hasn't got are kept but not shown.
   const shortcutsShown = shortcuts.filter((id) => shortcutIncluded(SHORTCUT_BY_ID.get(id)!, feature));
+  const shortcutDrag = useDragReorder({
+    count: shortcutsShown.length,
+    axis: "x",
+    handle: false,
+    gap: 6,
+    onMove: (from, to) => setShortcuts((prev) => [...moveItem(shortcutsShown, from, to), ...prev.filter((id) => !shortcutsShown.includes(id))]),
+  });
   const shortcutsLeft = SHORTCUTS.filter((sc) => !shortcuts.includes(sc.id) && shortcutIncluded(sc, feature));
 
   return (
@@ -128,18 +102,16 @@ export default function DashboardEditor({
       <div className="flex flex-col gap-1.5 text-sm">
         <span className="text-gray-500">Shows, in this order</span>
         {panels.length === 0 && <p className="text-xs text-gray-400">Nothing yet: add panels from the list below.</p>}
-        {panels.map((id) => {
-          if (!included(id)) return null;
+        {panelsShown.map((id, i) => {
           const p = PANEL_BY_ID.get(id)!;
           return (
             <div
               key={id}
-              {...panelDrag.props(id)}
-              className={`flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 cursor-grab active:cursor-grabbing ${panelDrag.dragging === id ? "opacity-40" : ""}`}
+              {...panelDrag.item(i)}
+              style={panelDrag.style}
+              className={`flex items-center gap-2 rounded-md border border-gray-200 bg-white pl-1.5 pr-3 py-2 cursor-grab active:cursor-grabbing ${panelDrag.cls(i)}`}
             >
-              <span className="text-gray-400">
-                <Grip />
-              </span>
+              <DragHandle />
               <span className="min-w-0 flex-1">
                 <span className="block font-medium text-gray-900">{p.label}</span>
                 <span className="block text-xs text-gray-500">
@@ -186,15 +158,14 @@ export default function DashboardEditor({
               return (
                 <span
                   key={id}
-                  {...shortcutDrag.props(id)}
+                  {...shortcutDrag.item(i)}
+                  style={shortcutDrag.style}
                   className={`inline-flex items-center gap-1 h-8 rounded-md border pl-1.5 pr-1 cursor-grab active:cursor-grabbing ${
                     i === shortcutsShown.length - 1 ? "border-carbon bg-carbon text-white" : "border-gray-300 bg-white text-gray-700"
-                  } ${shortcutDrag.dragging === id ? "opacity-40" : ""}`}
+                  } ${shortcutDrag.cls(i)}`}
                   title={off ? "Your role can't use it" : undefined}
                 >
-                  <span className="opacity-50">
-                    <Grip />
-                  </span>
+                  <DragHandle className="w-4 text-current opacity-50 hover:text-current" />
                   <span className={`font-medium ${off ? "opacity-60" : ""}`}>{sc.label}</span>
                   <button onClick={() => setShortcuts((prev) => prev.filter((x) => x !== id))} className="w-5 h-6 rounded opacity-60 hover:opacity-100" aria-label={`Remove ${sc.label}`}>
                     ×

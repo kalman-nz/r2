@@ -8,6 +8,7 @@ import { useJobStatuses } from "../lib/workflow";
 import { useToast } from "./ToastProvider";
 import ColourPicker from "./ColourPicker";
 import Segmented from "./Segmented";
+import { DragHandle, moveItem, useDragReorder } from "./DragReorder";
 
 type Row = JobStatusInput & { key: string; moveTo?: string };
 
@@ -105,13 +106,7 @@ export default function JobStatusesSettings() {
   const set = (key: string, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   // A status's stage from its options; one that can't start projects stops being the default.
   const setStage = (r: Row, stage: JobStatus) => set(r.key, { stage, isDefault: r.isDefault && canStart(stage) });
-  const move = (i: number, by: number) =>
-    setRows((prev) => {
-      const next = [...prev];
-      const [row] = next.splice(i, 1);
-      next.splice(i + by, 0, row);
-      return next;
-    });
+  const drag = useDragReorder({ count: rows.length, onMove: (from, to) => setRows((prev) => moveItem(prev, from, to)), gap: 24 });
   function remove(r: Row) {
     setRows((prev) => prev.filter((x) => x.key !== r.key));
     if (countOf(r) > 0) setRemoved((prev) => [...prev, { ...r, moveTo: "" }]);
@@ -154,21 +149,9 @@ export default function JobStatusesSettings() {
           const restaged = !!original && original.stage !== r.stage && count > 0;
           const phase = phaseOf(r.stage);
           return (
-            <div key={r.key} className="flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+            <div key={r.key} {...drag.item(i)} className={`flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-0 last:pb-0 bg-white ${drag.cls(i)}`} style={drag.style}>
               <div className="flex items-center gap-2">
-                <span className="flex flex-col">
-                  <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs" aria-label={`Move ${r.name} up`}>
-                    ▲
-                  </button>
-                  <button
-                    onClick={() => move(i, 1)}
-                    disabled={i === rows.length - 1}
-                    className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs"
-                    aria-label={`Move ${r.name} down`}
-                  >
-                    ▼
-                  </button>
-                </span>
+                <DragHandle {...drag.handle(i)} />
                 <ColourPicker value={r.colour || "gray"} onChange={(colour) => set(r.key, { colour })} label={r.name} />
                 <input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder="Name" className="input py-1.5 flex-1 min-w-0" maxLength={60} />
                 {canStart(r.stage) && (
@@ -187,7 +170,7 @@ export default function JobStatusesSettings() {
                   ×
                 </button>
               </div>
-              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap pl-[4.25rem]">
+              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap pl-[4.95rem]">
                 <Option label="Project">
                   <Segmented compact label={`What ${r.name} means for the project`} value={phase} options={PHASES} onChange={(p) => setStage(r, stageFrom(p, equipmentOf(r.stage)))} />
                 </Option>
@@ -212,7 +195,7 @@ export default function JobStatusesSettings() {
                 </Check>
               </div>
               {restaged && (
-                <p className="text-xs text-amber-700 pl-[4.25rem]">
+                <p className="text-xs text-amber-700 pl-[4.95rem]">
                   Its {count} project{count === 1 ? "" : "s"} change with it.
                 </p>
               )}

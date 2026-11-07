@@ -6,6 +6,7 @@ import { orgFilter } from "../lib/currentOrg";
 import { errorText } from "../lib/errors";
 import { levelsOf, useCrewPeople, useCrewRoles } from "../lib/crew";
 import { useToast } from "./ToastProvider";
+import { DragHandle, moveItem, useDragReorder } from "./DragReorder";
 
 // levels: as typed, "1F, 2F, 4F" (lowest first).
 type Row = { id?: string; name: string; levels: string; key: string };
@@ -44,13 +45,7 @@ export default function CrewRolesSettings() {
   const strip = (r: Row[]) => JSON.stringify(r.map(({ id, name, levels }) => ({ id, name, levels: splitLevels(levels) })));
   const dirty = strip(rows) !== strip(saved);
   const set = (key: string, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const move = (i: number, by: number) =>
-    setRows((prev) => {
-      const next = [...prev];
-      const [row] = next.splice(i, 1);
-      next.splice(i + by, 0, row);
-      return next;
-    });
+  const drag = useDragReorder({ count: rows.length, onMove: (from, to) => setRows((prev) => moveItem(prev, from, to)), gap: 16 });
 
   async function save() {
     setSaving(true);
@@ -76,20 +71,8 @@ export default function CrewRolesSettings() {
           const uses = r.id ? (needed[r.id] ?? 0) : 0;
           const people = r.id ? skilled(r.id) : 0;
           return (
-            <div key={r.key} className="flex items-center gap-2 border-b border-gray-100 pb-2 last:border-0 last:pb-0">
-              <span className="flex flex-col">
-                <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs" aria-label={`Move ${r.name} up`}>
-                  ▲
-                </button>
-                <button
-                  onClick={() => move(i, 1)}
-                  disabled={i === rows.length - 1}
-                  className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs"
-                  aria-label={`Move ${r.name} down`}
-                >
-                  ▼
-                </button>
-              </span>
+            <div key={r.key} {...drag.item(i)} className={`flex items-center gap-2 border-b border-gray-100 pb-2 last:border-0 last:pb-0 bg-white ${drag.cls(i)}`} style={drag.style}>
+              <DragHandle {...drag.handle(i)} />
               <input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder="Name" className="input py-1.5 flex-1 min-w-32" maxLength={60} />
               <input
                 value={r.levels}
