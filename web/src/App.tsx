@@ -254,7 +254,7 @@ function AppShell() {
           <R2Lockup className="hidden md:flex" />
         </Link>
 
-        <nav className="flex-1 overflow-y-auto flex flex-col">
+        <nav className="flex-1 overflow-y-auto scrollbar-none flex flex-col">
           {org ? (
             <>
               <NavItem to="/" icon={icons.home} label="Home" end />
