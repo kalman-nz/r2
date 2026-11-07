@@ -13,6 +13,15 @@ The crew required for one schedule item whose kind is `other`: a crew role, head
 **Crew assignment**:
 A person assigned to a crew need.
 
+**Active crew assignment**:
+A crew assignment that reserves its effective time window and fills a crew slot. Declared unavailability can flag it as conflicting without cancelling the commitment.
+
+**Inactive crew assignment**:
+A retained crew assignment that reserves no time and leaves its slot unfilled. It requires a successful activation check before becoming active.
+
+**Crew availability conflict**:
+An overlap between active crew work and a person's declared unavailable period or another active crew assignment. Adjacent time windows do not conflict.
+
 **Declared availability**:
 A person's own unavailable periods for crew work, shared across the organisations they work with. Time without an unavailable period is available unless a crew assignment blocks it.
 

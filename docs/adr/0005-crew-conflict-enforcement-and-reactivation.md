@@ -1,0 +1,7 @@
+# Enforce crew conflicts while preserving explicit resolution
+
+Active assignments must not overlap within or across organisations, and occupancy-changing writes must check availability atomically without planner overrides. A crew member may declare unavailable over an existing assignment: retain the active commitment and flag the conflict instead of blocking the declaration or silently unassigning them.
+
+Cancellation, feature disablement, suspension and membership/person inactivation retain assignments without reserving time. Restoration requires checked activation; an explicit recovery option activates only clean candidates and keeps conflicting ones inactive for resolution, never choosing a winner or automatically reactivating them later. This refines [ADR-0002](0002-crew-assignments-on-other-schedule-items.md): retained assignments do not blindly regain active effects when rostering is enabled.
+
+At rollout, automatically delete every active assignment participating in a pre-existing overlap, evaluated from one snapshot across organisations and dates, without a backup gate. This deliberately removes incompatible commitments rather than choosing survivors; preserve inactive history, crew needs and adjacent assignments. The full activation, notification, atomicity and cleanup decisions are recorded in [Define conflict enforcement and roster-change lifecycle](https://github.com/kalman-nz/r2/issues/14).
