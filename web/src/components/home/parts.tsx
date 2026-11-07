@@ -11,7 +11,7 @@ export function Stat({ label, value, hint, alert = false, to }: { label: string;
   const body = (
     <>
       <span className="eyebrow text-gray-500 truncate">{label}</span>
-      <span className={`font-display text-2xl tabular-nums leading-tight ${alert ? "text-fault-ink" : "text-gray-900"}`}>{value}</span>
+      <span className={`text-2xl font-semibold tabular-nums tracking-tight leading-tight ${alert ? "text-fault-ink" : "text-gray-900"}`}>{value}</span>
       <span className={`text-xs truncate ${alert ? "text-fault-ink" : "text-gray-500"}`}>{hint}</span>
     </>
   );
