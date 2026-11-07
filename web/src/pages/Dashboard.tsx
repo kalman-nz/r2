@@ -6,7 +6,22 @@ import { api, type CrewMember, type CrewNeed, type CrewRole, type Dashboard, typ
 import { orgFilter } from "../lib/currentOrg";
 import { formatDate, formatDateTime, formatDuration, formatTime, nzd, parseDate } from "../lib/format";
 import { assetLabel, dayPassed, dueLabel, inDays, invalidateMaintenance, today, useMaintenanceJobs, useRepairs } from "../lib/maintenance";
-import { byDay, dayOf, greeting, PANEL_BY_ID, panelAllowed, STANDARD_PANELS, startsLabel, type PanelId, type ProjectRow } from "../lib/home";
+import {
+  byDay,
+  dayOf,
+  DEFAULT_SHORTCUTS,
+  greeting,
+  PANEL_BY_ID,
+  panelAllowed,
+  SHORTCUT_BY_ID,
+  shortcutAllowed,
+  STANDARD_PANELS,
+  startsLabel,
+  type PanelId,
+  type ProjectRow,
+  type ShortcutId,
+  type ShortcutInfo,
+} from "../lib/home";
 import { useOrg } from "../lib/org";
 import { useRole } from "../lib/roles";
 import { OPEN_REPAIRS_FILTER } from "../lib/statuses";
@@ -28,7 +43,7 @@ const PANEL_ROWS = 6;
 
 type CrewWithJob = CrewMember & { expand?: { job?: ProjectRow; need?: CrewNeed & { expand?: { role?: CrewRole; period?: JobPeriod } } } };
 type QuoteWithJob = Quote & { expand?: { job?: ProjectRow } };
-type Editing = { dashboard?: Dashboard; start?: { name: string; panels: PanelId[] } };
+type Editing = { dashboard?: Dashboard; start?: { name: string; panels: PanelId[]; shortcuts?: ShortcutId[] } };
 
 // Home: the dashboard you've picked (or the organisation's default), made
 // of panels (lib/home.ts). Anyone can design their own, copy someone
@@ -59,6 +74,14 @@ export default function Dashboard() {
         return !!panel && panelAllowed(panel, can, feature);
       }),
     [current, boards, can, feature],
+  );
+  // Its shortcut buttons this person can use, in its order.
+  const shortcuts = useMemo(
+    () =>
+      ((current?.shortcuts ?? DEFAULT_SHORTCUTS) as ShortcutId[])
+        .map((id) => SHORTCUT_BY_ID.get(id))
+        .filter((s): s is ShortcutInfo => !!s && shortcutAllowed(s, can, feature)),
+    [current, can, feature],
   );
   const has = (id: PanelId) => panels.includes(id);
   const projectsOn = feature("projects");
@@ -501,7 +524,13 @@ export default function Dashboard() {
   const startNew = () => setEditing({ start: { name: "", panels: [] } });
   // Your own copy to change: of one you can't, say.
   const copyOf = (d: Dashboard | null) =>
-    setEditing({ start: { name: d ? `${d.name} (mine)` : "My dashboard", panels: (d?.panels.map((p) => p.id) ?? STANDARD_PANELS) as PanelId[] } });
+    setEditing({
+      start: {
+        name: d ? `${d.name} (mine)` : "My dashboard",
+        panels: (d?.panels.map((p) => p.id) ?? STANDARD_PANELS) as PanelId[],
+        shortcuts: (d?.shortcuts ?? DEFAULT_SHORTCUTS) as ShortcutId[],
+      },
+    });
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-4">
@@ -516,27 +545,11 @@ export default function Dashboard() {
             {org && ` · ${org.name}`}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {can("units.flag") && feature("repairs") && (
-            <button onClick={() => setReporting(true)} className="btn-secondary">
-              Create repair
-            </button>
-          )}
-          {(canScanOut || canScanIn) && (
-            <Link to="/scan" className="btn-secondary">
-              Track equipment
-            </Link>
-          )}
-          {can("jobs.create") && (
-            <Link to="/projects/new" className="btn-primary">
-              New project
-            </Link>
-          )}
-        </div>
       </div>
 
-      {/* Which dashboard. Editing, copying, sharing and the rest are in its menu. */}
-      <div className="flex items-center gap-1.5 flex-wrap text-sm">
+      {/* Which dashboard (editing, copying, sharing and the rest are in its
+          menu), and its shortcut buttons: the last is the main one. */}
+      <div className="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap text-sm">
         <ViewMenu
           label="Dashboard"
           views={list}
@@ -552,6 +565,22 @@ export default function Dashboard() {
             { label: "Manage dashboards…", onClick: () => setManaging(true) },
           ]}
         />
+        {shortcuts.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {shortcuts.map((s, i) => {
+              const cls = i === shortcuts.length - 1 ? "btn-primary" : "btn-secondary";
+              return s.to ? (
+                <Link key={s.id} to={s.to} className={cls}>
+                  {s.label}
+                </Link>
+              ) : (
+                <button key={s.id} onClick={() => setReporting(true)} className={cls}>
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {error && <p className="text-red-600 text-sm">Couldn't load projects: {(error as Error).message}</p>}

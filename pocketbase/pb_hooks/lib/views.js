@@ -43,6 +43,20 @@ function cleanPanels(value) {
   return out;
 }
 
+// Shortcut buttons: ids in order, no repeats. null means the usual ones
+// (never picked); [] means none.
+function cleanShortcuts(value) {
+  if (value === null || value === undefined) return null;
+  if (!Array.isArray(value)) throw new BadRequestError("Pick the shortcut buttons it shows");
+  const out = [];
+  for (const id of value) {
+    if (typeof id !== "string" || !/^[a-z][a-z-]{0,29}$/.test(id)) throw new BadRequestError("Not a shortcut: " + id);
+    if (out.indexOf(id) === -1) out.push(id);
+  }
+  if (out.length > 8) throw new BadRequestError("That's a lot of buttons: up to 8");
+  return out;
+}
+
 function cleanName(value) {
   const name = text(value, 60);
   if (!name) throw new BadRequestError("Give it a name");
@@ -63,6 +77,8 @@ function dashboardJson(ctx, me, record, names) {
   out.id = record.id;
   out.name = record.getString("name");
   out.panels = decodeJson(record.get("panels"), []);
+  const shortcuts = decodeJson(record.get("shortcuts"), null);
+  out.shortcuts = Array.isArray(shortcuts) ? shortcuts : null;
   out.isDefault = record.getBool("isDefault");
   return out;
 }
@@ -79,4 +95,4 @@ function listViewJson(ctx, me, record, names) {
   return out;
 }
 
-module.exports = { DEFAULT_DASHBOARDS, PAGES, createDefaultDashboards, cleanPanels, cleanName, cleanConfig, dashboardJson, listViewJson };
+module.exports = { DEFAULT_DASHBOARDS, PAGES, createDefaultDashboards, cleanPanels, cleanShortcuts, cleanName, cleanConfig, dashboardJson, listViewJson };
