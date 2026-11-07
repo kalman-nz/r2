@@ -1,9 +1,9 @@
-import { Link } from "react-router-dom";
 import type { JobLineView, JobSummary } from "../../lib/api";
 import { STATUS_COLOURS } from "../../lib/statuses";
 import { addAt, linesProgress, useTrackingSteps } from "../../lib/tracking";
 import { TrackingStatus } from "../StatusBadge";
 import TrackingSuggestion from "./TrackingSuggestion";
+import ArrowLink from "../ArrowLink";
 
 // Where a project's kit is (equipment tracking): the whole project, then each
 // heading, so the audio can be Loaded while the lighting's only Prepped.
@@ -13,9 +13,7 @@ export default function TrackingCard({ summary, canScan }: { summary: JobSummary
   const { steps } = useTrackingSteps();
   const { job, packing } = summary;
   const scanLink = canScan && (
-    <Link to={`/projects/${job.id}/scan`} className="text-xs text-signal-ink hover:text-signal-ink-hover">
-      Scan →
-    </Link>
+    <ArrowLink to={`/projects/${job.id}/scan`}>Scan</ArrowLink>
   );
 
   if (packing.scanCount === 0) {

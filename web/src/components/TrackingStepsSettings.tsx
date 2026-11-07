@@ -9,6 +9,7 @@ import { useJobStatuses } from "../lib/workflow";
 import { useToast } from "./ToastProvider";
 import ColourPicker from "./ColourPicker";
 import Segmented from "./Segmented";
+import { DragHandle, moveItem, useDragReorder } from "./DragReorder";
 
 type Row = TrackingStepInput & { key: string };
 
@@ -55,14 +56,16 @@ export default function TrackingStepsSettings() {
   const strip = (r: Row[]) => JSON.stringify(grouped(r).map(({ key: _key, ...rest }) => rest));
   const dirty = strip(rows) !== strip(saved);
   const set = (key: string, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  // Swap a step with its neighbour in the same stage.
-  const move = (row: Row, by: number) =>
-    setRows((prev) => {
-      const same = prev.filter((r) => r.stage === row.stage);
-      const other = same[same.findIndex((r) => r.key === row.key) + by];
-      if (!other) return prev;
-      return prev.map((r) => (r.key === row.key ? other : r.key === other.key ? row : r));
-    });
+  // Steps stay grouped by stage, so one can only land among its own stage's.
+  const drag = useDragReorder({
+    count: rows.length,
+    onMove: (from, to) => setRows((prev) => moveItem(prev, from, to)),
+    gap: 24,
+    allow: (from, to) => {
+      const stage = rows[from].stage;
+      return rows[to - 1]?.stage === stage || rows[to]?.stage === stage;
+    },
+  });
   const missing = !rows.some((r) => r.stage === "out") ? "Keep a step for kit going out" : !rows.some((r) => r.stage === "back") ? "Keep a step for kit coming back" : "";
 
   async function save() {
@@ -90,19 +93,10 @@ export default function TrackingStepsSettings() {
         {isLoading && <p className="text-gray-500">Loading…</p>}
         {rows.map((r, i) => {
           const used = !!(r.id && inUse[r.id]);
-          const firstOfStage = i === 0 || rows[i - 1].stage !== r.stage;
-          const lastOfStage = i === rows.length - 1 || rows[i + 1].stage !== r.stage;
           return (
-            <div key={r.key} className="flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+            <div key={r.key} {...drag.item(i)} className={`flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-0 last:pb-0 bg-white ${drag.cls(i)}`} style={drag.style}>
               <div className="flex items-center gap-2">
-                <span className="flex flex-col">
-                  <button onClick={() => move(r, -1)} disabled={firstOfStage} className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs" aria-label={`Move ${r.name} up`}>
-                    ▲
-                  </button>
-                  <button onClick={() => move(r, 1)} disabled={lastOfStage} className="text-gray-400 hover:text-gray-900 disabled:opacity-30 leading-none text-xs" aria-label={`Move ${r.name} down`}>
-                    ▼
-                  </button>
-                </span>
+                <DragHandle {...drag.handle(i)} />
                 <ColourPicker value={r.colour || "gray"} onChange={(colour) => set(r.key, { colour })} label={r.name} />
                 <input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder="Name" className="input py-1.5 flex-1 min-w-0" maxLength={60} />
                 <button
@@ -114,7 +108,7 @@ export default function TrackingStepsSettings() {
                   ×
                 </button>
               </div>
-              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap pl-[4.25rem]">
+              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap pl-[4.95rem]">
                 <span className="flex items-center gap-1.5" title={used ? "Kit has been tracked to this step, so where it is can't change" : TRACKING_STAGES.find((s) => s.value === r.stage)?.hint}>
                   <span className="text-xs text-gray-500">Kit</span>
                   <Segmented

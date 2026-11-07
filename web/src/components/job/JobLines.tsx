@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type JobLineView, type JobSummary, type LinePatch, type NewLine, type PriceMode, type TrackingStep } from "../../lib/api";
 import { formatPeriod, nzd, MODE_SUFFIX } from "../../lib/format";
@@ -14,6 +14,8 @@ import { linesProgress, progressOf, useTrackingSteps } from "../../lib/tracking"
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import NewSubprojectModal from "./NewSubprojectModal";
+import { DragHandle } from "../DragReorder";
+import SelectionBar from "../SelectionBar";
 
 // Done jobs don't hold stock, so availability isn't worked out for them.
 function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boolean }) {
@@ -148,11 +150,36 @@ interface Section {
   subtotal?: number;
 }
 
-// Where a line can go: a part of the project and the headings in it.
-interface Target {
-  section: string;
-  name: string;
-  headings: string[];
+
+// Dragging lines and headings into order. Each row says what it is, so
+// hovering it works out where the dragged thing would land: a line before
+// another line (in any heading or part of the project), or a heading before
+// another heading in its part. An orange line shows where, as in
+// components/DragReorder.tsx; nothing moves until it's dropped.
+type RowDesc =
+  | { type: "heading"; section: string; group: string }
+  | { type: "line"; section: string; group: string; line: JobLineView }
+  | { type: "child"; section: string; group: string; parent: string }
+  | { type: "empty"; section: string; group: string };
+
+type Dragging = { kind: "line"; line: JobLineView } | { kind: "heading"; section: string; name: string };
+type Drop = { kind: "line"; section: string; group: string; before: string | null } | { kind: "heading"; section: string; before: string | null };
+
+const headingKey = (section: string, group: string) => `h:${section}:${group}`;
+const emptyKey = (section: string, group: string) => `e:${section}:${group}`;
+const LINE_ABOVE = "[&>td]:shadow-[inset_0_2px_0_var(--color-signal)]";
+const LINE_BELOW = "[&>td]:shadow-[inset_0_-2px_0_var(--color-signal)]";
+
+export interface Dnd {
+  row: (desc: RowDesc) => {
+    draggable: boolean;
+    onDragStart: (e: DragEvent) => void;
+    onDragOver: (e: DragEvent) => void;
+    onDrop: (e: DragEvent) => void;
+    onDragEnd: () => void;
+  };
+  cls: (key: string, parent?: string) => string;
+  handle: (key: string) => { onMouseDown: () => void; onMouseUp: () => void };
 }
 
 export default function JobLines({
@@ -271,17 +298,236 @@ export default function JobLines({
     return [...new Set(names)].map((name) => ({ name, lines: byName.get(name) ?? [] }));
   }
 
-  async function move(line: JobLineView, direction: -1 | 1) {
-    const siblings = lines.filter((l) => !l.parentLine && l.subproject === line.subproject && l.group === line.group);
-    const index = siblings.findIndex((l) => l.id === line.id);
-    const other = siblings[index + direction];
-    if (!other) return;
+  // ---- Ticked lines (top-level only; a kit's contents go with it), in order.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const picked = lines.filter((l) => !l.parentLine && selected.has(l.id));
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const topLines = lines.filter((l) => !l.parentLine);
+  const allPicked = topLines.length > 0 && picked.length === topLines.length;
+  const [discount, setDiscount] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // ---- Drag and drop
+  const [grabbed, setGrabbed] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<Dragging | null>(null);
+  const [drop, setDrop] = useState<Drop | null>(null);
+  const sectionOf = (l: JobLineView) => l.subproject || "";
+  // Top-level lines of a heading, in order, leaving out the one being dragged.
+  const siblingsOf = (section: string, group: string, except?: string) =>
+    lines.filter((l) => !l.parentLine && sectionOf(l) === section && l.group === group && l.id !== except);
+  const namedHeadings = (section: string) =>
+    sectionGroups(section, lines.filter((l) => sectionOf(l) === section))
+      .map((g) => g.name)
+      .filter(Boolean);
+  const nextHeading = (section: string, group: string) => {
+    const names = namedHeadings(section);
+    return group === "" ? (names[0] ?? null) : (names[names.indexOf(group) + 1] ?? null);
+  };
+
+  // Dragging a ticked line takes every ticked line with it.
+  const moving = dragging?.kind === "line" ? (selected.has(dragging.line.id) && picked.length > 1 ? picked : [dragging.line]) : [];
+  const movingIds = new Set(moving.map((l) => l.id));
+
+  // Where the dragged thing would land if dropped on this row, or null.
+  function dropFor(desc: RowDesc, upper: boolean): Drop | null {
+    if (!dragging) return null;
+    if (dragging.kind === "line") {
+      const self = dragging.line.id;
+      const after = (id: string) => {
+        const sibs = siblingsOf(desc.section, desc.group);
+        const at = sibs.findIndex((l) => l.id === id);
+        const next = sibs.slice(at + 1).find((l) => l.id !== self);
+        return next ? next.id : null;
+      };
+      let before: string | null;
+      if (desc.type === "heading") before = siblingsOf(desc.section, desc.group, self)[0]?.id ?? null;
+      else if (desc.type === "line") before = upper ? (desc.line.id === self ? after(self) : desc.line.id) : after(desc.line.id);
+      else if (desc.type === "child") before = after(desc.parent);
+      else before = null;
+      // Where it already is: nothing to do.
+      if (moving.length === 1 && desc.section === sectionOf(dragging.line) && desc.group === dragging.line.group) {
+        const sibs = siblingsOf(desc.section, desc.group);
+        const now = sibs.findIndex((l) => l.id === self);
+        const nextNow = sibs[now + 1]?.id ?? null;
+        if (before === nextNow || before === self) return null;
+      }
+      return { kind: "line", section: desc.section, group: desc.group, before };
+    }
+    // A heading moves among its own part's headings.
+    if (desc.section !== dragging.section) return null;
+    let before: string | null;
+    if (desc.type === "heading" && desc.group) before = upper ? desc.group : nextHeading(desc.section, desc.group);
+    else before = nextHeading(desc.section, desc.group);
+    if (before === dragging.name || before === nextHeading(dragging.section, dragging.name)) return null;
+    return { kind: "heading", section: desc.section, before };
+  }
+
+  // Puts lines, in their order, before a line in a heading (or at its end).
+  // Sort orders go between the new neighbours, or the heading's renumbered
+  // when there's no room.
+  async function dropLines(move: JobLineView[], section: string, group: string, before: string | null) {
+    const ids = new Set(move.map((l) => l.id));
+    const all = siblingsOf(section, group);
+    if (before && ids.has(before)) before = all.slice(all.findIndex((l) => l.id === before) + 1).find((l) => !ids.has(l.id))?.id ?? null;
+    const siblings = all.filter((l) => !ids.has(l.id));
+    const at = before ? siblings.findIndex((l) => l.id === before) : siblings.length;
+    const prev = siblings[at - 1];
+    const next = siblings[at];
+    const k = move.length;
+    let orders: number[] | null;
+    if (!prev && !next) orders = move.map((_, i) => (i + 1) * 10);
+    else if (!prev) orders = move.map((_, i) => next.sortOrder - 10 * (k - i));
+    else if (!next) orders = move.map((_, i) => prev.sortOrder + 10 * (i + 1));
+    else {
+      const gap = next.sortOrder - prev.sortOrder;
+      orders = gap > k ? move.map((_, i) => prev.sortOrder + Math.floor((gap * (i + 1)) / (k + 1))) : null;
+    }
+    const moved = (l: JobLineView): LinePatch => ({
+      ...(section !== sectionOf(l) ? { subproject: section } : {}),
+      ...(group !== l.group ? { group } : {}),
+    });
     await run(async () => {
-      if (line.sortOrder === other.sortOrder) return api.updateLine(line.id, { sortOrder: line.sortOrder + direction });
-      await api.updateLine(line.id, { sortOrder: other.sortOrder });
-      return api.updateLine(other.id, { sortOrder: line.sortOrder });
+      let last = summary;
+      if (orders) {
+        for (const [i, l] of move.entries()) last = await api.updateLine(l.id, { ...moved(l), sortOrder: orders[i] });
+        return last;
+      }
+      const order = [...siblings];
+      order.splice(at, 0, ...move);
+      for (const [i, l] of order.entries()) {
+        const want = (i + 1) * 10;
+        if (ids.has(l.id)) last = await api.updateLine(l.id, { ...moved(l), sortOrder: want });
+        else if (l.sortOrder !== want) last = await api.updateLine(l.id, { sortOrder: want });
+      }
+      return last;
+    }, k > 1 ? "Couldn't move them" : "Couldn't move it");
+  }
+
+  // ---- What the selection bar does
+  async function removePicked() {
+    const kits = picked.filter((l) => lines.some((c) => c.parentLine === l.id)).length;
+    const ok = await confirm({
+      title: "Remove lines",
+      message: `Remove ${picked.length} line${picked.length === 1 ? "" : "s"}${kits ? `, and what was added with ${kits === 1 ? "the kit" : "the kits"}` : ""}?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    await run(async () => {
+      let last = summary;
+      for (const l of picked) last = await api.deleteLine(l.id);
+      return last;
+    }, "Couldn't remove them");
+    setSelected(new Set());
+    setBusy(false);
+  }
+  async function discountPicked() {
+    const pct = Number(discount);
+    if (discount.trim() === "" || !Number.isFinite(pct) || pct < 0 || pct > 100) return;
+    setBusy(true);
+    await run(async () => {
+      let last = summary;
+      for (const l of picked) if (l.lineType !== "component") last = await api.updateLine(l.id, { discountPct: pct });
+      return last;
+    }, "Couldn't set the discount");
+    setDiscount("");
+    setBusy(false);
+  }
+  async function movePicked(target: string) {
+    const [section, group] = target.split("\u0000");
+    setBusy(true);
+    await dropLines(picked, section, group, null);
+    setBusy(false);
+  }
+
+  async function dropHeading(section: string, name: string, before: string | null) {
+    const names = namedHeadings(section);
+    const from = names.indexOf(name);
+    let to = before ? names.indexOf(before) : names.length;
+    if (to > from) to -= 1;
+    const steps = to - from;
+    if (!steps) return;
+    await run(async () => {
+      let last = summary;
+      for (let i = 0; i < Math.abs(steps); i++) last = await api.headingAction(job.id, { action: "move", section, name, direction: steps > 0 ? 1 : -1 });
+      return last;
     }, "Couldn't reorder");
   }
+
+  const endDrag = () => {
+    setDragging(null);
+    setDrop(null);
+    setGrabbed(null);
+  };
+
+  // The row that shows the orange line: above the line or heading it goes
+  // before, or below the last row of where it goes at the end.
+  const lastRowOf = (section: string, group: string) => {
+    const own = lines.filter((l) => sectionOf(l) === section && (l.parentLine ? lines.find((p) => p.id === l.parentLine)?.group : l.group) === group);
+    return own.length > 0 ? own[own.length - 1].id : emptyKey(section, group);
+  };
+  let above: string | null = null;
+  let below: string | null = null;
+  if (drop?.kind === "line") {
+    if (drop.before) above = drop.before;
+    else below = lastRowOf(drop.section, drop.group);
+  } else if (drop?.kind === "heading") {
+    if (drop.before) above = headingKey(drop.section, drop.before);
+    else {
+      const names = namedHeadings(drop.section);
+      below = lastRowOf(drop.section, names[names.length - 1] ?? "");
+    }
+  }
+
+  const dnd: Dnd = {
+    row: (desc) => {
+      const key =
+        desc.type === "line" ? desc.line.id : desc.type === "heading" ? headingKey(desc.section, desc.group) : "";
+      return {
+        draggable: !!key && grabbed === key,
+        onDragStart: (e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", key);
+          if (desc.type === "line") setDragging({ kind: "line", line: desc.line });
+          else if (desc.type === "heading") setDragging({ kind: "heading", section: desc.section, name: desc.group });
+        },
+        onDragOver: (e) => {
+          if (!dragging) return;
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const next = dropFor(desc, e.clientY < rect.top + rect.height / 2);
+          if (next) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }
+          if (JSON.stringify(next) !== JSON.stringify(drop)) setDrop(next);
+        },
+        onDrop: (e) => {
+          e.preventDefault();
+          const d = dragging;
+          const target = drop;
+          endDrag();
+          if (!d || !target) return;
+          if (d.kind === "line" && target.kind === "line") dropLines(moving, target.section, target.group, target.before);
+          if (d.kind === "heading" && target.kind === "heading") dropHeading(d.section, d.name, target.before);
+        },
+        onDragEnd: endDrag,
+      };
+    },
+    cls: (key, parent) => {
+      const faded =
+        (dragging?.kind === "line" && (movingIds.has(key) || (!!parent && movingIds.has(parent)))) ||
+        (dragging?.kind === "heading" && headingKey(dragging.section, dragging.name) === key);
+      return `${faded ? "opacity-40" : ""} ${above === key ? LINE_ABOVE : ""} ${below === key ? LINE_BELOW : ""}`;
+    },
+    handle: (key) => ({ onMouseDown: () => setGrabbed(key), onMouseUp: () => setGrabbed(null) }),
+  };
 
   const groupNames = [...new Set([...lines.map((l) => l.group), ...(job.headings ?? []).map((h) => h.name)].filter(Boolean))];
   const columns = (showPrices ? 7 : 3) + (steps ? 1 : 0);
@@ -307,17 +553,6 @@ export default function JobLines({
       </div>
     );
   const pickingSection = picking === null ? null : sectionById(picking.section);
-  // Every heading in every part of the project, for moving a line.
-  const targets: Target[] = sections.map((sec) => ({
-    section: sec.id,
-    name: sec.name,
-    headings: sectionGroups(
-      sec.id,
-      lines.filter((l) => (l.subproject || "") === sec.id),
-    )
-      .map((g) => g.name)
-      .filter(Boolean),
-  }));
 
   return (
     <section className="card overflow-hidden">
@@ -333,11 +568,77 @@ export default function JobLines({
         </div>
       </div>
 
+      {canEdit && picked.length > 0 && (
+        <div className="px-4 pb-2">
+          <SelectionBar count={picked.length} onClear={() => setSelected(new Set())}>
+            <select value="" onChange={(e) => movePicked(e.target.value)} disabled={busy} className="input w-auto py-1.5" aria-label="Move to a heading">
+              <option value="" disabled>
+                Move to…
+              </option>
+              {sections.map((sec) => {
+                if (!split && sec.id !== "") return null;
+                const options = ["", ...namedHeadings(sec.id)].map((h) => (
+                  <option key={h || "(none)"} value={`${sec.id}\u0000${h}`}>
+                    {h || "No heading"}
+                  </option>
+                ));
+                return split ? (
+                  <optgroup key={sec.id || "main"} label={sec.name}>
+                    {options}
+                  </optgroup>
+                ) : (
+                  options
+                );
+              })}
+            </select>
+            {showPrices && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  discountPicked();
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Disc %"
+                  aria-label="Discount for the ticked lines (%)"
+                  className="input py-1.5 w-20"
+                  disabled={busy}
+                />
+                <button type="submit" disabled={busy || discount.trim() === ""} className="btn-secondary py-1.5">
+                  Set discount
+                </button>
+              </form>
+            )}
+            <button onClick={removePicked} disabled={busy} className="btn-secondary py-1.5 hover:text-fault-ink">
+              Remove
+            </button>
+          </SelectionBar>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-[13px] border-collapse">
           <thead>
             <tr className="border-y border-gray-200 text-left text-gray-500 bg-gray-50/60">
-              <th className="px-4 py-1.5 font-medium">Item</th>
+              <th className={`py-1.5 font-medium ${canEdit ? "pl-1.5 pr-4" : "px-4"}`}>
+                {canEdit ? (
+                  <span className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all lines"
+                      checked={allPicked}
+                      onChange={() => setSelected(allPicked ? new Set() : new Set(topLines.map((l) => l.id)))}
+                    />
+                    Item
+                  </span>
+                ) : (
+                  "Item"
+                )}
+              </th>
               <th className="px-2 py-1.5 font-medium text-right w-16">Qty</th>
               <th className="px-2 py-1.5 font-medium w-36">Availability</th>
               {steps && <th className="px-2 py-1.5 font-medium w-44">Status</th>}
@@ -375,7 +676,6 @@ export default function JobLines({
                 )}
                 {(() => {
                   const groups = sectionGroups(section.id, own);
-                  const named = groups.filter((g) => g.name);
                   return groups.map((group) => (
                     <GroupRows
                       key={group.name || "(none)"}
@@ -385,16 +685,15 @@ export default function JobLines({
                       showPrices={showPrices}
                       jobDone={jobDone}
                       steps={steps}
-                      targets={targets}
-                      first={named[0]?.name === group.name}
-                      last={named[named.length - 1]?.name === group.name}
+                      section={section.id}
+                      dnd={dnd}
+                      selected={selected}
+                      onToggle={toggle}
                       onRenameGroup={(from, to) => renameGroup(section.id, from, to)}
                       onRemoveGroup={() => removeGroup(section.id, group.name, group.lines.filter((l) => !l.parentLine).length)}
-                      onMoveGroup={(direction) => heading({ action: "move", section: section.id, name: group.name, direction }, "Couldn't reorder")}
                       onAddTo={() => setPicking({ section: section.id, group: group.name })}
                       onPatch={patch}
                       onRemove={remove}
-                      onMove={move}
                     />
                   ));
                 })()}
@@ -492,16 +791,15 @@ function GroupRows({
   showPrices,
   jobDone,
   steps,
-  targets,
-  first,
-  last,
+  section,
+  dnd,
+  selected,
+  onToggle,
   onRenameGroup,
   onRemoveGroup,
-  onMoveGroup,
   onAddTo,
   onPatch,
   onRemove,
-  onMove,
 }: {
   group: { name: string; lines: JobLineView[] };
   columns: number;
@@ -509,29 +807,34 @@ function GroupRows({
   showPrices: boolean;
   jobDone: boolean;
   steps: TrackingStep[] | null;
-  targets: Target[];
-  first: boolean;
-  last: boolean;
+  section: string;
+  dnd: Dnd;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
   onRenameGroup: (from: string, to: string) => void;
   onRemoveGroup: () => void;
-  onMoveGroup: (direction: -1 | 1) => void;
   onAddTo: () => void;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
-  onMove: (line: JobLineView, direction: -1 | 1) => void;
 }) {
   const subtotal = group.lines.reduce((sum, l) => sum + (l.amount?.net ?? 0), 0);
   return (
     <>
-      <tr className="border-b border-gray-100">
-        <td colSpan={columns} className="px-4 pt-3 pb-1">
+      <tr
+        {...dnd.row({ type: "heading", section, group: group.name })}
+        className={`border-b border-gray-100 bg-white ${dnd.cls(headingKey(section, group.name))}`}
+      >
+        <td colSpan={columns} className={`pr-4 pt-3 pb-1 ${canEdit && group.name ? "pl-1.5" : "pl-4"}`}>
           <div className="flex items-center justify-between gap-3">
             {canEdit && group.name ? (
-              <InlineText
+              <span className="flex items-center gap-1.5 min-w-0">
+                <DragHandle {...dnd.handle(headingKey(section, group.name))} />
+                <InlineText
                 value={group.name}
                 onCommit={(to) => onRenameGroup(group.name, to)}
                 className="font-semibold text-gray-800 w-64 border-transparent hover:border-gray-300 bg-transparent"
-              />
+                />
+              </span>
             ) : (
               <span className={group.name ? "font-semibold text-gray-800" : "text-gray-400 text-xs uppercase tracking-wide"}>{group.name || "No heading"}</span>
             )}
@@ -541,12 +844,6 @@ function GroupRows({
                 <span className="inline-flex items-center gap-0.5 text-gray-400 text-xs">
                   <button onClick={onAddTo} className="text-signal-ink hover:text-signal-ink-hover font-medium px-1" title={`Add equipment under ${group.name}`}>
                     + Add
-                  </button>
-                  <button onClick={() => onMoveGroup(-1)} disabled={first} className="hover:text-gray-700 px-0.5 disabled:opacity-30" title="Move heading up">
-                    ↑
-                  </button>
-                  <button onClick={() => onMoveGroup(1)} disabled={last} className="hover:text-gray-700 px-0.5 disabled:opacity-30" title="Move heading down">
-                    ↓
                   </button>
                   <button onClick={onRemoveGroup} className="hover:text-red-500 px-1 text-base leading-none" title="Remove heading">
                     ×
@@ -559,7 +856,7 @@ function GroupRows({
         </td>
       </tr>
       {group.lines.length === 0 && (
-        <tr className="border-b border-gray-50">
+        <tr {...dnd.row({ type: "empty", section, group: group.name })} className={`border-b border-gray-50 ${dnd.cls(emptyKey(section, group.name))}`}>
           <td colSpan={columns} className="pl-4 py-1.5 text-xs text-gray-400">
             Nothing under this heading yet.
           </td>
@@ -574,10 +871,13 @@ function GroupRows({
           jobDone={jobDone}
           steps={steps}
           kitLines={line.item?.kind === "kit" ? group.lines.filter((l) => l.parentLine === line.id) : undefined}
-          targets={targets}
+          section={section}
+          group={group.name}
+          dnd={dnd}
+          ticked={selected.has(line.id)}
+          onToggle={() => onToggle(line.id)}
           onPatch={onPatch}
           onRemove={onRemove}
-          onMove={onMove}
         />
       ))}
     </>
@@ -591,10 +891,13 @@ function LineRow({
   jobDone,
   steps,
   kitLines,
-  targets,
+  section,
+  group,
+  dnd,
+  ticked,
+  onToggle,
   onPatch,
   onRemove,
-  onMove,
 }: {
   line: JobLineView;
   canEdit: boolean;
@@ -603,20 +906,31 @@ function LineRow({
   steps: TrackingStep[] | null;
   // A kit's contents, whose tracking is the kit's.
   kitLines?: JobLineView[];
-  // Where the line can be moved to: each part of the project and its headings.
-  targets: Target[];
+  section: string;
+  group: string;
+  dnd: Dnd;
+  ticked: boolean;
+  onToggle: () => void;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
-  onMove: (line: JobLineView, direction: -1 | 1) => void;
 }) {
   const isChild = Boolean(line.parentLine);
   const isCustom = line.lineType === "custom";
   const amount = line.amount;
 
   return (
-    <tr className={`border-b border-gray-50 hover:bg-gray-50/60 ${isChild ? "text-gray-600" : ""}`}>
-      <td className={`py-1.5 pr-2 ${isChild ? "pl-9" : "pl-4"}`}>
+    <tr
+      {...dnd.row(isChild ? { type: "child", section, group, parent: line.parentLine! } : { type: "line", section, group, line })}
+      className={`border-b border-gray-50 ${ticked ? "bg-signal-soft/40" : "bg-white"} hover:bg-gray-50/60 ${isChild ? "text-gray-600" : ""} ${dnd.cls(line.id, line.parentLine || undefined)}`}
+    >
+      <td className={`py-1.5 pr-2 ${isChild ? (canEdit ? "pl-16" : "pl-9") : canEdit ? "pl-1.5" : "pl-4"}`}>
         <div className="flex items-center gap-1.5 min-w-0">
+          {canEdit && !isChild && (
+            <>
+              <input type="checkbox" checked={ticked} onChange={onToggle} aria-label={`Select ${line.name}`} className="shrink-0" />
+              <DragHandle {...dnd.handle(line.id)} />
+            </>
+          )}
           {isChild && <span className="text-gray-300">↳</span>}
           {isCustom && canEdit ? (
             <InlineText value={line.description} onCommit={(description) => onPatch(line, { description })} className="flex-1 min-w-40" />
@@ -688,46 +1002,6 @@ function LineRow({
           <td className="px-1 py-1.5 text-right whitespace-nowrap">
             {canEdit && (
               <span className="inline-flex items-center text-gray-400">
-                {!isChild && (
-                  // An icon with the real select laid invisibly over it.
-                  <span className="relative px-0.5 hover:text-gray-700" title="Move to another heading">
-                    ⇄
-                    <select
-                      value={`${line.subproject}\u0000${line.group}`}
-                      onChange={(e) => {
-                        const [subproject, group] = e.target.value.split("\u0000");
-                        onPatch(line, { subproject, group });
-                      }}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      aria-label="Move to"
-                    >
-                      {targets.map((t) => {
-                        const options = ["", ...t.headings].map((h) => (
-                          <option key={h || "(none)"} value={`${t.section}\u0000${h}`}>
-                            {h || "No heading"}
-                          </option>
-                        ));
-                        return targets.length > 1 ? (
-                          <optgroup key={t.section || "main"} label={t.name}>
-                            {options}
-                          </optgroup>
-                        ) : (
-                          options
-                        );
-                      })}
-                    </select>
-                  </span>
-                )}
-                {!isChild && (
-                  <>
-                    <button onClick={() => onMove(line, -1)} className="hover:text-gray-700 px-0.5" title="Move up">
-                      ↑
-                    </button>
-                    <button onClick={() => onMove(line, 1)} className="hover:text-gray-700 px-0.5" title="Move down">
-                      ↓
-                    </button>
-                  </>
-                )}
                 <button onClick={() => onRemove(line)} className="hover:text-red-500 px-1 text-base leading-none" title="Remove">
                   ×
                 </button>

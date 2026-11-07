@@ -9,6 +9,7 @@ import Field from "./Field";
 import Switch from "./Switch";
 import { useConfirm } from "./ConfirmProvider";
 import { useToast } from "./ToastProvider";
+import { DragHandle, moveItem, useDragReorder } from "./DragReorder";
 
 type Draft = Pick<DocumentTemplate, "name" | "description" | "equipment" | "schedule" | "notes" | "fields">;
 
@@ -103,13 +104,7 @@ export default function DocumentsSettings() {
   }
 
   const setField = (i: number, f: DocumentField) => setDraft((d) => ({ ...d, fields: d.fields.map((x, j) => (j === i ? f : x)) }));
-  const move = (i: number, by: number) =>
-    setDraft((d) => {
-      const fields = [...d.fields];
-      const [f] = fields.splice(i, 1);
-      fields.splice(Math.max(0, Math.min(fields.length, i + by)), 0, f);
-      return { ...d, fields };
-    });
+  const drag = useDragReorder({ count: draft.fields.length, onMove: (from, to) => setDraft((d) => ({ ...d, fields: moveItem(d.fields, from, to) })), gap: 6 });
   const addField = (type: DocumentFieldType) =>
     setDraft((d) => ({ ...d, fields: [...d.fields, { id: newFieldId(), type, label: type === "heading" ? "New section" : "" }] }));
 
@@ -163,7 +158,8 @@ export default function DocumentsSettings() {
               <span className="text-sm text-gray-500">Parts, in order</span>
               {draft.fields.length === 0 && <p className="text-sm text-gray-400">No parts yet.</p>}
               {draft.fields.map((f, i) => (
-                <div key={f.id} className={`flex items-start gap-1.5 ${f.type === "heading" ? "pt-2" : ""}`}>
+                <div key={f.id} {...drag.item(i)} className={`flex items-start gap-1.5 bg-white ${f.type === "heading" ? "pt-2" : ""} ${drag.cls(i)}`} style={drag.style}>
+                  <DragHandle {...drag.handle(i)} className="mt-1.5" />
                   <select
                     value={f.type}
                     onChange={(e) => setField(i, { ...f, type: e.target.value as DocumentFieldType })}
@@ -192,17 +188,6 @@ export default function DocumentsSettings() {
                       placeholder={FIELD_TYPES.find((t) => t.value === f.type)?.hint}
                     />
                   )}
-                  <button onClick={() => move(i, -1)} disabled={i === 0} className="btn-secondary px-2 py-1.5 disabled:opacity-30" aria-label="Move up">
-                    ↑
-                  </button>
-                  <button
-                    onClick={() => move(i, 1)}
-                    disabled={i === draft.fields.length - 1}
-                    className="btn-secondary px-2 py-1.5 disabled:opacity-30"
-                    aria-label="Move down"
-                  >
-                    ↓
-                  </button>
                   <button
                     onClick={() => setDraft((d) => ({ ...d, fields: d.fields.filter((_, j) => j !== i) }))}
                     className="btn-secondary px-2 py-1.5 hover:text-fault-ink"

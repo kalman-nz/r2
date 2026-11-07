@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { TrackingStage } from "../../lib/api";
 import type { ProjectRow } from "../../lib/home";
 import { placeName } from "../../lib/format";
+import ArrowLink from "../ArrowLink";
 
 // The pieces dashboards are drawn with (pages/Dashboard.tsx).
 
@@ -10,11 +11,12 @@ export function Stat({ label, value, hint, alert = false, to }: { label: string;
   const body = (
     <>
       <span className="eyebrow text-gray-500 truncate">{label}</span>
-      <span className={`font-display text-2xl tabular-nums leading-tight ${alert ? "text-fault-ink" : "text-gray-900"}`}>{value}</span>
+      <span className={`text-2xl font-semibold tabular-nums tracking-tight leading-tight ${alert ? "text-fault-ink" : "text-gray-900"}`}>{value}</span>
       <span className={`text-xs truncate ${alert ? "text-fault-ink" : "text-gray-500"}`}>{hint}</span>
     </>
   );
-  const className = `card px-3.5 py-3 flex flex-col gap-0.5 min-w-0 ${alert ? "shadow-[inset_3px_0_0_var(--color-fault)]" : ""}`;
+  // An alert gets a red bar that floats inside the card, like the sidebar's active link.
+  const className = `relative card px-3.5 py-3 flex flex-col gap-0.5 min-w-0 ${alert ? "before:absolute before:left-0 before:top-3 before:bottom-3 before:w-[3px] before:rounded-full before:bg-fault" : ""}`;
   return to ? (
     <Link to={to} className={`${className} hover:border-gray-300 hover:bg-gray-50 transition-colors`}>
       {body}
@@ -49,9 +51,7 @@ export function Panel({
           <p className="text-xs text-gray-500 truncate">{sub}</p>
         </div>
         {action && (
-          <Link to={action.to} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover whitespace-nowrap">
-            {action.label}
-          </Link>
+          <ArrowLink to={action.to}>{action.label}</ArrowLink>
         )}
       </div>
       {count === 0 ? <p className="px-4 py-6 text-sm text-gray-500 text-center">{empty}</p> : <div className="divide-y divide-gray-100">{children}</div>}

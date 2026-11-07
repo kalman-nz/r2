@@ -16,6 +16,7 @@ import { ResultBadge } from "../components/maintenance/ResultBadge";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
 import Breadcrumbs from "../components/Breadcrumbs";
+import ArrowLink from "../components/ArrowLink";
 
 // One piece of maintenance: what and when, recording how it went (a fail
 // can take the kit out of service on a repair), its files, and what's been
@@ -152,9 +153,9 @@ export default function MaintenanceJobDetail() {
                 {job.doneBy && ` by ${job.doneBy}`}
               </p>
               {job.repair && (
-                <Link to={`/maintenance/repairs/${job.repair}`} className="text-signal-ink hover:text-signal-ink-hover w-fit">
-                  See the repair →
-                </Link>
+                <ArrowLink to={`/maintenance/repairs/${job.repair}`} className="-ml-2">
+                  See the repair
+                </ArrowLink>
               )}
             </section>
           )}

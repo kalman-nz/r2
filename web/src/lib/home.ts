@@ -47,6 +47,45 @@ export function panelAllowed(panel: PanelInfo, can: (p: string) => boolean, feat
   return (!panel.permission || can(panel.permission)) && (!panel.feature || feature(panel.feature));
 }
 
+// Shortcut buttons next to the dashboard menu, picked per dashboard. to is
+// the page they open; without one (Create repair) Home opens a form. A
+// shortcut shows for someone with any of its permissions and any of its
+// features.
+export type ShortcutId = "new-project" | "track" | "new-repair" | "new-item" | "new-contact" | "print-label" | "rostering" | "maintenance" | "xero";
+
+export interface ShortcutInfo {
+  id: ShortcutId;
+  label: string;
+  to?: string;
+  permissions?: string[];
+  features?: FeatureKey[];
+}
+
+export const SHORTCUTS: ShortcutInfo[] = [
+  { id: "new-project", label: "New project", to: "/projects/new", permissions: ["jobs.create"], features: ["projects"] },
+  { id: "track", label: "Track equipment", to: "/scan", permissions: ["scan.out", "scan.in"], features: ["scanning"] },
+  { id: "new-repair", label: "Create repair", permissions: ["units.flag"], features: ["repairs"] },
+  { id: "new-item", label: "New item", to: "/inventory/new", permissions: ["items.create"] },
+  { id: "new-contact", label: "New contact", to: "/contacts/new", permissions: ["contacts.create"], features: ["projects"] },
+  { id: "print-label", label: "Print label", to: "/custom-label", permissions: ["labels.print"] },
+  { id: "rostering", label: "Rostering", to: "/rostering", features: ["crew"] },
+  { id: "maintenance", label: "Maintenance", to: "/maintenance", features: ["repairs", "maintenance"] },
+  { id: "xero", label: "Xero export", to: "/finance/xero-export", permissions: ["export.xero"] },
+];
+
+export const SHORTCUT_BY_ID = new Map(SHORTCUTS.map((s) => [s.id, s]));
+
+// A dashboard that's never picked its own (and the Standard Home) has these.
+export const DEFAULT_SHORTCUTS: ShortcutId[] = ["new-repair", "track", "new-project"];
+
+export function shortcutIncluded(s: ShortcutInfo, feature: (k: FeatureKey) => boolean): boolean {
+  return !s.features || s.features.some(feature);
+}
+
+export function shortcutAllowed(s: ShortcutInfo, can: (p: string) => boolean, feature: (k: FeatureKey) => boolean): boolean {
+  return shortcutIncluded(s, feature) && (!s.permissions || s.permissions.some(can));
+}
+
 export type ProjectRow = Job & { expand?: { client?: Contact; venue?: Venue; spaces?: { name: string }[] } };
 
 // The local calendar day of a stored datetime ("2026-10-22"), "" if none.

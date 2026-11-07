@@ -242,10 +242,10 @@ export default function ItemDetails({
           </select>
         </Row>
         <Row
-          label="What is it?"
+          label="Kind"
           value={labelOf(KIND_OPTIONS, item.kind)}
         >
-          <Segmented label="What is it?" value={draft.kind} onChange={(v) => set("kind", v)} disabled={hasSerials} options={KIND_OPTIONS} />
+          <Segmented label="Kind" value={draft.kind} onChange={(v) => set("kind", v)} disabled={hasSerials} options={KIND_OPTIONS} />
         </Row>
         {!isKit && (
           <Row label="Item type" value={labelOf(TRACKING_OPTIONS, item.tracking === "serial" ? "serial" : "bulk")}>

@@ -27,14 +27,14 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// { name, panels, sharedWith?, public? }: a new dashboard of your own.
+// { name, panels, shortcuts?, sharedWith?, public? }: a new dashboard of your own.
 routerAdd(
   "POST",
   "/api/dashboards",
   (e) => {
     const { requireOrg } = require(`${__hooks}/lib/orgs.js`);
     const { applySharing, namesFor } = require(`${__hooks}/lib/sharing.js`);
-    const { cleanName, cleanPanels, dashboardJson } = require(`${__hooks}/lib/views.js`);
+    const { cleanName, cleanPanels, cleanShortcuts, dashboardJson } = require(`${__hooks}/lib/views.js`);
     const ctx = requireOrg(e);
     const body = e.requestInfo().body || {};
     const record = new Record($app.findCollectionByNameOrId("dashboards"), {
@@ -42,6 +42,7 @@ routerAdd(
       owner: e.auth.id,
       name: cleanName(body.name),
       panels: cleanPanels(body.panels),
+      shortcuts: cleanShortcuts(body.shortcuts),
     });
     applySharing($app, ctx, record, body);
     $app.save(record);
@@ -50,7 +51,7 @@ routerAdd(
   $apis.requireAuth("users"),
 );
 
-// { name?, panels?, sharedWith?, public?, isDefault? }. isDefault makes it
+// { name?, panels?, shortcuts?, sharedWith?, public?, isDefault? }. isDefault makes it
 // everyone's Home until they pick another (public ones only).
 routerAdd(
   "PATCH",
@@ -59,7 +60,7 @@ routerAdd(
     const { findOrNull } = require(`${__hooks}/lib/records.js`);
     const { requireRecordOrg } = require(`${__hooks}/lib/orgs.js`);
     const { requireEdit, applySharing, namesFor } = require(`${__hooks}/lib/sharing.js`);
-    const { cleanName, cleanPanels, dashboardJson } = require(`${__hooks}/lib/views.js`);
+    const { cleanName, cleanPanels, cleanShortcuts, dashboardJson } = require(`${__hooks}/lib/views.js`);
     const { whoName } = require(`${__hooks}/lib/auth.js`);
     const { logEvent } = require(`${__hooks}/lib/log.js`);
     const record = findOrNull($app, "dashboards", e.request.pathValue("id"));
@@ -71,6 +72,7 @@ routerAdd(
     $app.runInTransaction((tx) => {
       if (body.name !== undefined) record.set("name", cleanName(body.name));
       if (body.panels !== undefined) record.set("panels", cleanPanels(body.panels));
+      if (body.shortcuts !== undefined) record.set("shortcuts", cleanShortcuts(body.shortcuts));
       applySharing(tx, ctx, record, body);
       if (body.isDefault !== undefined && !!body.isDefault !== record.getBool("isDefault")) {
         if (!ctx.can("views.publish")) throw new ForbiddenError("Only people who can share with everyone can pick everyone's Home");

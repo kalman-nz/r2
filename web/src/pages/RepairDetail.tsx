@@ -19,6 +19,7 @@ import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
 import AssigneeInput from "../components/repair/AssigneeInput";
 import Breadcrumbs from "../components/Breadcrumbs";
+import ArrowLink from "../components/ArrowLink";
 
 type RepairWithExpand = Repair & {
   expand?: { item?: Item; serials?: Serial[]; job?: ProjectRef; createdBy?: { name: string; email: string } };
@@ -299,9 +300,9 @@ export default function RepairDetail() {
               <p className="text-gray-500">No project.</p>
             )}
             {repair.expand?.job && (
-              <Link to={`/projects/${repair.expand.job.id}`} className="text-xs text-signal-ink hover:text-signal-ink-hover w-fit">
-                Open #{repair.expand.job.number} {repair.expand.job.name} →
-              </Link>
+              <ArrowLink to={`/projects/${repair.expand.job.id}`}>
+                Open #{repair.expand.job.number} {repair.expand.job.name}
+              </ArrowLink>
             )}
           </section>
         )}

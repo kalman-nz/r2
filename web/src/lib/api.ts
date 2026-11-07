@@ -963,6 +963,8 @@ export interface Dashboard extends Shared {
   id: string;
   name: string;
   panels: { id: string }[];
+  // Shortcut buttons in order (lib/home.ts); null for the usual ones.
+  shortcuts: string[] | null;
   // Everyone's Home until they pick their own.
   isDefault: boolean;
 }
@@ -1419,8 +1421,8 @@ export const api = {
 
   // Everyone's own dashboards and saved views — see routes_views.pb.js.
   dashboards: () => request<Dashboards>("/api/dashboards"),
-  createDashboard: (data: { name: string; panels: { id: string }[] } & SharingInput) => request<Dashboard>("/api/dashboards", json("POST", data)),
-  updateDashboard: (id: string, data: Partial<{ name: string; panels: { id: string }[]; isDefault: boolean }> & SharingInput) =>
+  createDashboard: (data: { name: string; panels: { id: string }[]; shortcuts?: string[] } & SharingInput) => request<Dashboard>("/api/dashboards", json("POST", data)),
+  updateDashboard: (id: string, data: Partial<{ name: string; panels: { id: string }[]; shortcuts: string[]; isDefault: boolean }> & SharingInput) =>
     request<Dashboard>(`/api/dashboards/${id}`, json("PATCH", data)),
   deleteDashboard: (id: string) => request<{ ok: true }>(`/api/dashboards/${id}`, json("DELETE")),
   setHome: (dashboard: string) => request<{ home: string }>("/api/me/home", json("PUT", { dashboard })),

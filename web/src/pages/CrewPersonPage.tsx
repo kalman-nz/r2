@@ -16,6 +16,7 @@ import { JobStatusBadge } from "../components/StatusBadge";
 import { TabBar, useTab, type TabDef } from "../components/Tabs";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useToast } from "../components/ToastProvider";
+import ArrowLink from "../components/ArrowLink";
 
 // Someone on the crew list, laid out like a contact's page: what's next for
 // them across the top, their details in cards that edit in place, and every
@@ -424,9 +425,7 @@ function SlotsCard({ title, slots, empty, more }: { title: string; slots: Slot[]
           {slots.length > 0 && <span className="ml-1.5 font-mono text-gray-400">{slots.length}</span>}
         </h2>
         {more && (
-          <button onClick={more} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
-            All bookings →
-          </button>
+          <ArrowLink onClick={more}>All bookings</ArrowLink>
         )}
       </div>
       {slots.length === 0 ? (

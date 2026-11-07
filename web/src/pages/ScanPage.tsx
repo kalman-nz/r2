@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type JobLineView, type JobStatus, type TrackedProject } from "../lib/api";
 import { pb } from "../lib/pocketbase";
@@ -20,6 +20,7 @@ import TrackingBoard, { LayoutSwitch, NextStep } from "../components/tracking/Tr
 import { useCan, useFeature } from "../lib/roles";
 import Breadcrumbs from "../components/Breadcrumbs";
 import CameraScanner from "../components/CameraScanner";
+import ArrowLink from "../components/ArrowLink";
 
 // Equipment tracking: scanning kit to a step on a project (prepped,
 // loaded, returned: each organisation's own steps). Works with a
@@ -438,9 +439,7 @@ function ScanJob({ jobId }: { jobId: string }) {
               </span>
               <span className="flex items-center gap-2 shrink-0">
                 {f.repair ? (
-                  <Link to={`/maintenance/repairs/${f.repair.id}`} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
-                    Repair R{f.repair.number}
-                  </Link>
+                  <ArrowLink to={`/maintenance/repairs/${f.repair.id}`}>Repair R{f.repair.number}</ArrowLink>
                 ) : (
                   f.back &&
                   can("units.flag") &&

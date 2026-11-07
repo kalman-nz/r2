@@ -27,6 +27,7 @@ import SignupPage from "./pages/SignupPage";
 import { ResetPasswordPage, VerifyEmailPage } from "./pages/AuthLinkPages";
 import OrgsPage from "./pages/OrgsPage";
 import AccountPage from "./pages/AccountPage";
+import HelpPage from "./pages/HelpPage";
 import RequireAuth from "./components/RequireAuth";
 import RequireRole from "./components/RequireRole";
 import GlobalSearch from "./components/GlobalSearch";
@@ -137,6 +138,13 @@ const icons = {
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </Icon>
   ),
+  help: (
+    <Icon>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2.3-2.4 3.8" />
+      <circle cx="12" cy="17" r="0.6" fill="currentColor" />
+    </Icon>
+  ),
   orgs: (
     <Icon>
       <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" />
@@ -156,10 +164,12 @@ const icons = {
 // Icons only on phones (the scan page needs the width), labels from md up.
 // shrink-0: a sidebar too full for the screen scrolls, rather than
 // squashing Home (the one link sitting straight in the scrolling nav).
+// The active link's orange bar floats inside the highlight, with round ends,
+// so it doesn't bend round the highlight's corners.
 function sidebarLinkClass(isActive: boolean) {
-  return `flex items-center gap-3 mx-2 px-2.5 h-9 shrink-0 rounded-md text-sm font-medium ${
+  return `relative flex items-center gap-3 mx-2 px-2.5 h-9 shrink-0 rounded-md text-sm font-medium ${
     isActive
-      ? "bg-graphite text-white shadow-[inset_2px_0_0_var(--color-signal)]"
+      ? "bg-graphite text-white before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-signal"
       : "text-steel hover:bg-graphite/60 hover:text-white"
   }`;
 }
@@ -279,6 +289,7 @@ function AppShell() {
         </nav>
 
         <div className="flex flex-col gap-0.5 pt-3 mt-2 border-t border-graphite">
+          <NavItem to="/help" icon={icons.help} label="Help" />
           {org && settingsOpen && <NavItem to="/settings" icon={icons.settings} label="Settings" />}
           {isPlatformAdmin && <NavItem to="/admin" icon={icons.admin} label="Platform admin" />}
         </div>
@@ -309,6 +320,8 @@ function AppShell() {
               {/* Yours, whichever organisation you're in (or none yet). */}
               <Route path="/orgs" element={<OrgsPage />} />
               <Route path="/account" element={<AccountPage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/help/:topic" element={<HelpPage />} />
               <Route
                 path="/admin/*"
                 element={

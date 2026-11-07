@@ -30,6 +30,7 @@ import CustomFieldsCard from "../components/CustomFieldsCard";
 import SpacesCard from "../components/SpacesCard";
 import { useVenueSpaces } from "../lib/catalog";
 import { customKeysIn, customSortValue, customText, customValueOf, useCustomFields, type CustomTarget } from "../lib/customFields";
+import ArrowLink from "../components/ArrowLink";
 
 // Contacts (clients) and locations (venues) are plain records with a list,
 // a page each, and the projects that use them, so one config-driven pair of
@@ -544,14 +545,9 @@ function shownValue(f: FieldSpec, value: string, config: DirectoryConfig): React
       <span className="flex flex-col items-start gap-0.5">
         <span className="whitespace-pre-line">{stackedAddress(value)}</span>
         {config.collection === "venues" && (
-          <a
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(oneLineAddress(value))}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover"
-          >
-            Map ↗
-          </a>
+          <ArrowLink href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(oneLineAddress(value))}`} className="-ml-2 mt-1">
+            Map
+          </ArrowLink>
         )}
       </span>
     );
@@ -869,9 +865,7 @@ function ProjectsCard({ title, jobs, config, empty, more }: { title: string; job
           {jobs.length > 0 && <span className="ml-1.5 font-mono text-gray-400">{jobs.length}</span>}
         </h2>
         {more && (
-          <button onClick={more} className="text-xs font-medium text-signal-ink hover:text-signal-ink-hover">
-            All projects →
-          </button>
+          <ArrowLink onClick={more}>All projects</ArrowLink>
         )}
       </div>
       {jobs.length === 0 ? (
