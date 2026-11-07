@@ -15,6 +15,7 @@ import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import NewSubprojectModal from "./NewSubprojectModal";
 import { DragHandle } from "../DragReorder";
+import SelectionBar from "../SelectionBar";
 
 // Done jobs don't hold stock, so availability isn't worked out for them.
 function AvailabilityCell({ line, jobDone }: { line: JobLineView; jobDone: boolean }) {
@@ -297,6 +298,21 @@ export default function JobLines({
     return [...new Set(names)].map((name) => ({ name, lines: byName.get(name) ?? [] }));
   }
 
+  // ---- Ticked lines (top-level only; a kit's contents go with it), in order.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const picked = lines.filter((l) => !l.parentLine && selected.has(l.id));
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const topLines = lines.filter((l) => !l.parentLine);
+  const allPicked = topLines.length > 0 && picked.length === topLines.length;
+  const [discount, setDiscount] = useState("");
+  const [busy, setBusy] = useState(false);
+
   // ---- Drag and drop
   const [grabbed, setGrabbed] = useState<string | null>(null);
   const [dragging, setDragging] = useState<Dragging | null>(null);
@@ -313,6 +329,10 @@ export default function JobLines({
     const names = namedHeadings(section);
     return group === "" ? (names[0] ?? null) : (names[names.indexOf(group) + 1] ?? null);
   };
+
+  // Dragging a ticked line takes every ticked line with it.
+  const moving = dragging?.kind === "line" ? (selected.has(dragging.line.id) && picked.length > 1 ? picked : [dragging.line]) : [];
+  const movingIds = new Set(moving.map((l) => l.id));
 
   // Where the dragged thing would land if dropped on this row, or null.
   function dropFor(desc: RowDesc, upper: boolean): Drop | null {
@@ -331,7 +351,7 @@ export default function JobLines({
       else if (desc.type === "child") before = after(desc.parent);
       else before = null;
       // Where it already is: nothing to do.
-      if (desc.section === sectionOf(dragging.line) && desc.group === dragging.line.group) {
+      if (moving.length === 1 && desc.section === sectionOf(dragging.line) && desc.group === dragging.line.group) {
         const sibs = siblingsOf(desc.section, desc.group);
         const now = sibs.findIndex((l) => l.id === self);
         const nextNow = sibs[now + 1]?.id ?? null;
@@ -348,33 +368,83 @@ export default function JobLines({
     return { kind: "heading", section: desc.section, before };
   }
 
-  async function dropLine(line: JobLineView, section: string, group: string, before: string | null) {
-    const siblings = siblingsOf(section, group, line.id);
+  // Puts lines, in their order, before a line in a heading (or at its end).
+  // Sort orders go between the new neighbours, or the heading's renumbered
+  // when there's no room.
+  async function dropLines(move: JobLineView[], section: string, group: string, before: string | null) {
+    const ids = new Set(move.map((l) => l.id));
+    const all = siblingsOf(section, group);
+    if (before && ids.has(before)) before = all.slice(all.findIndex((l) => l.id === before) + 1).find((l) => !ids.has(l.id))?.id ?? null;
+    const siblings = all.filter((l) => !ids.has(l.id));
     const at = before ? siblings.findIndex((l) => l.id === before) : siblings.length;
     const prev = siblings[at - 1];
     const next = siblings[at];
-    const moved: LinePatch = {
-      ...(section !== sectionOf(line) ? { subproject: section } : {}),
-      ...(group !== line.group ? { group } : {}),
-    };
-    // A sort order between its new neighbours, or renumber the heading when there's no room.
-    let sortOrder: number | null;
-    if (!prev && !next) sortOrder = line.sortOrder;
-    else if (!prev) sortOrder = next.sortOrder - 10;
-    else if (!next) sortOrder = prev.sortOrder + 10;
-    else sortOrder = next.sortOrder - prev.sortOrder >= 2 ? Math.floor((prev.sortOrder + next.sortOrder) / 2) : null;
+    const k = move.length;
+    let orders: number[] | null;
+    if (!prev && !next) orders = move.map((_, i) => (i + 1) * 10);
+    else if (!prev) orders = move.map((_, i) => next.sortOrder - 10 * (k - i));
+    else if (!next) orders = move.map((_, i) => prev.sortOrder + 10 * (i + 1));
+    else {
+      const gap = next.sortOrder - prev.sortOrder;
+      orders = gap > k ? move.map((_, i) => prev.sortOrder + Math.floor((gap * (i + 1)) / (k + 1))) : null;
+    }
+    const moved = (l: JobLineView): LinePatch => ({
+      ...(section !== sectionOf(l) ? { subproject: section } : {}),
+      ...(group !== l.group ? { group } : {}),
+    });
     await run(async () => {
-      if (sortOrder !== null) return api.updateLine(line.id, { ...moved, sortOrder });
-      const order = [...siblings];
-      order.splice(at, 0, line);
       let last = summary;
+      if (orders) {
+        for (const [i, l] of move.entries()) last = await api.updateLine(l.id, { ...moved(l), sortOrder: orders[i] });
+        return last;
+      }
+      const order = [...siblings];
+      order.splice(at, 0, ...move);
       for (const [i, l] of order.entries()) {
         const want = (i + 1) * 10;
-        if (l.id === line.id) last = await api.updateLine(l.id, { ...moved, sortOrder: want });
+        if (ids.has(l.id)) last = await api.updateLine(l.id, { ...moved(l), sortOrder: want });
         else if (l.sortOrder !== want) last = await api.updateLine(l.id, { sortOrder: want });
       }
       return last;
-    }, "Couldn't move it");
+    }, k > 1 ? "Couldn't move them" : "Couldn't move it");
+  }
+
+  // ---- What the selection bar does
+  async function removePicked() {
+    const kits = picked.filter((l) => lines.some((c) => c.parentLine === l.id)).length;
+    const ok = await confirm({
+      title: "Remove lines",
+      message: `Remove ${picked.length} line${picked.length === 1 ? "" : "s"}${kits ? `, and what was added with ${kits === 1 ? "the kit" : "the kits"}` : ""}?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    await run(async () => {
+      let last = summary;
+      for (const l of picked) last = await api.deleteLine(l.id);
+      return last;
+    }, "Couldn't remove them");
+    setSelected(new Set());
+    setBusy(false);
+  }
+  async function discountPicked() {
+    const pct = Number(discount);
+    if (discount.trim() === "" || !Number.isFinite(pct) || pct < 0 || pct > 100) return;
+    setBusy(true);
+    await run(async () => {
+      let last = summary;
+      for (const l of picked) if (l.lineType !== "component") last = await api.updateLine(l.id, { discountPct: pct });
+      return last;
+    }, "Couldn't set the discount");
+    setDiscount("");
+    setBusy(false);
+  }
+  async function movePicked(target: string) {
+    const [section, group] = target.split("\u0000");
+    setBusy(true);
+    await dropLines(picked, section, group, null);
+    setBusy(false);
   }
 
   async function dropHeading(section: string, name: string, before: string | null) {
@@ -444,7 +514,7 @@ export default function JobLines({
           const target = drop;
           endDrag();
           if (!d || !target) return;
-          if (d.kind === "line" && target.kind === "line") dropLine(d.line, target.section, target.group, target.before);
+          if (d.kind === "line" && target.kind === "line") dropLines(moving, target.section, target.group, target.before);
           if (d.kind === "heading" && target.kind === "heading") dropHeading(d.section, d.name, target.before);
         },
         onDragEnd: endDrag,
@@ -452,7 +522,7 @@ export default function JobLines({
     },
     cls: (key, parent) => {
       const faded =
-        (dragging?.kind === "line" && (dragging.line.id === key || dragging.line.id === parent)) ||
+        (dragging?.kind === "line" && (movingIds.has(key) || (!!parent && movingIds.has(parent)))) ||
         (dragging?.kind === "heading" && headingKey(dragging.section, dragging.name) === key);
       return `${faded ? "opacity-40" : ""} ${above === key ? LINE_ABOVE : ""} ${below === key ? LINE_BELOW : ""}`;
     },
@@ -498,11 +568,77 @@ export default function JobLines({
         </div>
       </div>
 
+      {canEdit && picked.length > 0 && (
+        <div className="px-4 pb-2">
+          <SelectionBar count={picked.length} onClear={() => setSelected(new Set())}>
+            <select value="" onChange={(e) => movePicked(e.target.value)} disabled={busy} className="input w-auto py-1.5" aria-label="Move to a heading">
+              <option value="" disabled>
+                Move to…
+              </option>
+              {sections.map((sec) => {
+                if (!split && sec.id !== "") return null;
+                const options = ["", ...namedHeadings(sec.id)].map((h) => (
+                  <option key={h || "(none)"} value={`${sec.id}\u0000${h}`}>
+                    {h || "No heading"}
+                  </option>
+                ));
+                return split ? (
+                  <optgroup key={sec.id || "main"} label={sec.name}>
+                    {options}
+                  </optgroup>
+                ) : (
+                  options
+                );
+              })}
+            </select>
+            {showPrices && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  discountPicked();
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Disc %"
+                  aria-label="Discount for the ticked lines (%)"
+                  className="input py-1.5 w-20"
+                  disabled={busy}
+                />
+                <button type="submit" disabled={busy || discount.trim() === ""} className="btn-secondary py-1.5">
+                  Set discount
+                </button>
+              </form>
+            )}
+            <button onClick={removePicked} disabled={busy} className="btn-secondary py-1.5 hover:text-fault-ink">
+              Remove
+            </button>
+          </SelectionBar>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-[13px] border-collapse">
           <thead>
             <tr className="border-y border-gray-200 text-left text-gray-500 bg-gray-50/60">
-              <th className="px-4 py-1.5 font-medium">Item</th>
+              <th className={`py-1.5 font-medium ${canEdit ? "pl-1.5 pr-4" : "px-4"}`}>
+                {canEdit ? (
+                  <span className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all lines"
+                      checked={allPicked}
+                      onChange={() => setSelected(allPicked ? new Set() : new Set(topLines.map((l) => l.id)))}
+                    />
+                    Item
+                  </span>
+                ) : (
+                  "Item"
+                )}
+              </th>
               <th className="px-2 py-1.5 font-medium text-right w-16">Qty</th>
               <th className="px-2 py-1.5 font-medium w-36">Availability</th>
               {steps && <th className="px-2 py-1.5 font-medium w-44">Status</th>}
@@ -551,6 +687,8 @@ export default function JobLines({
                       steps={steps}
                       section={section.id}
                       dnd={dnd}
+                      selected={selected}
+                      onToggle={toggle}
                       onRenameGroup={(from, to) => renameGroup(section.id, from, to)}
                       onRemoveGroup={() => removeGroup(section.id, group.name, group.lines.filter((l) => !l.parentLine).length)}
                       onAddTo={() => setPicking({ section: section.id, group: group.name })}
@@ -655,6 +793,8 @@ function GroupRows({
   steps,
   section,
   dnd,
+  selected,
+  onToggle,
   onRenameGroup,
   onRemoveGroup,
   onAddTo,
@@ -669,6 +809,8 @@ function GroupRows({
   steps: TrackingStep[] | null;
   section: string;
   dnd: Dnd;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
   onRenameGroup: (from: string, to: string) => void;
   onRemoveGroup: () => void;
   onAddTo: () => void;
@@ -732,6 +874,8 @@ function GroupRows({
           section={section}
           group={group.name}
           dnd={dnd}
+          ticked={selected.has(line.id)}
+          onToggle={() => onToggle(line.id)}
           onPatch={onPatch}
           onRemove={onRemove}
         />
@@ -750,6 +894,8 @@ function LineRow({
   section,
   group,
   dnd,
+  ticked,
+  onToggle,
   onPatch,
   onRemove,
 }: {
@@ -763,6 +909,8 @@ function LineRow({
   section: string;
   group: string;
   dnd: Dnd;
+  ticked: boolean;
+  onToggle: () => void;
   onPatch: (line: JobLineView, patch: LinePatch) => void;
   onRemove: (line: JobLineView) => void;
 }) {
@@ -773,11 +921,16 @@ function LineRow({
   return (
     <tr
       {...dnd.row(isChild ? { type: "child", section, group, parent: line.parentLine! } : { type: "line", section, group, line })}
-      className={`border-b border-gray-50 bg-white hover:bg-gray-50/60 ${isChild ? "text-gray-600" : ""} ${dnd.cls(line.id, line.parentLine || undefined)}`}
+      className={`border-b border-gray-50 ${ticked ? "bg-signal-soft/40" : "bg-white"} hover:bg-gray-50/60 ${isChild ? "text-gray-600" : ""} ${dnd.cls(line.id, line.parentLine || undefined)}`}
     >
-      <td className={`py-1.5 pr-2 ${isChild ? (canEdit ? "pl-12" : "pl-9") : canEdit ? "pl-1.5" : "pl-4"}`}>
+      <td className={`py-1.5 pr-2 ${isChild ? (canEdit ? "pl-16" : "pl-9") : canEdit ? "pl-1.5" : "pl-4"}`}>
         <div className="flex items-center gap-1.5 min-w-0">
-          {canEdit && !isChild && <DragHandle {...dnd.handle(line.id)} />}
+          {canEdit && !isChild && (
+            <>
+              <input type="checkbox" checked={ticked} onChange={onToggle} aria-label={`Select ${line.name}`} className="shrink-0" />
+              <DragHandle {...dnd.handle(line.id)} />
+            </>
+          )}
           {isChild && <span className="text-gray-300">↳</span>}
           {isCustom && canEdit ? (
             <InlineText value={line.description} onCommit={(description) => onPatch(line, { description })} className="flex-1 min-w-40" />
